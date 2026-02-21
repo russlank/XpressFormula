@@ -1,0 +1,42 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Core"><UniqueIdentifier>{A1B2C3D4-0001-0001-0001-000000000001}</UniqueIdentifier></Filter>
+    <Filter Include="UI"><UniqueIdentifier>{A1B2C3D4-0002-0002-0002-000000000002}</UniqueIdentifier></Filter>
+    <Filter Include="Plotting"><UniqueIdentifier>{A1B2C3D4-0003-0003-0003-000000000003}</UniqueIdentifier></Filter>
+    <Filter Include="vendor\imgui"><UniqueIdentifier>{A1B2C3D4-0004-0004-0004-000000000004}</UniqueIdentifier></Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="main.cpp" />
+    <ClCompile Include="Core\Tokenizer.cpp"><Filter>Core</Filter></ClCompile>
+    <ClCompile Include="Core\Parser.cpp"><Filter>Core</Filter></ClCompile>
+    <ClCompile Include="Core\Evaluator.cpp"><Filter>Core</Filter></ClCompile>
+    <ClCompile Include="Core\ViewTransform.cpp"><Filter>Core</Filter></ClCompile>
+    <ClCompile Include="UI\Application.cpp"><Filter>UI</Filter></ClCompile>
+    <ClCompile Include="UI\FormulaPanel.cpp"><Filter>UI</Filter></ClCompile>
+    <ClCompile Include="UI\ControlPanel.cpp"><Filter>UI</Filter></ClCompile>
+    <ClCompile Include="UI\PlotPanel.cpp"><Filter>UI</Filter></ClCompile>
+    <ClCompile Include="Plotting\PlotRenderer.cpp"><Filter>Plotting</Filter></ClCompile>
+    <ClCompile Include="..\vendor\imgui\imgui.cpp"><Filter>vendor\imgui</Filter></ClCompile>
+    <ClCompile Include="..\vendor\imgui\imgui_draw.cpp"><Filter>vendor\imgui</Filter></ClCompile>
+    <ClCompile Include="..\vendor\imgui\imgui_tables.cpp"><Filter>vendor\imgui</Filter></ClCompile>
+    <ClCompile Include="..\vendor\imgui\imgui_widgets.cpp"><Filter>vendor\imgui</Filter></ClCompile>
+    <ClCompile Include="..\vendor\imgui\backends\imgui_impl_dx11.cpp"><Filter>vendor\imgui</Filter></ClCompile>
+    <ClCompile Include="..\vendor\imgui\backends\imgui_impl_win32.cpp"><Filter>vendor\imgui</Filter></ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="Core\Token.h"><Filter>Core</Filter></ClInclude>
+    <ClInclude Include="Core\MathConstants.h"><Filter>Core</Filter></ClInclude>
+    <ClInclude Include="Core\Tokenizer.h"><Filter>Core</Filter></ClInclude>
+    <ClInclude Include="Core\ASTNode.h"><Filter>Core</Filter></ClInclude>
+    <ClInclude Include="Core\Parser.h"><Filter>Core</Filter></ClInclude>
+    <ClInclude Include="Core\Evaluator.h"><Filter>Core</Filter></ClInclude>
+    <ClInclude Include="Core\ViewTransform.h"><Filter>Core</Filter></ClInclude>
+    <ClInclude Include="UI\Application.h"><Filter>UI</Filter></ClInclude>
+    <ClInclude Include="UI\FormulaEntry.h"><Filter>UI</Filter></ClInclude>
+    <ClInclude Include="UI\FormulaPanel.h"><Filter>UI</Filter></ClInclude>
+    <ClInclude Include="UI\ControlPanel.h"><Filter>UI</Filter></ClInclude>
+    <ClInclude Include="UI\PlotPanel.h"><Filter>UI</Filter></ClInclude>
+    <ClInclude Include="Plotting\PlotRenderer.h"><Filter>Plotting</Filter></ClInclude>
+  </ItemGroup>
+</Project>

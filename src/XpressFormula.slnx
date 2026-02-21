@@ -1,0 +1,8 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Project Path="XpressFormula.Tests/XpressFormula.Tests.vcxproj" Id="b5a2c3d4-1111-2222-3333-444455556666" />
+  <Project Path="XpressFormula/XpressFormula.vcxproj" Id="73109284-ce31-4087-bbf7-f64f40b2a3cc" />
+</Solution>

@@ -1,0 +1,87 @@
+# Visual Studio
+.vs/
+*.vcxproj.user
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Build output
+Debug/
+Release/
+x64/
+x86/
+bin/
+obj/
+*.obj
+*.exe
+*.dll
+*.lib
+*.pdb
+*.idb
+*.ipch
+*.aps
+*.ncb
+*.log
+*.tlog
+*.lastbuildstate
+*.sdf
+*.opensdf
+*.cache
+*.db
+*.suo
+*.sdf
+*.VC.db
+*.VC.opendb
+*.vscode/
+
+# Generated files
+*.bak
+*.tmp
+*.temp
+.*~
+*.swp
+*.swo
+*.orig
+
+# C++/CMake
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+
+# Others
+*.DS_Store
+Thumbs.db
+*.class
+*.pyc
+*.pyo
+*.out
+*.log
+*.csv
+*.dat
+*.pid
+*.seed
+*.pid.lock
+
+# Database/Index data files
+*.ndx
+*.idx
+test_*.dat
+
+# Test output
+/test/*.exe
+/test/*.obj
+/test/*.pdb
+/test/*.log
+
+# Ignore legacy and backup
+legacy-code/
+old-code/
+
+.ai/**/*
+**/*/.ai/**/*
+
+.env
+.env.local
+requirements.txt

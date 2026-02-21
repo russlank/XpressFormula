@@ -1,0 +1,73 @@
+# XpressFormula Run Guide
+
+## Prerequisites
+
+- Windows 10/11
+- Visual Studio 2022/2026 with **Desktop development with C++**
+- Windows 10/11 SDK
+
+See also:
+
+- `../README.md`
+- `index.md`
+- `project-vendors.md`
+
+## Run from Visual Studio
+
+1. Open `src\XpressFormula.slnx` in Visual Studio.
+2. Set startup project to `XpressFormula`.
+3. Select configuration:
+   - `Debug | x64` (recommended)
+4. Press `F5` (Debug) or `Ctrl+F5` (Run without Debugger).
+
+To run tests in Visual Studio:
+
+1. Build the solution.
+2. Run `XpressFormula.Tests` (it is a console test runner executable).
+
+## Run from VS Code
+
+This repository includes VS Code configuration:
+
+- Tasks: `.vscode\tasks.json`
+- Launch configs: `.vscode\launch.json`
+
+Steps:
+
+1. Open the folder in VS Code.
+2. Press `Ctrl+Shift+B` and run:
+   - `Build XpressFormula (x64 Debug)`
+3. Press `F5` and choose:
+   - `Debug XpressFormula (x64)`
+
+Run tests in VS Code:
+
+1. `Terminal -> Run Task...`
+2. Select `Run Tests (x64 Debug)`.
+
+## Run from CLI (PowerShell)
+
+From repository root:
+
+```powershell
+$vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+$vs = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -property installationPath
+& "$vs\MSBuild\Current\Bin\MSBuild.exe" "src\XpressFormula.slnx" /t:Build /p:Configuration=Debug /p:Platform=x64 /m
+```
+
+Run app:
+
+```powershell
+.\src\x64\Debug\XpressFormula.exe
+```
+
+Run tests:
+
+```powershell
+.\src\x64\Debug\XpressFormula.Tests.exe
+```
+
+## Troubleshooting
+
+- If the app does not open a window, rebuild `Debug|x64` and run again.
+- If startup fails, the app now shows a startup error dialog to indicate initialization failure.
