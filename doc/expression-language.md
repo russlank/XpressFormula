@@ -2,7 +2,7 @@
 
 ## Supported Syntax
 
-Expressions support:
+Inputs support:
 
 - Numbers: `42`, `3.14`, `1.5e-3`
 - Variables: `x`, `y`, `z`
@@ -10,16 +10,22 @@ Expressions support:
 - Operators: `+`, `-`, `*`, `/`, `^`
 - Parentheses: `( ... )`
 - Function calls: `sin(x)`, `atan2(y, x)`, `pow(x, 2)`
+- Equations with one `=` sign: `left = right`
 
 ## Grammar
 
-The parser uses recursive descent with this structure:
+Expression parsing uses recursive descent with this structure:
 
 - `expression := term (('+' | '-') term)*`
 - `term := power (('*' | '/') power)*`
 - `power := unary ('^' power)?` (right-associative)
 - `unary := ('-' | '+')? primary`
 - `primary := number | identifier | functionCall | '(' expression ')'`
+
+Equation parsing is handled as:
+
+- `formula := expression | expression '=' expression`
+- Equations are internally converted to `left - right` for implicit plotting/evaluation.
 
 ## Operator Behavior
 
@@ -64,5 +70,18 @@ The evaluator returns `NaN` for invalid operations, including:
 - `sin(x)`
 - `cos(x) * exp(-x*x/10)`
 - `x^2 + y^2`
+- `z = sin(x) * cos(y)`
+- `x^2 + y^2 = 100`
 - `sin(x) * cos(y)`
 - `x^2 + y^2 + z^2 - 4`
+
+## Render Mapping
+
+The app chooses a render mode from the parsed variables and equation form:
+
+- `y=f(x)` for expressions using only `x` (or constants)
+- `z=f(x,y)` for expressions using `x` and `y`, and equations solved for `z`
+- `F(x,y)=0` contour for equations like `x^2+y^2=100`
+- `f(x,y,z)` scalar-field cross-section for formulas that use `x`, `y`, and `z`
+
+Only variables `x`, `y`, and `z` are supported for plotting.

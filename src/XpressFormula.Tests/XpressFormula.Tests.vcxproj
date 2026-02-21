@@ -134,6 +134,7 @@
     <ClCompile Include="ParserTests.cpp" />
     <ClCompile Include="EvaluatorTests.cpp" />
     <ClCompile Include="ViewTransformTests.cpp" />
+    <ClCompile Include="FormulaEntryTests.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />

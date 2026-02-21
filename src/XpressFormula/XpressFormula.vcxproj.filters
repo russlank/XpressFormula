@@ -37,6 +37,7 @@
     <ClInclude Include="UI\FormulaPanel.h"><Filter>UI</Filter></ClInclude>
     <ClInclude Include="UI\ControlPanel.h"><Filter>UI</Filter></ClInclude>
     <ClInclude Include="UI\PlotPanel.h"><Filter>UI</Filter></ClInclude>
+    <ClInclude Include="UI\PlotSettings.h"><Filter>UI</Filter></ClInclude>
     <ClInclude Include="Plotting\PlotRenderer.h"><Filter>Plotting</Filter></ClInclude>
   </ItemGroup>
 </Project>

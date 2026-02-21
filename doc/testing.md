@@ -19,6 +19,8 @@ The project uses a lightweight in-repo test harness (`CppUnitTest.h`) and does n
   - arithmetic, function domain behavior, constants, variable substitution
 - View transform
   - coordinate conversion, zoom/pan/reset, grid spacing behavior
+- Formula entry / mode selection
+  - equation parsing (`left=right`), implicit equation compilation, render-mode classification
 
 ## Running Tests
 

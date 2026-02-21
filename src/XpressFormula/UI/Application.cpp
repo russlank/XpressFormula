@@ -157,9 +157,16 @@ void Application::renderFrame() {
                  ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
                  ImGuiWindowFlags_NoMove     | ImGuiWindowFlags_NoCollapse);
     m_formulaPanel.render(m_formulas);
+    bool hasSurfaceFormula = false;
+    for (const FormulaEntry& formula : m_formulas) {
+        if (formula.visible && formula.isValid() && formula.uses3DSurface()) {
+            hasSurfaceFormula = true;
+            break;
+        }
+    }
     ImGui::Spacing();
     ImGui::Spacing();
-    m_controlPanel.render(m_viewTransform);
+    m_controlPanel.render(m_viewTransform, m_plotSettings, hasSurfaceFormula);
     ImGui::End();
 
     // ---- Plot area ----
@@ -170,7 +177,7 @@ void Application::renderFrame() {
                  ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
                  ImGuiWindowFlags_NoMove     | ImGuiWindowFlags_NoCollapse |
                  ImGuiWindowFlags_NoScrollbar);
-    m_plotPanel.render(m_formulas, m_viewTransform);
+    m_plotPanel.render(m_formulas, m_viewTransform, m_plotSettings);
     ImGui::End();
 
     // ---- Render ----

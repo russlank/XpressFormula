@@ -6,7 +6,7 @@ XpressFormula is organized into three primary layers:
 
 - `Core`: expression tokenization, parsing, evaluation, coordinate transforms
 - `UI`: ImGui panels and application orchestration
-- `Plotting`: draw routines for grid/axes/curves/heat maps
+- `Plotting`: draw routines for grid/axes/curves/implicit contours/surfaces/heat maps
 
 ## Module Breakdown
 
@@ -23,11 +23,11 @@ XpressFormula is organized into three primary layers:
 - `src/XpressFormula/UI/FormulaPanel.*`
   - Formula list management and per-formula controls.
 - `src/XpressFormula/UI/ControlPanel.*`
-  - Global camera/view controls.
+  - Global 2D view controls and 3D surface camera settings.
 - `src/XpressFormula/UI/PlotPanel.*`
   - Interactive plotting area and mouse interactions.
 - `src/XpressFormula/Plotting/PlotRenderer.*`
-  - Rendering primitives and formula visualizations.
+  - Rendering primitives and formula visualizations (2D + 3D).
 
 ## Runtime Flow
 
@@ -40,16 +40,18 @@ XpressFormula is organized into three primary layers:
 
 ## Formula Rendering Modes
 
-Formula mode is inferred from variable presence:
+Formula mode is inferred from variable presence and equation shape:
 
-- `f(x)` if no `y`/`z` variable is detected
-- `f(x,y)` if `y` is present and `z` is absent
-- `f(x,y,z)` if `z` is present
+- `y=f(x)` if no `y`/`z` variable is detected
+- `z=f(x,y)` if `x` and `y` are present, or if equation is solved for `z`
+- `F(x,y)=0` for implicit equations such as `x^2+y^2=100`
+- `f(x,y,z)` scalar field if `x`, `y`, and `z` are present
 
 Render mapping:
 
-- `f(x)` -> curve line sampling across screen width
-- `f(x,y)` -> heat map
+- `y=f(x)` -> curve line sampling across screen width
+- `z=f(x,y)` -> 3D surface (or optional 2D heat map)
+- `F(x,y)=0` -> marching-squares contour rendering
 - `f(x,y,z)` -> heat map cross-section at selected `z`
 
 ## Error Handling

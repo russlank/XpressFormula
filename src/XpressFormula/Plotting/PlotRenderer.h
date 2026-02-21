@@ -10,6 +10,17 @@ namespace XpressFormula::Plotting {
 
 class PlotRenderer {
 public:
+    struct Surface3DOptions {
+        float azimuthDeg = 40.0f;
+        float elevationDeg = 30.0f;
+        float zScale = 1.0f;
+        int   resolution = 36;
+        float opacity = 0.82f;
+        float wireThickness = 1.0f;
+        bool  showEnvelope = true;
+        float envelopeThickness = 1.25f;
+    };
+
     /// Draw grid lines (major and minor).
     static void drawGrid(ImDrawList* dl, const Core::ViewTransform& vt);
 
@@ -26,15 +37,28 @@ public:
 
     /// Plot a heat-map for f(x,y).
     static void drawHeatmap(ImDrawList* dl, const Core::ViewTransform& vt,
-                            const Core::ASTNodePtr& ast, float alpha = 0.6f);
+                            const Core::ASTNodePtr& ast,
+                            const float tint[4], float alpha = 0.6f);
 
     /// Plot a heat-map cross-section for f(x,y,z) at a given z slice.
     static void drawCrossSection(ImDrawList* dl, const Core::ViewTransform& vt,
                                  const Core::ASTNodePtr& ast,
-                                 float zSlice, float alpha = 0.6f);
+                                 float zSlice,
+                                 const float tint[4], float alpha = 0.6f);
+
+    /// Plot a 3D z=f(x,y) surface using an isometric-style projection.
+    static void drawSurface3D(ImDrawList* dl, const Core::ViewTransform& vt,
+                              const Core::ASTNodePtr& ast, const float color[4],
+                              const Surface3DOptions& options);
+
+    /// Plot the zero contour F(x,y)=0 for implicit equations.
+    static void drawImplicitContour2D(ImDrawList* dl, const Core::ViewTransform& vt,
+                                      const Core::ASTNodePtr& ast,
+                                      const float color[4], float thickness = 2.0f);
 
 private:
-    static unsigned int heatColor(double value, double lo, double hi, float alpha);
+    static unsigned int heatColor(double value, double lo, double hi,
+                                  const float tint[4], float alpha);
     static unsigned int colorU32(const float c[4]);
     static void         formatLabel(char* buf, size_t len, double v);
 };

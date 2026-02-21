@@ -18,7 +18,9 @@ void FormulaPanel::render(std::vector<FormulaEntry>& formulas) {
             "cos(x) * exp(-x*x/10)",
             "sqrt(abs(x))",
             "x^2 + y^2",
+            "z = sin(x) * cos(y)",
             "sin(x) * cos(y)",
+            "x^2 + y^2 = 100",
             "x^2 + y^2 + z^2 - 4",
         };
         for (const char* p : presets) {
@@ -35,6 +37,7 @@ void FormulaPanel::render(std::vector<FormulaEntry>& formulas) {
     }
 
     ImGui::Separator();
+    ImGui::TextWrapped("Enter expressions like y=f(x), z=f(x,y), or equations like x^2+y^2=100.");
 
     // --- Formula list ---
     int removeIndex = -1;
@@ -74,8 +77,8 @@ void FormulaPanel::render(std::vector<FormulaEntry>& formulas) {
             ImGui::PopStyleColor();
         }
 
-        // Z-slice slider for f(x,y,z)
-        if (f.variableCount == 3 && f.isValid()) {
+        // Z-slice slider for scalar fields that include z.
+        if (f.renderKind == FormulaRenderKind::ScalarField3D && f.isValid()) {
             ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
             ImGui::SliderFloat("z slice", &f.zSlice, -10.0f, 10.0f, "z = %.2f");
         }

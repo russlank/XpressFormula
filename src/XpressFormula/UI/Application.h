@@ -6,6 +6,7 @@
 #include "FormulaPanel.h"
 #include "ControlPanel.h"
 #include "PlotPanel.h"
+#include "PlotSettings.h"
 #include "../Core/ViewTransform.h"
 
 #include <d3d11.h>
@@ -54,6 +55,7 @@ private:
     // Application state
     std::vector<FormulaEntry> m_formulas;
     Core::ViewTransform       m_viewTransform;
+    PlotSettings              m_plotSettings;
 
     // UI panels
     FormulaPanel  m_formulaPanel;

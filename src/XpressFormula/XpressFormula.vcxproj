@@ -155,6 +155,7 @@
     <ClInclude Include="UI\FormulaPanel.h" />
     <ClInclude Include="UI\ControlPanel.h" />
     <ClInclude Include="UI\PlotPanel.h" />
+    <ClInclude Include="UI\PlotSettings.h" />
     <ClInclude Include="Plotting\PlotRenderer.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
