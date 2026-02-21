@@ -12,6 +12,13 @@ permissions:
 jobs:
   package:
     runs-on: windows-latest
+    env:
+      DOTNET_VERSION: "9.0.x"
+      PYTHON_VERSION: "3.12"
+      WIX_VERSION: "4.0.5"
+      BUILD_CONFIGURATION: "Release"
+      BUILD_PLATFORM: "x64"
+      MSVC_PLATFORM_TOOLSET: "v143"
 
     steps:
       - name: Checkout
@@ -23,19 +30,25 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: "9.0.x"
+          dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Install WiX CLI
         shell: pwsh
         run: |
-          dotnet tool install --global wix
-          wix extension add --global WixToolset.Bal.wixext
-          wix --version
+          dotnet tool uninstall --global wix 2>$null
+          dotnet tool install --global wix --version $env:WIX_VERSION
+          wix extension remove --global WixToolset.Bal.wixext 2>$null
+          wix extension add --global "WixToolset.Bal.wixext/$env:WIX_VERSION"
+          $wixVersion = (wix --version).Trim()
+          if (-not $wixVersion.StartsWith("4.")) {
+            throw "Expected WiX 4.x but found '$wixVersion'."
+          }
+          Write-Host "Using WiX $wixVersion"
 
       - name: Read App Version
         id: version
@@ -59,9 +72,11 @@ jobs:
         shell: pwsh
         run: |
           $solutionDir = Join-Path $env:GITHUB_WORKSPACE "src\"
+          Write-Host "Building with Configuration=$env:BUILD_CONFIGURATION Platform=$env:BUILD_PLATFORM PlatformToolset=$env:MSVC_PLATFORM_TOOLSET"
           msbuild src\XpressFormula\XpressFormula.vcxproj /t:Build /m `
-            /p:Configuration=Release `
-            /p:Platform=x64 `
+            /p:Configuration=$env:BUILD_CONFIGURATION `
+            /p:Platform=$env:BUILD_PLATFORM `
+            /p:PlatformToolset=$env:MSVC_PLATFORM_TOOLSET `
             /p:SolutionDir="$solutionDir" `
             /p:IntDir="$env:GITHUB_WORKSPACE\build\obj\" `
             /p:OutDir="$env:GITHUB_WORKSPACE\build\bin\"
@@ -72,6 +87,7 @@ jobs:
           .\packaging\build-packages.ps1 `
             -AppExePath "$env:GITHUB_WORKSPACE\build\bin\XpressFormula.exe" `
             -Version "${{ steps.version.outputs.app_version }}" `
+            -RequiredWixVersion "$env:WIX_VERSION" `
             -OutputDir "artifacts\release"
 
       - name: Upload Packaging Artifacts
