@@ -125,6 +125,12 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ResourceCompile Include="app.rc" />
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="Resources\XpressFormula.ico" />
+  </ItemGroup>
+  <ItemGroup>
     <ClCompile Include="main.cpp" />
     <ClCompile Include="Core\Tokenizer.cpp" />
     <ClCompile Include="Core\Parser.cpp" />
@@ -144,6 +150,8 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Core\Token.h" />
+    <ClInclude Include="Version.h" />
+    <ClInclude Include="resource.h" />
     <ClInclude Include="Core\MathConstants.h" />
     <ClInclude Include="Core\Tokenizer.h" />
     <ClInclude Include="Core\ASTNode.h" />

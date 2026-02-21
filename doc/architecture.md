@@ -23,9 +23,11 @@ XpressFormula is organized into three primary layers:
 - `src/XpressFormula/UI/FormulaPanel.*`
   - Formula list management and per-formula controls.
 - `src/XpressFormula/UI/ControlPanel.*`
-  - Global 2D view controls and 3D surface camera settings.
+  - Global 2D view controls, 3D surface camera settings, and export actions.
 - `src/XpressFormula/UI/PlotPanel.*`
   - Interactive plotting area and mouse interactions.
+- `src/XpressFormula/Version.h`
+  - Centralized semantic version metadata used by window title, resources, and packaging.
 - `src/XpressFormula/Plotting/PlotRenderer.*`
   - Rendering primitives and formula visualizations (2D + 3D).
 

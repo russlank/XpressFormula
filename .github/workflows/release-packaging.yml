@@ -1,0 +1,89 @@
+name: Release Packaging
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "9.0.x"
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install WiX CLI
+        shell: pwsh
+        run: |
+          dotnet tool install --global wix
+          wix extension add --global WixToolset.Bal.wixext
+          wix --version
+
+      - name: Read App Version
+        id: version
+        shell: pwsh
+        run: |
+          $version = python scripts/get_version.py
+          if (-not $version) { throw "Failed to read version from Version.h" }
+          "app_version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Validate Tag Matches Version
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          $expected = "v${{ steps.version.outputs.app_version }}"
+          $actual = "${{ github.ref_name }}"
+          if ($actual -ne $expected) {
+            throw "Tag '$actual' does not match Version.h ('$expected')."
+          }
+
+      - name: Build Release Binary
+        shell: pwsh
+        run: |
+          $solutionDir = Join-Path $env:GITHUB_WORKSPACE "src\"
+          msbuild src\XpressFormula\XpressFormula.vcxproj /t:Build /m `
+            /p:Configuration=Release `
+            /p:Platform=x64 `
+            /p:SolutionDir="$solutionDir" `
+            /p:IntDir="$env:GITHUB_WORKSPACE\build\obj\" `
+            /p:OutDir="$env:GITHUB_WORKSPACE\build\bin\"
+
+      - name: Build MSI and Setup EXE Packages
+        shell: pwsh
+        run: |
+          .\packaging\build-packages.ps1 `
+            -AppExePath "$env:GITHUB_WORKSPACE\build\bin\XpressFormula.exe" `
+            -Version "${{ steps.version.outputs.app_version }}" `
+            -OutputDir "artifacts\release"
+
+      - name: Upload Packaging Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: xpressformula-packages-${{ steps.version.outputs.app_version }}
+          path: artifacts/release/*
+
+      - name: Publish GitHub Release Assets
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/release/*.exe
+            artifacts/release/*.msi

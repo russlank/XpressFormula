@@ -81,6 +81,13 @@ After launch:
    - Tune azimuth, elevation, z-scale, density, and opacity for 3D.
 4. Use mouse drag to pan and mouse wheel to zoom domain coordinates.
 
+## Export Plot Image
+
+Use the sidebar **Export** section:
+
+1. Click **Save Plot Image...** to export the current plot area to `.png` or `.bmp`.
+2. Click **Copy Plot To Clipboard** to copy the current plot area image.
+
 ## Troubleshooting
 
 - If the app does not open a window, rebuild `Debug|x64` and run again.

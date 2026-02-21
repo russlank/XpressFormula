@@ -6,8 +6,11 @@
 
 namespace XpressFormula::UI {
 
-void ControlPanel::render(Core::ViewTransform& vt, PlotSettings& settings,
-                          bool hasSurfaceFormula) {
+ControlPanelActions ControlPanel::render(Core::ViewTransform& vt, PlotSettings& settings,
+                                         bool hasSurfaceFormula,
+                                         const std::string& exportStatus) {
+    ControlPanelActions actions;
+
     ImGui::TextUnformatted("View Controls");
     ImGui::Separator();
 
@@ -110,6 +113,23 @@ void ControlPanel::render(Core::ViewTransform& vt, PlotSettings& settings,
     } else {
         ImGui::SliderFloat("Heatmap Opacity", &settings.heatmapOpacity, 0.1f, 1.0f, "%.2f");
     }
+
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::TextUnformatted("Export");
+    if (ImGui::Button("Save Plot Image...", ImVec2(ImGui::GetContentRegionAvail().x, 0))) {
+        actions.requestSavePlotImage = true;
+    }
+    if (ImGui::Button("Copy Plot To Clipboard", ImVec2(ImGui::GetContentRegionAvail().x, 0))) {
+        actions.requestCopyPlotImage = true;
+    }
+
+    if (!exportStatus.empty()) {
+        ImGui::Spacing();
+        ImGui::TextWrapped("%s", exportStatus.c_str());
+    }
+
+    return actions;
 }
 
 } // namespace XpressFormula::UI

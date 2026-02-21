@@ -5,6 +5,7 @@
 - Architecture: `architecture.md`
 - Expression language: `expression-language.md`
 - Testing: `testing.md`
+- Release and packaging: `release-packaging.md`
 - Vendor dependencies: `project-vendors.md`
 
 Recommended reading order for new contributors:
@@ -14,3 +15,4 @@ Recommended reading order for new contributors:
 3. `architecture.md`
 4. `expression-language.md`
 5. `testing.md`
+6. `release-packaging.md`
