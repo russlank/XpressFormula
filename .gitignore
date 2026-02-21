@@ -85,5 +85,5 @@ old-code/
 .env
 .env.local
 requirements.txt
-# imgui.ini
-# **/enc_temp_folder/**/*
+imgui.ini
+**/enc_temp_folder/**/*
