@@ -582,7 +582,7 @@ void PlotRenderer::drawSurface3D(ImDrawList* dl, const Core::ViewTransform& vt,
         }
     }
 
-    if (options.showEnvelope) {
+    if (options.showEnvelope || options.showDimensionArrows) {
         struct EnvelopePoint {
             ImVec2 screen;
             double depth;
@@ -642,22 +642,65 @@ void PlotRenderer::drawSurface3D(ImDrawList* dl, const Core::ViewTransform& vt,
                       return lhs.depth < rhs.depth;
                   });
 
-        const float baseR = std::clamp(color[0] * 0.55f + 0.45f, 0.0f, 1.0f);
-        const float baseG = std::clamp(color[1] * 0.55f + 0.45f, 0.0f, 1.0f);
-        const float baseB = std::clamp(color[2] * 0.55f + 0.45f, 0.0f, 1.0f);
-        const double edgeRange = std::max(1e-6, edgeDepthMax - edgeDepthMin);
-        const float lineThickness = std::clamp(options.envelopeThickness, 0.2f, 4.0f);
+        if (options.showEnvelope) {
+            const float baseR = std::clamp(color[0] * 0.55f + 0.45f, 0.0f, 1.0f);
+            const float baseG = std::clamp(color[1] * 0.55f + 0.45f, 0.0f, 1.0f);
+            const float baseB = std::clamp(color[2] * 0.55f + 0.45f, 0.0f, 1.0f);
+            const double edgeRange = std::max(1e-6, edgeDepthMax - edgeDepthMin);
+            const float lineThickness = std::clamp(options.envelopeThickness, 0.2f, 4.0f);
 
-        for (const EnvelopeEdge& edge : edges) {
-            const double depthNorm = (edge.depth - edgeDepthMin) / edgeRange;
-            const float alpha = static_cast<float>(80.0 + depthNorm * 150.0);
-            const ImU32 lineColor = IM_COL32(
-                static_cast<int>(baseR * 255),
-                static_cast<int>(baseG * 255),
-                static_cast<int>(baseB * 255),
-                static_cast<int>(std::clamp(alpha, 40.0f, 255.0f)));
-            dl->AddLine(corners[edge.a].screen, corners[edge.b].screen,
-                        lineColor, lineThickness);
+            for (const EnvelopeEdge& edge : edges) {
+                const double depthNorm = (edge.depth - edgeDepthMin) / edgeRange;
+                const float alpha = static_cast<float>(80.0 + depthNorm * 150.0);
+                const ImU32 lineColor = IM_COL32(
+                    static_cast<int>(baseR * 255),
+                    static_cast<int>(baseG * 255),
+                    static_cast<int>(baseB * 255),
+                    static_cast<int>(std::clamp(alpha, 40.0f, 255.0f)));
+                dl->AddLine(corners[edge.a].screen, corners[edge.b].screen,
+                            lineColor, lineThickness);
+            }
+        }
+
+        if (options.showDimensionArrows) {
+            auto drawArrow = [&](const ImVec2& from, const ImVec2& to,
+                                 const char* label, ImU32 color) {
+                const float dx = to.x - from.x;
+                const float dy = to.y - from.y;
+                const float length = std::sqrt(dx * dx + dy * dy);
+                if (length < 1.0f) {
+                    return;
+                }
+
+                const float ux = dx / length;
+                const float uy = dy / length;
+                const float px = -uy;
+                const float py = ux;
+                const float headLength = std::clamp(length * 0.12f, 8.0f, 18.0f);
+                const float headWidth = headLength * 0.5f;
+                const float thickness = std::clamp(options.envelopeThickness * 1.2f, 0.8f, 4.0f);
+
+                const ImVec2 shaftEnd(to.x - ux * headLength, to.y - uy * headLength);
+                dl->AddLine(from, shaftEnd, color, thickness);
+                dl->AddTriangleFilled(
+                    to,
+                    ImVec2(to.x - ux * headLength + px * headWidth,
+                           to.y - uy * headLength + py * headWidth),
+                    ImVec2(to.x - ux * headLength - px * headWidth,
+                           to.y - uy * headLength - py * headWidth),
+                    color);
+
+                dl->AddText(ImVec2(to.x + px * 4.0f, to.y + py * 4.0f), color, label);
+            };
+
+            const ImU32 colorX = IM_COL32(240, 95, 95, 245);
+            const ImU32 colorY = IM_COL32(95, 225, 120, 245);
+            const ImU32 colorZ = IM_COL32(110, 165, 250, 245);
+            const ImVec2 origin = corners[0].screen; // (xMin, yMin, zMin)
+
+            drawArrow(origin, corners[1].screen, "X", colorX); // +X direction
+            drawArrow(origin, corners[3].screen, "Y", colorY); // +Y direction
+            drawArrow(origin, corners[4].screen, "Z", colorZ); // +Z direction
         }
     }
 

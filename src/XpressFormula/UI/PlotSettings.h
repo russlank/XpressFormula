@@ -20,6 +20,7 @@ struct PlotSettings {
     float wireThickness = 1.0f;
     bool  showSurfaceEnvelope = true;
     float envelopeThickness = 1.25f;
+    bool  showDimensionArrows = true;
     bool  autoRotate = false;
     float autoRotateSpeedDegPerSec = 20.0f;
 

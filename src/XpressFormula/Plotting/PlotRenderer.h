@@ -19,6 +19,7 @@ public:
         float wireThickness = 1.0f;
         bool  showEnvelope = true;
         float envelopeThickness = 1.25f;
+        bool  showDimensionArrows = true;
     };
 
     /// Draw grid lines (major and minor).

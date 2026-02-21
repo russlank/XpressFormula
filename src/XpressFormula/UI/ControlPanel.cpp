@@ -98,6 +98,7 @@ ControlPanelActions ControlPanel::render(Core::ViewTransform& vt, PlotSettings& 
             ImGui::SliderFloat("Envelope Thickness", &settings.envelopeThickness,
                                0.5f, 3.0f, "%.2f");
         }
+        ImGui::Checkbox("Show XYZ Dimension Arrows", &settings.showDimensionArrows);
 
         ImGui::Checkbox("Auto Rotate", &settings.autoRotate);
         if (settings.autoRotate) {

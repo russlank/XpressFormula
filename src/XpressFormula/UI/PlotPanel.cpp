@@ -70,6 +70,7 @@ void PlotPanel::render(std::vector<FormulaEntry>& formulas,
                     options.wireThickness = settings.wireThickness;
                     options.showEnvelope = settings.showSurfaceEnvelope;
                     options.envelopeThickness = settings.envelopeThickness;
+                    options.showDimensionArrows = settings.showDimensionArrows;
                     Plotting::PlotRenderer::drawSurface3D(dl, vt, f.ast, f.color, options);
                 } else {
                     Plotting::PlotRenderer::drawHeatmap(
