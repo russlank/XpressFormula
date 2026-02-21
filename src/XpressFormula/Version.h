@@ -1,8 +1,8 @@
 // Version.h - Centralized application version metadata.
 #pragma once
 
-#define XF_VERSION_MAJOR 1
-#define XF_VERSION_MINOR 0
+#define XF_VERSION_MAJOR 0
+#define XF_VERSION_MINOR 1
 #define XF_VERSION_PATCH 0
 #define XF_VERSION_BUILD 0
 
