@@ -67,6 +67,27 @@ Run tests:
 .\src\x64\Debug\XpressFormula.Tests.exe
 ```
 
+## Using 2D and 3D Plot Modes
+
+After launch:
+
+1. Add a formula in the sidebar (`+ Add Formula`).
+2. Enter one of these forms:
+   - `sin(x)` for a 2D curve (`y=f(x)`)
+   - `x^2+y^2` or `z=sin(x)*cos(y)` for a 3D surface (`z=f(x,y)`)
+   - `x^2+y^2=100` for an implicit equation contour (`F(x,y)=0`)
+3. In the **View Controls** section:
+   - Choose **3D Surface** or **2D Heatmap** for `x,y` formulas.
+   - Tune azimuth, elevation, z-scale, density, and opacity for 3D.
+4. Use mouse drag to pan and mouse wheel to zoom domain coordinates.
+
+## Export Plot Image
+
+Use the sidebar **Export** section:
+
+1. Click **Save Plot Image...** to export the current plot area to `.png` or `.bmp`.
+2. Click **Copy Plot To Clipboard** to copy the current plot area image.
+
 ## Troubleshooting
 
 - If the app does not open a window, rebuild `Debug|x64` and run again.

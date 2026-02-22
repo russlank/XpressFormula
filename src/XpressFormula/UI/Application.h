@@ -6,9 +6,12 @@
 #include "FormulaPanel.h"
 #include "ControlPanel.h"
 #include "PlotPanel.h"
+#include "PlotSettings.h"
 #include "../Core/ViewTransform.h"
 
+#include <cstdint>
 #include <d3d11.h>
+#include <string>
 #include <vector>
 
 struct HWND__;
@@ -43,6 +46,21 @@ private:
     bool createDeviceD3D(HWND hWnd);
     void cleanupDeviceD3D();
     void renderFrame();
+    bool promptSaveImagePath(std::wstring& path);
+    bool capturePlotPixels(std::vector<std::uint8_t>& pixels, int& width, int& height);
+    bool saveImageToPath(const std::wstring& path,
+                         const std::vector<std::uint8_t>& pixels,
+                         int width, int height, std::string& error);
+    bool savePngToPath(const std::wstring& path,
+                       const std::vector<std::uint8_t>& pixels,
+                       int width, int height, std::string& error);
+    bool saveBmpToPath(const std::wstring& path,
+                       const std::vector<std::uint8_t>& pixels,
+                       int width, int height, std::string& error);
+    bool copyPixelsToClipboard(const std::vector<std::uint8_t>& pixels,
+                               int width, int height, std::string& error);
+    void processPendingExportActions();
+    static std::string narrowUtf8(const std::wstring& text);
 
     HWND                      m_hWnd               = nullptr;
     ID3D11Device*             m_device              = nullptr;
@@ -50,10 +68,15 @@ private:
     IDXGISwapChain*           m_swapChain           = nullptr;
     ID3D11RenderTargetView*   m_renderTargetView    = nullptr;
     bool                      m_swapChainOccluded   = false;
+    bool                      m_comInitialized      = false;
 
     // Application state
     std::vector<FormulaEntry> m_formulas;
     Core::ViewTransform       m_viewTransform;
+    PlotSettings              m_plotSettings;
+    bool                      m_pendingSavePlotImage = false;
+    bool                      m_pendingCopyPlotImage = false;
+    std::string               m_exportStatus;
 
     // UI panels
     FormulaPanel  m_formulaPanel;

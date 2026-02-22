@@ -6,7 +6,8 @@
 namespace XpressFormula::UI {
 
 void PlotPanel::render(std::vector<FormulaEntry>& formulas,
-                       Core::ViewTransform& vt) {
+                       Core::ViewTransform& vt,
+                       PlotSettings& settings) {
     // Update the viewport transform from the ImGui window
     ImVec2 pos  = ImGui::GetCursorScreenPos();
     ImVec2 size = ImGui::GetContentRegionAvail();
@@ -35,19 +36,55 @@ void PlotPanel::render(std::vector<FormulaEntry>& formulas,
     Plotting::PlotRenderer::drawAxes(dl, vt);
     Plotting::PlotRenderer::drawAxisLabels(dl, vt);
 
+    bool hasSurface = false;
+    for (const auto& formula : formulas) {
+        if (formula.visible && formula.isValid() &&
+            formula.renderKind == FormulaRenderKind::Surface3D) {
+            hasSurface = true;
+            break;
+        }
+    }
+
+    if (hasSurface && settings.autoRotate) {
+        settings.azimuthDeg += ImGui::GetIO().DeltaTime * settings.autoRotateSpeedDegPerSec;
+        if (settings.azimuthDeg > 180.0f) {
+            settings.azimuthDeg -= 360.0f;
+        }
+    }
+
     // Draw each formula
     for (auto& f : formulas) {
         if (!f.visible || !f.isValid()) continue;
-        switch (f.variableCount) {
-            case 1:
+        switch (f.renderKind) {
+            case FormulaRenderKind::Curve2D:
                 Plotting::PlotRenderer::drawCurve2D(dl, vt, f.ast, f.color);
                 break;
-            case 2:
-                Plotting::PlotRenderer::drawHeatmap(dl, vt, f.ast);
-                // Also draw contour at z=0 as a curve overlay hint
+            case FormulaRenderKind::Surface3D:
+                if (settings.xyRenderMode == XYRenderMode::Surface3D) {
+                    Plotting::PlotRenderer::Surface3DOptions options;
+                    options.azimuthDeg = settings.azimuthDeg;
+                    options.elevationDeg = settings.elevationDeg;
+                    options.zScale = settings.zScale;
+                    options.resolution = settings.surfaceResolution;
+                    options.opacity = settings.surfaceOpacity;
+                    options.wireThickness = settings.wireThickness;
+                    options.showEnvelope = settings.showSurfaceEnvelope;
+                    options.envelopeThickness = settings.envelopeThickness;
+                    options.showDimensionArrows = settings.showDimensionArrows;
+                    Plotting::PlotRenderer::drawSurface3D(dl, vt, f.ast, f.color, options);
+                } else {
+                    Plotting::PlotRenderer::drawHeatmap(
+                        dl, vt, f.ast, f.color, settings.heatmapOpacity);
+                }
                 break;
-            case 3:
-                Plotting::PlotRenderer::drawCrossSection(dl, vt, f.ast, f.zSlice);
+            case FormulaRenderKind::Implicit2D:
+                Plotting::PlotRenderer::drawImplicitContour2D(dl, vt, f.ast, f.color, 2.0f);
+                break;
+            case FormulaRenderKind::ScalarField3D:
+                Plotting::PlotRenderer::drawCrossSection(
+                    dl, vt, f.ast, f.zSlice, f.color, settings.heatmapOpacity);
+                break;
+            default:
                 break;
         }
     }
@@ -96,7 +133,12 @@ void PlotPanel::render(std::vector<FormulaEntry>& formulas,
         ImVec2 mousePos = ImGui::GetIO().MousePos;
         double wx, wy;
         vt.screenToWorld(mousePos.x, mousePos.y, wx, wy);
-        ImGui::SetTooltip("x = %.4g\ny = %.4g", wx, wy);
+        if (hasSurface && settings.xyRenderMode == XYRenderMode::Surface3D) {
+            ImGui::SetTooltip("x = %.4g\ny = %.4g\n3D camera: az %.1f, el %.1f",
+                              wx, wy, settings.azimuthDeg, settings.elevationDeg);
+        } else {
+            ImGui::SetTooltip("x = %.4g\ny = %.4g", wx, wy);
+        }
     }
 }
 

@@ -85,5 +85,7 @@ old-code/
 .env
 .env.local
 requirements.txt
-imgui.ini
+/src/XpressFormula/imgui.ini
 **/enc_temp_folder/**/*
+/build/**/*
+/artifacts/**/*

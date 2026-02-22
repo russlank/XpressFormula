@@ -1,0 +1,37 @@
+#include "resource.h"
+#include "Version.h"
+#include <winver.h>
+
+IDI_APPICON ICON "Resources\\XpressFormula.ico"
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION XF_VERSION_FILEVERSION
+ PRODUCTVERSION XF_VERSION_FILEVERSION
+ FILEFLAGSMASK 0x3fL
+#ifdef _DEBUG
+ FILEFLAGS VS_FF_DEBUG
+#else
+ FILEFLAGS 0x0L
+#endif
+ FILEOS VOS_NT_WINDOWS32
+ FILETYPE VFT_APP
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "CompanyName", "Digixoil\0"
+            VALUE "FileDescription", "XpressFormula Mathematical Plotter\0"
+            VALUE "FileVersion", XF_VERSION_STRING "\0"
+            VALUE "InternalName", "XpressFormula\0"
+            VALUE "OriginalFilename", "XpressFormula.exe\0"
+            VALUE "ProductName", "XpressFormula\0"
+            VALUE "ProductVersion", XF_VERSION_STRING "\0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0409, 1200
+    END
+END

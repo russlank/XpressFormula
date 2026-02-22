@@ -1,0 +1,124 @@
+name: Release Packaging
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: windows-latest
+    env:
+      DOTNET_VERSION: "9.0.x"
+      PYTHON_VERSION: "3.12"
+      WIX_VERSION: "4.0.5"
+      BUILD_CONFIGURATION: "Release"
+      BUILD_PLATFORM: "x64"
+      MSVC_PLATFORM_TOOLSET: "v143"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install WiX CLI
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $PSNativeCommandUseErrorActionPreference = $true
+
+          $globalTools = dotnet tool list --global
+          if ($globalTools -match '(^|\s)wix(\s|$)') {
+            dotnet tool update --global wix --version $env:WIX_VERSION
+          }
+          else {
+            dotnet tool install --global wix --version $env:WIX_VERSION
+          }
+
+          $extensions = ""
+          $PSNativeCommandUseErrorActionPreference = $false
+          try {
+            $extensions = wix extension list --global 2>$null
+            if ($extensions -match 'WixToolset\.Bal\.wixext') {
+              wix extension remove --global WixToolset.Bal.wixext 2>$null
+            }
+          }
+          finally {
+            $PSNativeCommandUseErrorActionPreference = $true
+          }
+          wix extension add --global "WixToolset.Bal.wixext/$env:WIX_VERSION"
+          $wixVersion = (wix --version).Trim()
+          if (-not $wixVersion.StartsWith("4.")) {
+            throw "Expected WiX 4.x but found '$wixVersion'."
+          }
+          Write-Host "Using WiX $wixVersion"
+
+      - name: Read App Version
+        id: version
+        shell: pwsh
+        run: |
+          $version = python scripts/get_version.py
+          if (-not $version) { throw "Failed to read version from Version.h" }
+          "app_version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Validate Tag Matches Version
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          $expected = "v${{ steps.version.outputs.app_version }}"
+          $actual = "${{ github.ref_name }}"
+          if ($actual -ne $expected) {
+            throw "Tag '$actual' does not match Version.h ('$expected')."
+          }
+
+      - name: Build Release Binary
+        shell: pwsh
+        run: |
+          $solutionDir = Join-Path $env:GITHUB_WORKSPACE "src\"
+          Write-Host "Building with Configuration=$env:BUILD_CONFIGURATION Platform=$env:BUILD_PLATFORM PlatformToolset=$env:MSVC_PLATFORM_TOOLSET"
+          msbuild src\XpressFormula\XpressFormula.vcxproj /t:Build /m `
+            /p:Configuration=$env:BUILD_CONFIGURATION `
+            /p:Platform=$env:BUILD_PLATFORM `
+            /p:PlatformToolset=$env:MSVC_PLATFORM_TOOLSET `
+            /p:SolutionDir="$solutionDir" `
+            /p:IntDir="$env:GITHUB_WORKSPACE\build\obj\" `
+            /p:OutDir="$env:GITHUB_WORKSPACE\build\bin\"
+
+      - name: Build MSI and Setup EXE Packages
+        shell: pwsh
+        run: |
+          .\packaging\build-packages.ps1 `
+            -AppExePath "$env:GITHUB_WORKSPACE\build\bin\XpressFormula.exe" `
+            -Version "${{ steps.version.outputs.app_version }}" `
+            -RequiredWixVersion "$env:WIX_VERSION" `
+            -OutputDir "artifacts\release"
+
+      - name: Upload Packaging Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: xpressformula-packages-${{ steps.version.outputs.app_version }}
+          path: artifacts/release/*
+
+      - name: Publish GitHub Release Assets
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/release/*.exe
+            artifacts/release/*.msi

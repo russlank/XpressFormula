@@ -4,9 +4,12 @@ XpressFormula is a Windows desktop proof-of-concept for entering and plotting ma
 
 The app supports:
 
-- `f(x)` 2D curves
-- `f(x,y)` heat maps
+- `y=f(x)` 2D curves
+- `z=f(x,y)` 3D surfaces (with optional 2D heat-map view)
+- `F(x,y)=0` implicit 2D equations such as `x^2+y^2=100`
 - `f(x,y,z)` cross-sections at configurable `z` slices
+- Plot image export to `.png`/`.bmp` and clipboard copy
+- Versioned binary metadata and installer packaging (`.msi` + setup `.exe`)
 
 ## Project Goals
 
@@ -48,6 +51,7 @@ Common path:
 - Architecture overview: `doc/architecture.md`
 - Expression language reference: `doc/expression-language.md`
 - Testing guide: `doc/testing.md`
+- Release and packaging guide: `doc/release-packaging.md`
 - Vendor dependencies: `doc/project-vendors.md`
 
 ## Third-Party Dependencies
