@@ -4,6 +4,10 @@
 - Project overview: [`../README.md`](../README.md)
 - Run and debug guide: [`run-guide.md`](run-guide.md)
 - Architecture: [`architecture.md`](architecture.md)
+- Math API guide (internal math types and abstractions): [`math-api-guide.md`](math-api-guide.md)
+- Math API cheatsheet (quick reference + usage locations): [`math-api-cheatsheet.md`](math-api-cheatsheet.md)
+- Algorithms guide (beginner-friendly): [`algorithms-guide.md`](algorithms-guide.md)
+- ImGui implementation guide: [`imgui-implementation-guide.md`](imgui-implementation-guide.md)
 - Expression language: [`expression-language.md`](expression-language.md)
 - Testing: [`testing.md`](testing.md)
 - Release and packaging: [`release-packaging.md`](release-packaging.md)
@@ -14,9 +18,13 @@ Recommended reading order for new contributors:
 1. [`../README.md`](../README.md)
 2. [`run-guide.md`](run-guide.md)
 3. [`architecture.md`](architecture.md)
-4. [`expression-language.md`](expression-language.md)
-5. [`testing.md`](testing.md)
-6. [`release-packaging.md`](release-packaging.md)
+4. [`math-api-guide.md`](math-api-guide.md)
+5. [`math-api-cheatsheet.md`](math-api-cheatsheet.md)
+6. [`algorithms-guide.md`](algorithms-guide.md)
+7. [`imgui-implementation-guide.md`](imgui-implementation-guide.md)
+8. [`expression-language.md`](expression-language.md)
+9. [`testing.md`](testing.md)
+10. [`release-packaging.md`](release-packaging.md)
 
 ## License
 

@@ -7,9 +7,13 @@
     <File Path="../.github/workflows/release-packaging.yml" />
   </Folder>
   <Folder Name="/doc/">
+    <File Path="../doc/algorithms-guide.md" />
     <File Path="../doc/architecture.md" />
     <File Path="../doc/expression-language.md" />
+    <File Path="../doc/imgui-implementation-guide.md" />
     <File Path="../doc/index.md" />
+    <File Path="../doc/math-api-cheatsheet.md" />
+    <File Path="../doc/math-api-guide.md" />
     <File Path="../doc/project-vendors.md" />
     <File Path="../doc/release-packaging.md" />
     <File Path="../doc/run-guide.md" />
