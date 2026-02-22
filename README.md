@@ -1,6 +1,12 @@
 <!-- SPDX-License-Identifier: MIT -->
 # XpressFormula
 
+[![Latest Release](https://img.shields.io/github/v/release/russlank/XpressFormula?display_name=tag&sort=semver)](https://github.com/russlank/XpressFormula/releases/latest)
+[![Release Date](https://img.shields.io/github/release-date/russlank/XpressFormula)](https://github.com/russlank/XpressFormula/releases/latest)
+[![Release Packaging](https://img.shields.io/github/actions/workflow/status/russlank/XpressFormula/release-packaging.yml?branch=main&label=release%20packaging)](https://github.com/russlank/XpressFormula/actions/workflows/release-packaging.yml)
+[![License](https://img.shields.io/github/license/russlank/XpressFormula)](LICENSE)
+[![Documentation](https://img.shields.io/badge/docs-index-blue)](doc/index.md)
+
 XpressFormula is a Windows desktop proof-of-concept for entering and plotting mathematical expressions with an ImGui-based UI.
 
 The app supports:
@@ -29,7 +35,7 @@ The app supports:
 
 Use the detailed guide:
 
-- `doc/run-guide.md`
+- [`doc/run-guide.md`](doc/run-guide.md)
 
 Common path:
 
@@ -39,26 +45,26 @@ Common path:
 
 ## Repository Layout
 
-- `src/XpressFormula` application code
-- `src/XpressFormula.Tests` test runner and tests
-- `src/vendor/imgui` vendored Dear ImGui
-- `doc` project documentation
-- `.vscode` VS Code tasks and launch configurations
+- [`src/XpressFormula`](src/XpressFormula) application code
+- [`src/XpressFormula.Tests`](src/XpressFormula.Tests) test runner and tests
+- [`src/vendor/imgui`](src/vendor/imgui) vendored Dear ImGui
+- [`doc`](doc) project documentation
+- [`.vscode`](.vscode) VS Code tasks and launch configurations
 
 ## Documentation
 
-- Documentation index: `doc/index.md`
-- Run and debug guide: `doc/run-guide.md`
-- Architecture overview: `doc/architecture.md`
-- Expression language reference: `doc/expression-language.md`
-- Testing guide: `doc/testing.md`
-- Release and packaging guide: `doc/release-packaging.md`
-- Vendor dependencies: `doc/project-vendors.md`
+- Documentation index: [`doc/index.md`](doc/index.md)
+- Run and debug guide: [`doc/run-guide.md`](doc/run-guide.md)
+- Architecture overview: [`doc/architecture.md`](doc/architecture.md)
+- Expression language reference: [`doc/expression-language.md`](doc/expression-language.md)
+- Testing guide: [`doc/testing.md`](doc/testing.md)
+- Release and packaging guide: [`doc/release-packaging.md`](doc/release-packaging.md)
+- Vendor dependencies: [`doc/project-vendors.md`](doc/project-vendors.md)
 
 ## Third-Party Dependencies
 
 This repository vendors Dear ImGui.
-See `doc/project-vendors.md` for source, license, and update notes.
+See [`doc/project-vendors.md`](doc/project-vendors.md) for source, license, and update notes.
 
 ## Notes
 
@@ -68,4 +74,4 @@ See `doc/project-vendors.md` for source, license, and update notes.
 
 ## License
 
-This project is licensed under the MIT License. See `LICENSE`.
+This project is licensed under the MIT License. See [`LICENSE`](LICENSE).
