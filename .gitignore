@@ -89,3 +89,4 @@ requirements.txt
 **/enc_temp_folder/**/*
 /build/**/*
 /artifacts/**/*
+/src/XpressFormula/imgui.ini
