@@ -11,11 +11,11 @@ permissions:
 
 jobs:
   package:
-    runs-on: windows-latest
+    runs-on: windows-2025-vs2026
     env:
       DOTNET_VERSION: "9.0.x"
       PYTHON_VERSION: "3.12"
-      WIX_VERSION: "4.0.5"
+      WIX_VERSION: "6.0.2"
       BUILD_CONFIGURATION: "Release"
       BUILD_PLATFORM: "x64"
       MSVC_PLATFORM_TOOLSET: "v143"
@@ -26,6 +26,9 @@ jobs:
 
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v2
+        with:
+          vs-version: "[18.0,19.0)"
+          vs-prerelease: true
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -36,6 +39,11 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Show MSBuild Version
+        shell: pwsh
+        run: |
+          msbuild -version
 
       - name: Install WiX CLI
         shell: pwsh
@@ -64,8 +72,8 @@ jobs:
           }
           wix extension add --global "WixToolset.Bal.wixext/$env:WIX_VERSION"
           $wixVersion = (wix --version).Trim()
-          if (-not $wixVersion.StartsWith("4.")) {
-            throw "Expected WiX 4.x but found '$wixVersion'."
+          if (-not $wixVersion.StartsWith("6.")) {
+            throw "Expected WiX 6.x but found '$wixVersion'."
           }
           Write-Host "Using WiX $wixVersion"
 

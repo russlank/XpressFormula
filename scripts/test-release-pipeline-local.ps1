@@ -2,7 +2,7 @@ param(
     [string]$Configuration = "Release",
     [string]$Platform = "x64",
     [string]$PlatformToolset = "v143",
-    [string]$WixVersion = "4.0.5",
+    [string]$WixVersion = "6.0.2",
     [string]$OutputDir = "artifacts\release",
     [switch]$SkipPackaging
 )
@@ -63,7 +63,7 @@ try {
 
     $wixCommand = Get-Command wix -ErrorAction SilentlyContinue
     if (-not $wixCommand) {
-        throw "WiX CLI was not found in PATH. Install WiX 4.x: dotnet tool uninstall --global wix ; dotnet tool install --global wix --version $WixVersion ; wix extension add --global WixToolset.Bal.wixext/$WixVersion"
+        throw "WiX CLI was not found in PATH. Install WiX 6.x: dotnet tool uninstall --global wix ; dotnet tool install --global wix --version $WixVersion ; wix extension add --global WixToolset.Bal.wixext/$WixVersion"
     }
 
     $wixInstalledVersion = (& wix --version).Trim()
@@ -71,8 +71,8 @@ try {
     if ($wixInstalledVersion -match '^(\d+)\.') {
         $wixMajor = [int]$Matches[1]
     }
-    if ($wixMajor -ne 4) {
-        throw "Unsupported WiX version '$wixInstalledVersion'. Install WiX 4.x: dotnet tool uninstall --global wix ; dotnet tool install --global wix --version $WixVersion ; wix extension add --global WixToolset.Bal.wixext/$WixVersion"
+    if ($wixMajor -ne 6) {
+        throw "Unsupported WiX version '$wixInstalledVersion'. Install WiX 6.x: dotnet tool uninstall --global wix ; dotnet tool install --global wix --version $WixVersion ; wix extension add --global WixToolset.Bal.wixext/$WixVersion"
     }
 
     Write-Host "Using WiX: $wixInstalledVersion"

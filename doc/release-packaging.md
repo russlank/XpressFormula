@@ -35,7 +35,7 @@ The release job pins key versions with environment variables:
 
 - `DOTNET_VERSION` (currently `9.0.x`)
 - `PYTHON_VERSION` (currently `3.12`)
-- `WIX_VERSION` (currently `4.0.5`)
+- `WIX_VERSION` (currently `6.0.2`)
 - `MSVC_PLATFORM_TOOLSET` (currently `v143`)
 - `BUILD_CONFIGURATION` (currently `Release`)
 - `BUILD_PLATFORM` (currently `x64`)
@@ -43,18 +43,20 @@ The release job pins key versions with environment variables:
 `MSVC_PLATFORM_TOOLSET` is explicitly passed to MSBuild using `/p:PlatformToolset=...`.
 This prevents runner mismatch errors like `MSB8020` when a project file was saved with an unavailable toolset.
 
+The workflow currently uses `windows-2025-vs2026` to get MSBuild 18.x/VS 2026 toolchain on GitHub-hosted runners.
+
 ## Local Packaging (Windows)
 
 Prerequisites:
 
 - Visual Studio C++ build tools with toolset `v143` installed
-- WiX Toolset v4 CLI (`wix`)
-- WiX Burn extension (`WixToolset.Bal.wixext`) matching your WiX v4 version
+- WiX Toolset v6 CLI (`wix`)
+- WiX Burn extension (`WixToolset.Bal.wixext`) matching your WiX v6 version
 
 Install WiX CLI and extension:
 
 ```powershell
-$wixVersion = "4.0.5"
+$wixVersion = "6.0.2"
 dotnet tool uninstall --global wix
 dotnet tool install --global wix --version $wixVersion
 wix extension add --global WixToolset.Bal.wixext/$wixVersion
@@ -62,6 +64,7 @@ wix --version
 ```
 
 `packaging/build-packages.ps1` expects the BAL extension to already be installed and prints the exact install command if it is missing.
+For WiX 6, the script also auto-detects and uses the extension DLL path when the extension cache reports the package as damaged.
 
 Build app binary:
 
@@ -88,7 +91,7 @@ $version = python scripts/get_version.py
 
 ## Test the Release Pipeline Locally
 
-`windows-latest` GitHub runner behavior cannot be reproduced with Linux-based `act` for this workflow.
+`windows-2025-vs2026` GitHub runner behavior cannot be reproduced with Linux-based `act` for this workflow.
 Use the local Windows simulation script instead:
 
 ```powershell
@@ -104,7 +107,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-release-pipel
 # Override toolset or output directory
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-release-pipeline-local.ps1 `
   -PlatformToolset v143 `
-  -WixVersion 4.0.5 `
+  -WixVersion 6.0.2 `
   -OutputDir artifacts\release-local
 ```
 
