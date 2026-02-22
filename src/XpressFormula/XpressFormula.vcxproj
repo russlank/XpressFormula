@@ -13,6 +13,12 @@
     <RootNamespace>XpressFormula</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
+  <PropertyGroup>
+    <XfBuildRepoUrl Condition="'$(XfBuildRepoUrl)'==''">unknown</XfBuildRepoUrl>
+    <XfBuildBranch Condition="'$(XfBuildBranch)'==''">unknown</XfBuildBranch>
+    <XfBuildCommit Condition="'$(XfBuildCommit)'==''">unknown</XfBuildCommit>
+    <XfBuildVersion Condition="'$(XfBuildVersion)'==''">unknown</XfBuildVersion>
+  </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
@@ -64,7 +70,7 @@
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>XF_BUILD_REPO_URL=&quot;$(XfBuildRepoUrl)&quot;;XF_BUILD_BRANCH=&quot;$(XfBuildBranch)&quot;;XF_BUILD_COMMIT=&quot;$(XfBuildCommit)&quot;;XF_BUILD_VERSION=&quot;$(XfBuildVersion)&quot;;WIN32;_DEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <AdditionalIncludeDirectories>$(ProjectDir);$(SolutionDir)vendor\imgui;$(SolutionDir)vendor\imgui\backends;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
@@ -81,7 +87,7 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>XF_BUILD_REPO_URL=&quot;$(XfBuildRepoUrl)&quot;;XF_BUILD_BRANCH=&quot;$(XfBuildBranch)&quot;;XF_BUILD_COMMIT=&quot;$(XfBuildCommit)&quot;;XF_BUILD_VERSION=&quot;$(XfBuildVersion)&quot;;WIN32;NDEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <AdditionalIncludeDirectories>$(ProjectDir);$(SolutionDir)vendor\imgui;$(SolutionDir)vendor\imgui\backends;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
@@ -98,7 +104,7 @@
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>_DEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>XF_BUILD_REPO_URL=&quot;$(XfBuildRepoUrl)&quot;;XF_BUILD_BRANCH=&quot;$(XfBuildBranch)&quot;;XF_BUILD_COMMIT=&quot;$(XfBuildCommit)&quot;;XF_BUILD_VERSION=&quot;$(XfBuildVersion)&quot;;_DEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <AdditionalIncludeDirectories>$(ProjectDir);$(SolutionDir)vendor\imgui;$(SolutionDir)vendor\imgui\backends;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
@@ -115,7 +121,7 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>NDEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>XF_BUILD_REPO_URL=&quot;$(XfBuildRepoUrl)&quot;;XF_BUILD_BRANCH=&quot;$(XfBuildBranch)&quot;;XF_BUILD_COMMIT=&quot;$(XfBuildCommit)&quot;;XF_BUILD_VERSION=&quot;$(XfBuildVersion)&quot;;NDEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <AdditionalIncludeDirectories>$(ProjectDir);$(SolutionDir)vendor\imgui;$(SolutionDir)vendor\imgui\backends;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>

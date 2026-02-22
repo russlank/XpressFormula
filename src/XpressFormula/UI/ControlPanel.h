@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // ControlPanel.h - ImGui panel for zoom, pan, and reset controls.
 #pragma once
 

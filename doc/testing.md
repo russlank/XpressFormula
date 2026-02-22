@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: MIT -->
 # Testing Guide
 
 ## Test Project
@@ -45,3 +46,7 @@ The project uses a lightweight in-repo test harness (`CppUnitTest.h`) and does n
 - Exit code `0` means all tests passed.
 - Non-zero exit means at least one failure.
 - Output includes `[PASS]` / `[FAIL]` lines per test and final summary.
+
+## License
+
+This document is licensed under the MIT License. See `../LICENSE`.

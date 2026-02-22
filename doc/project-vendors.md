@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: MIT -->
 # Project Vendors
 
 This document tracks third-party code vendored directly into this repository.
@@ -23,3 +24,8 @@ This document tracks third-party code vendored directly into this repository.
    - application (`Debug|x64`)
    - tests (`XpressFormula.Tests`)
 4. Update this document with the new pinned revision.
+
+## License
+
+This documentation file is licensed under the MIT License. See `../LICENSE`.
+Vendored dependencies may use their own licenses as listed above.

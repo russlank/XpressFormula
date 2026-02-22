@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: MIT -->
 # Expression Language Reference
 
 ## Supported Syntax
@@ -85,3 +86,7 @@ The app chooses a render mode from the parsed variables and equation form:
 - `f(x,y,z)` scalar-field cross-section for formulas that use `x`, `y`, and `z`
 
 Only variables `x`, `y`, and `z` are supported for plotting.
+
+## License
+
+This document is licensed under the MIT License. See `../LICENSE`.

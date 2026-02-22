@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 param(
     [Parameter(Mandatory = $true)]
     [string]$AppExePath,
@@ -7,7 +8,7 @@ param(
 
     [string]$OutputDir = "artifacts\release",
 
-    [string]$RequiredWixVersion = "4.0.5",
+    [string]$RequiredWixVersion = "6.0.2",
 
     [string]$WixBalExtensionId = "WixToolset.Bal.wixext"
 )
@@ -35,7 +36,7 @@ $bundleWxs = Join-Path $PSScriptRoot "wix\Bundle.wxs"
 
 $wixCommand = Get-Command wix -ErrorAction SilentlyContinue
 if (-not $wixCommand) {
-    throw "WiX CLI was not found in PATH. Install WiX 4.x: dotnet tool uninstall --global wix ; dotnet tool install --global wix --version $RequiredWixVersion ; wix extension add --global WixToolset.Bal.wixext/$RequiredWixVersion"
+    throw "WiX CLI was not found in PATH. Install WiX 6.x: dotnet tool uninstall --global wix ; dotnet tool install --global wix --version $RequiredWixVersion ; wix extension add --global WixToolset.Bal.wixext/$RequiredWixVersion"
 }
 
 $wixVersionText = (& wix --version).Trim()
@@ -44,8 +45,23 @@ if ($wixVersionText -match '^(\d+)\.') {
     $wixMajor = [int]$Matches[1]
 }
 
-if ($wixMajor -ne 4) {
-    throw "Unsupported WiX version '$wixVersionText'. This repository currently requires WiX 4.x. Run: dotnet tool uninstall --global wix ; dotnet tool install --global wix --version $RequiredWixVersion ; wix extension add --global WixToolset.Bal.wixext/$RequiredWixVersion"
+if ($wixMajor -ne 6) {
+    throw "Unsupported WiX version '$wixVersionText'. This repository currently requires WiX 6.x. Run: dotnet tool uninstall --global wix ; dotnet tool install --global wix --version $RequiredWixVersion ; wix extension add --global WixToolset.Bal.wixext/$RequiredWixVersion"
+}
+
+$wixBalExtensionArg = $WixBalExtensionId
+if ($wixMajor -ge 6) {
+    $wixExtensionRoot = Join-Path $env:USERPROFILE ".wix\extensions\$WixBalExtensionId\$RequiredWixVersion\wixext6"
+    $wixBalExtensionCandidates = @(
+        (Join-Path $wixExtensionRoot "WixToolset.BootstrapperApplications.wixext.dll")
+        (Join-Path $wixExtensionRoot "$WixBalExtensionId.dll")
+    )
+
+    $wixBalExtensionPath = $wixBalExtensionCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+    if ($wixBalExtensionPath) {
+        $wixBalExtensionArg = $wixBalExtensionPath
+        Write-Host "Using WiX BAL extension from file: $wixBalExtensionArg"
+    }
 }
 
 & wix build $productWxs `
@@ -61,7 +77,7 @@ if ($LASTEXITCODE -ne 0 -or -not (Test-Path $msiPath)) {
 
 & wix build $bundleWxs `
     -arch x64 `
-    -ext $WixBalExtensionId `
+    -ext $wixBalExtensionArg `
     -d "MsiPath=$msiPath" `
     -d "AppIconPath=$iconPath" `
     -d "ProductVersion=$Version" `

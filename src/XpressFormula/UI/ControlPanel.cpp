@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // ControlPanel.cpp - Zoom / pan / reset controls implementation.
 #include "ControlPanel.h"
 #include "imgui.h"

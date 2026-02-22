@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: MIT -->
 # XpressFormula Run Guide
 
 ## Prerequisites
@@ -88,7 +89,22 @@ Use the sidebar **Export** section:
 1. Click **Save Plot Image...** to export the current plot area to `.png` or `.bmp`.
 2. Click **Copy Plot To Clipboard** to copy the current plot area image.
 
+## Build Metadata Display
+
+The sidebar includes a **Build Metadata** section showing:
+
+- repository URL
+- branch
+- commit
+- build version
+
+These values are embedded at compile time by CI/local pipeline scripts.
+
 ## Troubleshooting
 
 - If the app does not open a window, rebuild `Debug|x64` and run again.
 - If startup fails, the app now shows a startup error dialog to indicate initialization failure.
+
+## License
+
+This document is licensed under the MIT License. See `../LICENSE`.

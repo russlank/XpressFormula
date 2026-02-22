@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: MIT -->
 # Architecture
 
 ## High-Level Design
@@ -71,3 +72,7 @@ Render mapping:
   - Hardware without debug layer
   - WARP + debug layer
   - WARP without debug layer
+
+## License
+
+This document is licensed under the MIT License. See `../LICENSE`.
