@@ -34,6 +34,8 @@ const ExamplePattern kExamplePatterns[] = {
     { "Implicit 2D",    "x^2 + y^2 = 100" },
     { "Implicit 2D",    "pow(x,2)/25 + pow(y,2)/9 = 1" },
     { "Scalar field",   "x^2 + y^2 + z^2 = 16" },
+    { "Implicit 3D",    "(x^2+y^2+z^2+21)^2 - 100*(x^2+y^2) = 0" },
+    { "Implicit 3D",    "(x^2+y^2+z^2+5)^2 - 36*(x^2+y^2) = 0" },
     { "Scalar field",   "sin(x) + cos(y) + z = 0" },
 };
 
