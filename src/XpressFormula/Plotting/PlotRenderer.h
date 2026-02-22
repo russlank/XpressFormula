@@ -15,11 +15,13 @@ public:
         float elevationDeg = 30.0f;
         float zScale = 1.0f;
         int   resolution = 36;
+        int   implicitResolution = 64;
         float opacity = 0.82f;
         float wireThickness = 1.0f;
         bool  showEnvelope = true;
         float envelopeThickness = 1.25f;
         bool  showDimensionArrows = true;
+        float implicitZCenter = 0.0f;
     };
 
     /// Draw grid lines (major and minor).
@@ -51,6 +53,11 @@ public:
     static void drawSurface3D(ImDrawList* dl, const Core::ViewTransform& vt,
                               const Core::ASTNodePtr& ast, const float color[4],
                               const Surface3DOptions& options);
+
+    /// Plot the implicit 3D surface F(x,y,z)=0 using sampled triangles.
+    static void drawImplicitSurface3D(ImDrawList* dl, const Core::ViewTransform& vt,
+                                      const Core::ASTNodePtr& ast, const float color[4],
+                                      const Surface3DOptions& options);
 
     /// Plot the zero contour F(x,y)=0 for implicit equations.
     static void drawImplicitContour2D(ImDrawList* dl, const Core::ViewTransform& vt,

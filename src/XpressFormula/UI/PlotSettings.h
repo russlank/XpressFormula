@@ -29,6 +29,7 @@ struct PlotSettings {
     float elevationDeg = -60.0f;
     float zScale = 1.5f;
     int   surfaceResolution = 50;
+    int   implicitSurfaceResolution = 64;
     float surfaceOpacity = 0.80f;
     float wireThickness = 2.0f;
     bool  showSurfaceEnvelope = true;

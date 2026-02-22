@@ -291,14 +291,17 @@ struct FormulaEntry {
     }
 
     bool isValid() const { return ast != nullptr && error.empty(); }
-    bool uses3DSurface() const { return renderKind == FormulaRenderKind::Surface3D; }
+    bool uses3DSurface() const {
+        return renderKind == FormulaRenderKind::Surface3D ||
+               (renderKind == FormulaRenderKind::ScalarField3D && isEquation);
+    }
 
     const char* typeLabel() const {
         switch (renderKind) {
             case FormulaRenderKind::Curve2D:      return "y = f(x)";
             case FormulaRenderKind::Surface3D:    return "z = f(x,y)";
             case FormulaRenderKind::Implicit2D:   return "F(x,y) = 0";
-            case FormulaRenderKind::ScalarField3D:return "f(x,y,z)";
+            case FormulaRenderKind::ScalarField3D:return isEquation ? "F(x,y,z) = 0" : "f(x,y,z)";
             default:                              return "invalid";
         }
     }
