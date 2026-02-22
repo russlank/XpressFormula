@@ -40,6 +40,8 @@ jobs:
       - name: Install WiX CLI
         shell: pwsh
         run: |
+          $ErrorActionPreference = "Stop"
+          $PSNativeCommandUseErrorActionPreference = $true
           dotnet tool uninstall --global wix 2>$null
           dotnet tool install --global wix --version $env:WIX_VERSION
           wix extension remove --global WixToolset.Bal.wixext 2>$null

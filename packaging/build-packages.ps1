@@ -7,7 +7,9 @@ param(
 
     [string]$OutputDir = "artifacts\release",
 
-    [string]$RequiredWixVersion = "4.0.5"
+    [string]$RequiredWixVersion = "4.0.5",
+
+    [string]$WixBalExtensionId = "WixToolset.Bal.wixext"
 )
 
 $ErrorActionPreference = "Stop"
@@ -48,21 +50,27 @@ if ($wixMajor -ne 4) {
 
 & wix build $productWxs `
     -arch x64 `
-    -dAppExePath="$resolvedExe" `
-    -dAppIconPath="$iconPath" `
-    -dProductVersion="$Version" `
+    -d "AppExePath=$resolvedExe" `
+    -d "AppIconPath=$iconPath" `
+    -d "ProductVersion=$Version" `
     -out $msiPath
 
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path $msiPath)) {
     throw "Failed to build MSI package '$msiPath'."
 }
 
+$wixBalExtensionRef = "$WixBalExtensionId/$RequiredWixVersion"
+& wix extension add --global $wixBalExtensionRef
+if ($LASTEXITCODE -ne 0) {
+    throw "Failed to install WiX BAL extension '$wixBalExtensionRef'."
+}
+
 & wix build $bundleWxs `
     -arch x64 `
-    -ext WixToolset.Bal.wixext `
-    -dMsiPath="$msiPath" `
-    -dAppIconPath="$iconPath" `
-    -dProductVersion="$Version" `
+    -ext $WixBalExtensionId `
+    -d "MsiPath=$msiPath" `
+    -d "AppIconPath=$iconPath" `
+    -d "ProductVersion=$Version" `
     -out $bundlePath
 
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path $bundlePath)) {
