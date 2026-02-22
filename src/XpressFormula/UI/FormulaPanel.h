@@ -14,7 +14,14 @@ public:
     void render(std::vector<FormulaEntry>& formulas);
 
 private:
+    void openEditor(const FormulaEntry& formula, int formulaIndex);
+    void renderEditorDialog(std::vector<FormulaEntry>& formulas);
+
     int m_nextColorIndex = 0;
+    bool m_openEditorPopupNextFrame = false;
+    bool m_focusEditorInput = false;
+    int  m_editorFormulaIndex = -1;
+    char m_editorBuffer[2048] = {};
 };
 
 } // namespace XpressFormula::UI
