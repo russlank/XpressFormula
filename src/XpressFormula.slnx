@@ -3,6 +3,27 @@
     <Platform Name="x64" />
     <Platform Name="x86" />
   </Configurations>
+  <Folder Name="/ci/">
+    <File Path="../.github/workflows/release-packaging.yml" />
+  </Folder>
+  <Folder Name="/doc/">
+    <File Path="../doc/architecture.md" />
+    <File Path="../doc/expression-language.md" />
+    <File Path="../doc/index.md" />
+    <File Path="../doc/project-vendors.md" />
+    <File Path="../doc/release-packaging.md" />
+    <File Path="../doc/run-guide.md" />
+    <File Path="../doc/testing.md" />
+  </Folder>
+  <Folder Name="/packaging/">
+    <File Path="../packaging/build-packages.ps1" />
+    <File Path="../packaging/wix/Bundle.wxs" />
+    <File Path="../packaging/wix/Product.wxs" />
+  </Folder>
+  <Folder Name="/scripts/">
+    <File Path="../scripts/get_version.py" />
+    <File Path="../scripts/test-release-pipeline-local.ps1" />
+  </Folder>
   <Project Path="XpressFormula.Tests/XpressFormula.Tests.vcxproj" Id="b5a2c3d4-1111-2222-3333-444455556666" />
   <Project Path="XpressFormula/XpressFormula.vcxproj" Id="73109284-ce31-4087-bbf7-f64f40b2a3cc" />
 </Solution>
