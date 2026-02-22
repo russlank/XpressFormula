@@ -61,7 +61,7 @@ wix extension add --global WixToolset.Bal.wixext/$wixVersion
 wix --version
 ```
 
-`packaging/build-packages.ps1` also re-checks and installs the BAL extension for the pinned version before bundle build.
+`packaging/build-packages.ps1` expects the BAL extension to already be installed and prints the exact install command if it is missing.
 
 Build app binary:
 

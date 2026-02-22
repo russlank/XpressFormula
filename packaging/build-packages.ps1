@@ -59,12 +59,6 @@ if ($LASTEXITCODE -ne 0 -or -not (Test-Path $msiPath)) {
     throw "Failed to build MSI package '$msiPath'."
 }
 
-$wixBalExtensionRef = "$WixBalExtensionId/$RequiredWixVersion"
-& wix extension add --global $wixBalExtensionRef
-if ($LASTEXITCODE -ne 0) {
-    throw "Failed to install WiX BAL extension '$wixBalExtensionRef'."
-}
-
 & wix build $bundleWxs `
     -arch x64 `
     -ext $WixBalExtensionId `
@@ -74,7 +68,7 @@ if ($LASTEXITCODE -ne 0) {
     -out $bundlePath
 
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path $bundlePath)) {
-    throw "Failed to build setup bundle '$bundlePath'."
+    throw "Failed to build setup bundle '$bundlePath'. Ensure WiX BAL extension is installed: wix extension add --global $WixBalExtensionId/$RequiredWixVersion"
 }
 
 Write-Host "Created packages:"

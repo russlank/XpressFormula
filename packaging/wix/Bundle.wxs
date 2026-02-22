@@ -6,12 +6,11 @@
           UpgradeCode="{5D1D71E5-6FCA-4F7B-AEF2-D6E53A95A7C1}"
           IconSourceFile="$(var.AppIconPath)">
     <BootstrapperApplication>
-      <bal:WixStandardBootstrapperApplication Theme="standard" />
+      <bal:WixStandardBootstrapperApplication Theme="none" />
     </BootstrapperApplication>
 
     <Chain>
       <MsiPackage SourceFile="$(var.MsiPath)"
-                  DisplayInternalUI="yes"
                   Visible="yes"
                   Permanent="no" />
     </Chain>
