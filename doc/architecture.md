@@ -7,7 +7,7 @@ XpressFormula is organized into three primary layers:
 
 - `Core`: expression tokenization, parsing, evaluation, coordinate transforms
 - `UI`: ImGui panels and application orchestration
-- `Plotting`: draw routines for grid/axes/curves/implicit contours/surfaces/heat maps
+- `Plotting`: draw routines for grid/axes/curves/heat maps/implicit contours and 3D surfaces (explicit + implicit)
 
 ## Module Breakdown
 
@@ -39,7 +39,7 @@ XpressFormula is organized into three primary layers:
 3. `Application::run()` drives the message loop and rendering frames.
 4. `FormulaPanel` updates formula text and triggers parse.
 5. `PlotPanel` updates `ViewTransform` from current viewport and delegates drawing to `PlotRenderer`.
-6. `PlotRenderer` evaluates formulas through `Core::Evaluator` and draws based on variable dimensionality.
+6. `PlotRenderer` evaluates formulas through `Core::Evaluator` and draws based on variable dimensionality and equation form.
 
 ## Formula Rendering Modes
 
@@ -48,7 +48,8 @@ Formula mode is inferred from variable presence and equation shape:
 - `y=f(x)` if no `y`/`z` variable is detected
 - `z=f(x,y)` if `x` and `y` are present, or if equation is solved for `z`
 - `F(x,y)=0` for implicit equations such as `x^2+y^2=100`
-- `f(x,y,z)` scalar field if `x`, `y`, and `z` are present
+- `f(x,y,z)` scalar field if `x`, `y`, and `z` are present (cross-section in 2D mode)
+- `F(x,y,z)=0` for implicit 3D equations such as `x^2+y^2+z^2=16`
 
 Render mapping:
 
@@ -56,6 +57,13 @@ Render mapping:
 - `z=f(x,y)` -> 3D surface (or optional 2D heat map)
 - `F(x,y)=0` -> marching-squares contour rendering
 - `f(x,y,z)` -> heat map cross-section at selected `z`
+- `F(x,y,z)=0` -> implicit 3D surface mesh in 3D mode, or scalar cross-section in 2D heat-map mode
+
+## Current 3D Implicit Surface Notes
+
+- Implicit `F(x,y,z)=0` surfaces are extracted from sampled scalar-field data using a surface-nets style mesh.
+- The extracted world-space mesh is cached and re-used across camera-only changes (azimuth/elevation/z-scale/style), then re-projected each frame.
+- The implicit sampling domain is derived from the current visible `x/y` range and the formula `z slice / center`, so shapes can appear clipped if the view box does not fully contain them.
 
 ## Error Handling
 

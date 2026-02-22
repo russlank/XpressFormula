@@ -75,6 +75,8 @@ The evaluator returns `NaN` for invalid operations, including:
 - `x^2 + y^2 = 100`
 - `sin(x) * cos(y)`
 - `x^2 + y^2 + z^2 - 4`
+- `x^2 + y^2 + z^2 = 16`
+- `(x^2+y^2+z^2+21)^2 - 100*(x^2+y^2) = 0`
 
 ## Render Mapping
 
@@ -84,6 +86,12 @@ The app chooses a render mode from the parsed variables and equation form:
 - `z=f(x,y)` for expressions using `x` and `y`, and equations solved for `z`
 - `F(x,y)=0` contour for equations like `x^2+y^2=100`
 - `f(x,y,z)` scalar-field cross-section for formulas that use `x`, `y`, and `z`
+- `F(x,y,z)=0` implicit 3D surface for equations like `x^2+y^2+z^2=16`
+
+Mode-specific behavior for 3-variable formulas:
+
+- `f(x,y,z)` (expression) renders as a cross-section/heat map using the configured `z` slice.
+- `F(x,y,z)=0` (equation) renders as an implicit 3D surface in **3D** mode, and as a scalar cross-section in **2D Heatmap** mode.
 
 Only variables `x`, `y`, and `z` are supported for plotting.
 

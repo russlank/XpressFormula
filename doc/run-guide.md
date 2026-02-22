@@ -77,9 +77,12 @@ After launch:
    - `sin(x)` for a 2D curve (`y=f(x)`)
    - `x^2+y^2` or `z=sin(x)*cos(y)` for a 3D surface (`z=f(x,y)`)
    - `x^2+y^2=100` for an implicit equation contour (`F(x,y)=0`)
+   - `x^2+y^2+z^2=16` for an implicit 3D surface (`F(x,y,z)=0`)
+   - `(x^2+y^2+z^2+21)^2 - 100*(x^2+y^2) = 0` for a torus-like implicit 3D surface
 3. In the **View Controls** section:
-   - Choose **3D Surface** or **2D Heatmap** for `x,y` formulas.
-   - Tune azimuth, elevation, z-scale, density, and opacity for 3D.
+   - Choose **3D Surfaces / Implicit** or **2D Heatmap** for `x,y` and implicit `F(x,y,z)=0` formulas.
+   - Tune azimuth, elevation, z-scale, surface density, implicit surface quality, and opacity for 3D.
+   - For implicit 3D equations, keep the formula `z slice / center` near the shape center (often `0`) and make sure the visible `X/Y` range contains the shape (for example, a sphere `x^2+y^2+z^2=16` needs roughly `[-4,4]` in both `X` and `Y`).
 4. Use mouse drag to pan and mouse wheel to zoom domain coordinates.
 
 ## Export Plot Image

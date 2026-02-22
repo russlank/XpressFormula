@@ -14,7 +14,8 @@ The app supports:
 - `y=f(x)` 2D curves
 - `z=f(x,y)` 3D surfaces (with optional 2D heat-map view)
 - `F(x,y)=0` implicit 2D equations such as `x^2+y^2=100`
-- `f(x,y,z)` cross-sections at configurable `z` slices
+- `f(x,y,z)` scalar-field cross-sections at configurable `z` slices
+- `F(x,y,z)=0` implicit 3D surfaces (e.g. spheres and torus equations)
 - Plot image export to `.png`/`.bmp` and clipboard copy
 - Versioned binary metadata and installer packaging (`.msi` + setup `.exe`)
 
