@@ -70,6 +70,7 @@ private:
     ID3D11RenderTargetView*   m_renderTargetView    = nullptr;
     bool                      m_swapChainOccluded   = false;
     bool                      m_comInitialized      = false;
+    bool                      m_redrawRequested     = true;
 
     // Application state
     std::vector<FormulaEntry> m_formulas;

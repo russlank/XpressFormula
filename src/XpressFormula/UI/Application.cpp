@@ -159,7 +159,8 @@ bool Application::initialize(HINSTANCE hInstance, int width, int height) {
     // Add a default formula so the plot is not empty
     FormulaEntry defaultEntry;
     strncpy_s(defaultEntry.inputBuffer, sizeof(defaultEntry.inputBuffer),
-              "sin(x)", _TRUNCATE);
+              // "sin(x)", _TRUNCATE);
+              "sin(sqrt(x^2+y^2))", _TRUNCATE);
     std::memcpy(defaultEntry.color, kDefaultPalette[0],
                 sizeof(defaultEntry.color));
     defaultEntry.parse();
@@ -176,13 +177,25 @@ int Application::run() {
         if (::PeekMessageW(&msg, nullptr, 0U, 0U, PM_REMOVE)) {
             ::TranslateMessage(&msg);
             ::DispatchMessageW(&msg);
+            if (msg.message != WM_QUIT) {
+                // Any user/system message may affect layout, hover state, or plot interaction.
+                m_redrawRequested = true;
+            }
+            continue;
+        }
+
+        const bool continuousRender = m_plotSettings.autoRotate;
+        const bool optimizeRendering = m_plotSettings.optimizeRendering;
+        if (optimizeRendering && !m_redrawRequested && !continuousRender) {
+            // Event-driven idle mode: avoid presenting frames when nothing changes.
+            ::WaitMessage();
             continue;
         }
 
         // Handle swap-chain being occluded (minimised, etc.)
         if (m_swapChainOccluded &&
             m_swapChain->Present(0, DXGI_PRESENT_TEST) == DXGI_STATUS_OCCLUDED) {
-            ::Sleep(10);
+            ::Sleep(continuousRender ? 10 : 30);
             continue;
         }
         m_swapChainOccluded = false;
@@ -197,6 +210,8 @@ int Application::run() {
         }
 
         renderFrame();
+        // Auto-rotate requires continuous redraws; otherwise render on demand when optimization is enabled.
+        m_redrawRequested = optimizeRendering ? m_plotSettings.autoRotate : true;
     }
     return static_cast<int>(msg.wParam);
 }

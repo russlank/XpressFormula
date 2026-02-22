@@ -74,6 +74,12 @@ ControlPanelActions ControlPanel::render(Core::ViewTransform& vt, PlotSettings& 
 
     ImGui::Spacing();
     ImGui::Separator();
+    ImGui::TextUnformatted("Performance");
+    ImGui::Checkbox("Optimize Rendering", &settings.optimizeRendering);
+    ImGui::TextWrapped("When enabled, the app stops redrawing while idle and resumes instantly on input.");
+
+    ImGui::Spacing();
+    ImGui::Separator();
     ImGui::TextUnformatted("X/Y Formula Rendering");
 
     int renderMode = (settings.xyRenderMode == XYRenderMode::Surface3D) ? 0 : 1;
