@@ -42,9 +42,26 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           $PSNativeCommandUseErrorActionPreference = $true
-          dotnet tool uninstall --global wix 2>$null
-          dotnet tool install --global wix --version $env:WIX_VERSION
-          wix extension remove --global WixToolset.Bal.wixext 2>$null
+
+          $globalTools = dotnet tool list --global
+          if ($globalTools -match '(^|\s)wix(\s|$)') {
+            dotnet tool update --global wix --version $env:WIX_VERSION
+          }
+          else {
+            dotnet tool install --global wix --version $env:WIX_VERSION
+          }
+
+          $extensions = ""
+          $PSNativeCommandUseErrorActionPreference = $false
+          try {
+            $extensions = wix extension list --global 2>$null
+            if ($extensions -match 'WixToolset\.Bal\.wixext') {
+              wix extension remove --global WixToolset.Bal.wixext 2>$null
+            }
+          }
+          finally {
+            $PSNativeCommandUseErrorActionPreference = $true
+          }
           wix extension add --global "WixToolset.Bal.wixext/$env:WIX_VERSION"
           $wixVersion = (wix --version).Trim()
           if (-not $wixVersion.StartsWith("4.")) {
