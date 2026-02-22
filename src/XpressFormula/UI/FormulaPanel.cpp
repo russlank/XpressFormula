@@ -277,7 +277,11 @@ void FormulaPanel::render(std::vector<FormulaEntry>& formulas) {
         // Z-slice slider for scalar fields that include z.
         if (f.renderKind == FormulaRenderKind::ScalarField3D && f.isValid()) {
             ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
-            ImGui::SliderFloat("z slice", &f.zSlice, -10.0f, 10.0f, "z = %.2f");
+            if (f.isEquation) {
+                ImGui::SliderFloat("z slice / center", &f.zSlice, -10.0f, 10.0f, "z = %.2f");
+            } else {
+                ImGui::SliderFloat("z slice", &f.zSlice, -10.0f, 10.0f, "z = %.2f");
+            }
         }
 
         ImGui::PopID();

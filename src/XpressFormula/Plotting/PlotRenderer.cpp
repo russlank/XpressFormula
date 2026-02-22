@@ -707,6 +707,728 @@ void PlotRenderer::drawSurface3D(ImDrawList* dl, const Core::ViewTransform& vt,
     dl->PopClipRect();
 }
 
+// ---- implicit 3D surface F(x,y,z)=0 ----------------------------------------
+
+void PlotRenderer::drawImplicitSurface3D(ImDrawList* dl, const Core::ViewTransform& vt,
+                                         const Core::ASTNodePtr& ast,
+                                         const float color[4],
+                                         const Surface3DOptions& options) {
+    if (!ast) {
+        return;
+    }
+
+    struct Point3 {
+        double x;
+        double y;
+        double z;
+    };
+    struct ProjectedVertex {
+        double wx;
+        double wy;
+        double wz;
+        double xProj;
+        double yProj;
+        double depth;
+    };
+    struct ProjectedFace {
+        ProjectedVertex v0;
+        ProjectedVertex v1;
+        ProjectedVertex v2;
+        double depth;
+        double zAvg;
+        float shade;
+    };
+    struct ScreenFace {
+        ImVec2 p0;
+        ImVec2 p1;
+        ImVec2 p2;
+        double depth;
+        double zAvg;
+        float shade;
+    };
+    // Stored in world coordinates so we can reuse the extracted mesh across camera changes
+    // (azimuth/elevation/zScale/opacity/wireframe) and only re-project when needed.
+    struct WorldFace {
+        Point3 p0;
+        Point3 p1;
+        Point3 p2;
+    };
+    // Cache invalidation is intentionally tied to AST identity + sampling domain + grid size.
+    // Camera and visual styling are excluded because they only affect projection/shading.
+    struct MeshCacheKey {
+        const void* astPtr;
+        int gridRes;
+        double xMin;
+        double xMax;
+        double yMin;
+        double yMax;
+        double zCenter;
+        double zMinDomain;
+        double zMaxDomain;
+    };
+    struct MeshCacheData {
+        MeshCacheKey key{};
+        std::vector<WorldFace> faces;
+        // Bounds of the extracted surface (not the whole sampling box). Used for envelope box
+        // and to stabilize z-based coloring without rescanning all triangles every frame.
+        double surfXMin = 0.0;
+        double surfXMax = 0.0;
+        double surfYMin = 0.0;
+        double surfYMax = 0.0;
+        double surfZMin = 0.0;
+        double surfZMax = 0.0;
+        bool valid = false;
+    };
+    struct EnvelopePoint {
+        ImVec2 screen;
+        double depth;
+    };
+    struct EnvelopeEdge {
+        int a;
+        int b;
+        double depth;
+    };
+
+    const int requestedImplicitRes = (options.implicitResolution > 0)
+        ? options.implicitResolution
+        : (options.resolution / 2 + 8);
+    const int gridRes = std::clamp(requestedImplicitRes, 16, 96);
+    const int nx = gridRes;
+    const int ny = gridRes;
+    const int nz = gridRes;
+
+    const double xMin = vt.worldXMin();
+    const double xMax = vt.worldXMax();
+    const double yMin = vt.worldYMin();
+    const double yMax = vt.worldYMax();
+    const double dx = std::max(1e-6, (xMax - xMin) / nx);
+    const double dy = std::max(1e-6, (yMax - yMin) / ny);
+
+    // The implicit surface is sampled only inside the current view domain.
+    // This means a valid shape (e.g. a sphere) can appear "cut open" if the current x/y range
+    // clips it; the mesh is built only for the sampled box.
+    const double xySpan = std::max(std::max(1e-6, xMax - xMin), std::max(1e-6, yMax - yMin));
+    const double zCenter = static_cast<double>(options.implicitZCenter);
+    const double zHalfSpan = std::max(1.0, xySpan * 0.5);
+    const double zMinDomain = zCenter - zHalfSpan;
+    const double zMaxDomain = zCenter + zHalfSpan;
+    const double dz = std::max(1e-6, (zMaxDomain - zMinDomain) / nz);
+
+    const double xCenter = (xMin + xMax) * 0.5;
+    const double yCenter = (yMin + yMax) * 0.5;
+
+    auto gridIndex = [&](int ix, int iy, int iz) -> size_t {
+        return static_cast<size_t>(((iz * (ny + 1)) + iy) * (nx + 1) + ix);
+    };
+    // Rebuild the implicit mesh only when the sampled field/domain changes.
+    const MeshCacheKey cacheKey{
+        ast.get(), gridRes,
+        xMin, xMax, yMin, yMax, zCenter, zMinDomain, zMaxDomain
+    };
+    static MeshCacheData s_meshCache;
+    const bool cacheHit = s_meshCache.valid &&
+        s_meshCache.key.astPtr == cacheKey.astPtr &&
+        s_meshCache.key.gridRes == cacheKey.gridRes &&
+        s_meshCache.key.xMin == cacheKey.xMin &&
+        s_meshCache.key.xMax == cacheKey.xMax &&
+        s_meshCache.key.yMin == cacheKey.yMin &&
+        s_meshCache.key.yMax == cacheKey.yMax &&
+        s_meshCache.key.zCenter == cacheKey.zCenter &&
+        s_meshCache.key.zMinDomain == cacheKey.zMinDomain &&
+        s_meshCache.key.zMaxDomain == cacheKey.zMaxDomain;
+
+    const double azimuth = static_cast<double>(options.azimuthDeg) * 3.14159265358979323846 / 180.0;
+    const double elevation = static_cast<double>(options.elevationDeg) * 3.14159265358979323846 / 180.0;
+    const double cosA = std::cos(azimuth);
+    const double sinA = std::sin(azimuth);
+    const double cosE = std::cos(elevation);
+    const double sinE = std::sin(elevation);
+
+    // Shared 3D->2D projection used for mesh triangles and the optional envelope/arrows.
+    auto projectPoint = [&](double wx, double wy, double wz,
+                            double& outXProj, double& outYProj, double& outDepth) {
+        const double x = wx - xCenter;
+        const double y = wy - yCenter;
+        const double zWorld = (wz - zCenter) * options.zScale;
+
+        const double xYaw = cosA * x - sinA * y;
+        const double yYaw = sinA * x + cosA * y;
+
+        outXProj = xYaw;
+        outYProj = cosE * yYaw - sinE * zWorld;
+        outDepth = sinE * yYaw + cosE * zWorld;
+    };
+
+    // Standard cube corner indexing (voxel cell corners) and edge topology.
+    static const int kCubeOffsets[8][3] = {
+        { 0, 0, 0 }, { 1, 0, 0 }, { 1, 1, 0 }, { 0, 1, 0 },
+        { 0, 0, 1 }, { 1, 0, 1 }, { 1, 1, 1 }, { 0, 1, 1 }
+    };
+    static const int kCubeEdges[12][2] = {
+        { 0, 1 }, { 1, 2 }, { 2, 3 }, { 3, 0 },
+        { 4, 5 }, { 5, 6 }, { 6, 7 }, { 7, 4 },
+        { 0, 4 }, { 1, 5 }, { 2, 6 }, { 3, 7 }
+    };
+    struct CellVertex {
+        Point3 p;
+        bool active;
+    };
+
+    std::vector<WorldFace> worldFaces;
+    std::vector<ProjectedFace> projectedFaces;
+    worldFaces.reserve(static_cast<size_t>(nx) * static_cast<size_t>(ny) *
+                       static_cast<size_t>(nz) * 2u);
+    const std::vector<WorldFace>* meshFaces = nullptr;
+
+    double pxMin = std::numeric_limits<double>::max();
+    double pxMax = std::numeric_limits<double>::lowest();
+    double pyMin = std::numeric_limits<double>::max();
+    double pyMax = std::numeric_limits<double>::lowest();
+    double surfXMin = std::numeric_limits<double>::max();
+    double surfXMax = std::numeric_limits<double>::lowest();
+    double surfYMin = std::numeric_limits<double>::max();
+    double surfYMax = std::numeric_limits<double>::lowest();
+    double surfZMin = std::numeric_limits<double>::max();
+    double surfZMax = std::numeric_limits<double>::lowest();
+
+    // Zero-crossing test for an edge endpoint pair. `true` means the isosurface may cross
+    // the segment, including the degenerate case where one endpoint is exactly zero.
+    const auto signsCrossZero = [](double a, double b) -> bool {
+        if (!std::isfinite(a) || !std::isfinite(b)) {
+            return false;
+        }
+        if (a == 0.0 || b == 0.0) {
+            return true;
+        }
+        return (a < 0.0 && b > 0.0) || (a > 0.0 && b < 0.0);
+    };
+    const auto dot3 = [](const Point3& a, const Point3& b) {
+        return a.x * b.x + a.y * b.y + a.z * b.z;
+    };
+    const auto cross3 = [](const Point3& a, const Point3& b) {
+        return Point3{
+            a.y * b.z - a.z * b.y,
+            a.z * b.x - a.x * b.z,
+            a.x * b.y - a.y * b.x
+        };
+    };
+    const auto sub3 = [](const Point3& a, const Point3& b) {
+        return Point3{ a.x - b.x, a.y - b.y, a.z - b.z };
+    };
+    const auto lenSq3 = [&](const Point3& v) {
+        return dot3(v, v);
+    };
+    const auto normalize3 = [&](Point3& v) -> bool {
+        const double ls = lenSq3(v);
+        if (!(ls > 1e-18) || !std::isfinite(ls)) {
+            return false;
+        }
+        const double inv = 1.0 / std::sqrt(ls);
+        v.x *= inv;
+        v.y *= inv;
+        v.z *= inv;
+        return true;
+    };
+    // Linear interpolation of the F=0 crossing along a grid edge. This is the basic primitive
+    // used by both the cell vertex generation (surface nets) and surface location estimation.
+    const auto interpolateIso = [&](const Point3& a, double va,
+                                    const Point3& b, double vb,
+                                    Point3& out) -> bool {
+        if (!signsCrossZero(va, vb)) {
+            return false;
+        }
+        double t = 0.5;
+        const double denom = va - vb;
+        if (std::isfinite(denom) && std::abs(denom) > 1e-12) {
+            t = std::clamp(va / denom, 0.0, 1.0);
+        }
+        out = Point3{
+            a.x + (b.x - a.x) * t,
+            a.y + (b.y - a.y) * t,
+            a.z + (b.z - a.z) * t
+        };
+        return std::isfinite(out.x) && std::isfinite(out.y) && std::isfinite(out.z);
+    };
+
+    const double sampleStepWorld = std::max({ dx, dy, dz });
+    const double areaTolSq = std::max(1e-16, sampleStepWorld * sampleStepWorld * 1e-10);
+
+    // Store triangles in world space only. Projection and shading are deferred so cached meshes
+    // can be reused when the camera changes.
+    auto pushWorldTriangle = [&](const Point3& a, const Point3& b, const Point3& c) {
+        const Point3 ab = sub3(b, a);
+        const Point3 ac = sub3(c, a);
+        const Point3 normal = cross3(ab, ac);
+        const double nLenSq = lenSq3(normal);
+        if (!(nLenSq > areaTolSq) || !std::isfinite(nLenSq)) {
+            return;
+        }
+
+        worldFaces.push_back(WorldFace{ a, b, c });
+        const Point3* verts[3] = { &a, &b, &c };
+        for (const Point3* v : verts) {
+            surfXMin = std::min(surfXMin, v->x);
+            surfXMax = std::max(surfXMax, v->x);
+            surfYMin = std::min(surfYMin, v->y);
+            surfYMax = std::max(surfYMax, v->y);
+            surfZMin = std::min(surfZMin, v->z);
+            surfZMax = std::max(surfZMax, v->z);
+        }
+    };
+
+    if (cacheHit) {
+        // Fast path: reuse previously extracted mesh and its bounds. This avoids re-evaluating
+        // the scalar field on the 3D grid and re-running the surface extraction.
+        meshFaces = &s_meshCache.faces;
+        surfXMin = s_meshCache.surfXMin;
+        surfXMax = s_meshCache.surfXMax;
+        surfYMin = s_meshCache.surfYMin;
+        surfYMax = s_meshCache.surfYMax;
+        surfZMin = s_meshCache.surfZMin;
+        surfZMax = s_meshCache.surfZMax;
+    } else {
+        // Slow path: sample F(x,y,z) over the current 3D grid. This is the dominant cost and is
+        // intentionally skipped on cache hits (camera/style changes only).
+        std::vector<double> values(static_cast<size_t>(nx + 1) * (ny + 1) * (nz + 1),
+                                   std::numeric_limits<double>::quiet_NaN());
+        Core::Evaluator::Variables vars;
+        for (int iz = 0; iz <= nz; ++iz) {
+            vars["z"] = zMinDomain + iz * dz;
+            for (int iy = 0; iy <= ny; ++iy) {
+                vars["y"] = yMin + iy * dy;
+                for (int ix = 0; ix <= nx; ++ix) {
+                    vars["x"] = xMin + ix * dx;
+                    values[gridIndex(ix, iy, iz)] = Core::Evaluator::evaluate(ast, vars);
+                }
+            }
+        }
+
+        std::vector<CellVertex> cellVertices(static_cast<size_t>(nx) * ny * nz,
+                                             CellVertex{ Point3{ 0.0, 0.0, 0.0 }, false });
+        auto cellIndex = [&](int ix, int iy, int iz) -> size_t {
+            return static_cast<size_t>(((iz * ny) + iy) * nx + ix);
+        };
+        auto emitQuad = [&](const Point3& p00, const Point3& p10,
+                            const Point3& p11, const Point3& p01) {
+            // Choose the shorter diagonal to reduce sliver triangles on curved surfaces.
+            const double d02 = lenSq3(sub3(p11, p00));
+            const double d13 = lenSq3(sub3(p01, p10));
+            if (d02 <= d13) {
+                pushWorldTriangle(p00, p10, p11);
+                pushWorldTriangle(p00, p11, p01);
+            } else {
+                pushWorldTriangle(p00, p10, p01);
+                pushWorldTriangle(p10, p11, p01);
+            }
+        };
+        // Around a sign-changing grid edge there are four neighboring cells. If all four cells
+        // have a surface-nets vertex, they form one quad on the extracted surface.
+        auto tryEmitQuadFromCells = [&](int ax, int ay, int az,
+                                        int bx, int by, int bz,
+                                        int cx, int cy, int cz,
+                                        int dxCell, int dyCell, int dzCell) {
+            if (ax < 0 || ax >= nx || ay < 0 || ay >= ny || az < 0 || az >= nz ||
+                bx < 0 || bx >= nx || by < 0 || by >= ny || bz < 0 || bz >= nz ||
+                cx < 0 || cx >= nx || cy < 0 || cy >= ny || cz < 0 || cz >= nz ||
+                dxCell < 0 || dxCell >= nx || dyCell < 0 || dyCell >= ny || dzCell < 0 || dzCell >= nz) {
+                return;
+            }
+
+            const CellVertex& ca = cellVertices[cellIndex(ax, ay, az)];
+            const CellVertex& cb = cellVertices[cellIndex(bx, by, bz)];
+            const CellVertex& cc = cellVertices[cellIndex(cx, cy, cz)];
+            const CellVertex& cd = cellVertices[cellIndex(dxCell, dyCell, dzCell)];
+            if (!ca.active || !cb.active || !cc.active || !cd.active) {
+                return;
+            }
+
+            emitQuad(ca.p, cb.p, cc.p, cd.p);
+        };
+
+        // Pass 1 (surface nets):
+        // For each voxel cell that contains a sign change, compute one representative vertex
+        // by averaging all F=0 edge intersections in that cell. This creates a more uniform
+        // vertex distribution than tetrahedra-based triangulation for smooth shapes.
+        for (int iz = 0; iz < nz; ++iz) {
+            for (int iy = 0; iy < ny; ++iy) {
+                for (int ix = 0; ix < nx; ++ix) {
+                    Point3 corners[8];
+                    double cornerValues[8];
+                    bool hasFinite = false;
+                    double cellLo = std::numeric_limits<double>::max();
+                    double cellHi = std::numeric_limits<double>::lowest();
+
+                    for (int c = 0; c < 8; ++c) {
+                        const int gx = ix + kCubeOffsets[c][0];
+                        const int gy = iy + kCubeOffsets[c][1];
+                        const int gz = iz + kCubeOffsets[c][2];
+                        corners[c] = Point3{
+                            xMin + gx * dx,
+                            yMin + gy * dy,
+                            zMinDomain + gz * dz
+                        };
+                        const double v = values[gridIndex(gx, gy, gz)];
+                        cornerValues[c] = v;
+                        if (std::isfinite(v)) {
+                            hasFinite = true;
+                            cellLo = std::min(cellLo, v);
+                            cellHi = std::max(cellHi, v);
+                        }
+                    }
+
+                    if (!hasFinite || cellLo > 0.0 || cellHi < 0.0) {
+                        continue;
+                    }
+
+                    Point3 sum{ 0.0, 0.0, 0.0 };
+                    int intersectionCount = 0;
+                    for (const auto& edge : kCubeEdges) {
+                        Point3 ip{};
+                        if (!interpolateIso(corners[edge[0]], cornerValues[edge[0]],
+                                            corners[edge[1]], cornerValues[edge[1]], ip)) {
+                            continue;
+                        }
+                        sum.x += ip.x;
+                        sum.y += ip.y;
+                        sum.z += ip.z;
+                        ++intersectionCount;
+                    }
+
+                    if (intersectionCount < 3) {
+                        continue;
+                    }
+
+                    CellVertex& cv = cellVertices[cellIndex(ix, iy, iz)];
+                    const double inv = 1.0 / static_cast<double>(intersectionCount);
+                    cv.p = Point3{ sum.x * inv, sum.y * inv, sum.z * inv };
+                    cv.active = true;
+                }
+            }
+        }
+
+        // Pass 2:
+        // Stitch the per-cell vertices into quads around sign-changing grid edges, then split
+        // each quad into two triangles. This yields far fewer triangles than tetrahedra output.
+        // X-directed grid edges => quads in the YZ neighborhood.
+        for (int iz = 1; iz < nz; ++iz) {
+            for (int iy = 1; iy < ny; ++iy) {
+                for (int ix = 0; ix < nx; ++ix) {
+                    const double va = values[gridIndex(ix, iy, iz)];
+                    const double vb = values[gridIndex(ix + 1, iy, iz)];
+                    if (!signsCrossZero(va, vb)) {
+                        continue;
+                    }
+                    tryEmitQuadFromCells(ix, iy - 1, iz - 1,
+                                         ix, iy,     iz - 1,
+                                         ix, iy,     iz,
+                                         ix, iy - 1, iz);
+                }
+            }
+        }
+
+        // Y-directed grid edges => quads in the XZ neighborhood.
+        for (int iz = 1; iz < nz; ++iz) {
+            for (int iy = 0; iy < ny; ++iy) {
+                for (int ix = 1; ix < nx; ++ix) {
+                    const double va = values[gridIndex(ix, iy, iz)];
+                    const double vb = values[gridIndex(ix, iy + 1, iz)];
+                    if (!signsCrossZero(va, vb)) {
+                        continue;
+                    }
+                    tryEmitQuadFromCells(ix - 1, iy, iz - 1,
+                                         ix,     iy, iz - 1,
+                                         ix,     iy, iz,
+                                         ix - 1, iy, iz);
+                }
+            }
+        }
+
+        // Z-directed grid edges => quads in the XY neighborhood.
+        for (int iz = 0; iz < nz; ++iz) {
+            for (int iy = 1; iy < ny; ++iy) {
+                for (int ix = 1; ix < nx; ++ix) {
+                    const double va = values[gridIndex(ix, iy, iz)];
+                    const double vb = values[gridIndex(ix, iy, iz + 1)];
+                    if (!signsCrossZero(va, vb)) {
+                        continue;
+                    }
+                    tryEmitQuadFromCells(ix - 1, iy - 1, iz,
+                                         ix,     iy - 1, iz,
+                                         ix,     iy,     iz,
+                                         ix - 1, iy,     iz);
+                }
+            }
+        }
+
+        // Publish cache only after a full successful extraction.
+        s_meshCache.key = cacheKey;
+        s_meshCache.faces = worldFaces;
+        s_meshCache.surfXMin = surfXMin;
+        s_meshCache.surfXMax = surfXMax;
+        s_meshCache.surfYMin = surfYMin;
+        s_meshCache.surfYMax = surfYMax;
+        s_meshCache.surfZMin = surfZMin;
+        s_meshCache.surfZMax = surfZMax;
+        s_meshCache.valid = true;
+        meshFaces = &s_meshCache.faces;
+    }
+
+    if (meshFaces == nullptr) {
+        meshFaces = &worldFaces;
+    }
+    if (meshFaces->empty()) {
+        return;
+    }
+
+    // Lighting is evaluated after projection from cached world triangles so visual changes
+    // (camera angle / zScale) update correctly without rebuilding the mesh.
+    const double lx = -0.35;
+    const double ly = -0.45;
+    const double lz = 0.82;
+    const double lLen = std::sqrt(lx * lx + ly * ly + lz * lz);
+    const double lightX = lx / lLen;
+    const double lightY = ly / lLen;
+    const double lightZ = lz / lLen;
+
+    // Camera-dependent projection + shading pass. This is much cheaper than field sampling and
+    // surface extraction, and can run every frame while rotating.
+    projectedFaces.reserve(meshFaces->size());
+    for (const WorldFace& wf : *meshFaces) {
+        Point3 ab = sub3(wf.p1, wf.p0);
+        Point3 ac = sub3(wf.p2, wf.p0);
+        ab.z *= options.zScale;
+        ac.z *= options.zScale;
+        Point3 normal = cross3(ab, ac);
+        if (!normalize3(normal)) {
+            continue;
+        }
+
+        ProjectedFace face{};
+        face.v0.wx = wf.p0.x; face.v0.wy = wf.p0.y; face.v0.wz = wf.p0.z;
+        face.v1.wx = wf.p1.x; face.v1.wy = wf.p1.y; face.v1.wz = wf.p1.z;
+        face.v2.wx = wf.p2.x; face.v2.wy = wf.p2.y; face.v2.wz = wf.p2.z;
+        projectPoint(wf.p0.x, wf.p0.y, wf.p0.z, face.v0.xProj, face.v0.yProj, face.v0.depth);
+        projectPoint(wf.p1.x, wf.p1.y, wf.p1.z, face.v1.xProj, face.v1.yProj, face.v1.depth);
+        projectPoint(wf.p2.x, wf.p2.y, wf.p2.z, face.v2.xProj, face.v2.yProj, face.v2.depth);
+        face.depth = (face.v0.depth + face.v1.depth + face.v2.depth) / 3.0;
+        face.zAvg = (wf.p0.z + wf.p1.z + wf.p2.z) / 3.0;
+
+        const double nxYaw = cosA * normal.x - sinA * normal.y;
+        const double nyYaw = sinA * normal.x + cosA * normal.y;
+        const double nViewX = nxYaw;
+        const double nViewY = cosE * nyYaw - sinE * normal.z;
+        const double nViewZ = sinE * nyYaw + cosE * normal.z;
+        const double nvLen = std::sqrt(nViewX * nViewX + nViewY * nViewY + nViewZ * nViewZ);
+        const double invNvLen = (nvLen > 1e-12) ? (1.0 / nvLen) : 1.0;
+        const double ndotl = (nViewX * lightX + nViewY * lightY + nViewZ * lightZ) * invNvLen;
+        face.shade = static_cast<float>(std::clamp(0.28 + 0.72 * std::abs(ndotl), 0.18, 1.0));
+
+        projectedFaces.push_back(face);
+
+        const ProjectedVertex* verts[3] = { &face.v0, &face.v1, &face.v2 };
+        for (const ProjectedVertex* v : verts) {
+            pxMin = std::min(pxMin, v->xProj);
+            pxMax = std::max(pxMax, v->xProj);
+            pyMin = std::min(pyMin, v->yProj);
+            pyMax = std::max(pyMax, v->yProj);
+        }
+    }
+
+    if (projectedFaces.empty()) {
+        return;
+    }
+
+    const double spanX = std::max(1e-6, pxMax - pxMin);
+    const double spanY = std::max(1e-6, pyMax - pyMin);
+    const double margin = 24.0;
+    const double plotW = std::max(40.0, static_cast<double>(vt.screenWidth) - margin * 2.0);
+    const double plotH = std::max(40.0, static_cast<double>(vt.screenHeight) - margin * 2.0);
+    const double scale = std::min(plotW / spanX, plotH / spanY);
+
+    const double pxCenter = (pxMin + pxMax) * 0.5;
+    const double pyCenter = (pyMin + pyMax) * 0.5;
+    const float sxCenter = vt.screenOriginX + vt.screenWidth * 0.5f;
+    const float syCenter = vt.screenOriginY + vt.screenHeight * 0.5f;
+
+    std::vector<ScreenFace> screenFaces;
+    screenFaces.reserve(projectedFaces.size());
+    for (const ProjectedFace& f : projectedFaces) {
+        screenFaces.push_back({
+            ImVec2(sxCenter + static_cast<float>((f.v0.xProj - pxCenter) * scale),
+                   syCenter - static_cast<float>((f.v0.yProj - pyCenter) * scale)),
+            ImVec2(sxCenter + static_cast<float>((f.v1.xProj - pxCenter) * scale),
+                   syCenter - static_cast<float>((f.v1.yProj - pyCenter) * scale)),
+            ImVec2(sxCenter + static_cast<float>((f.v2.xProj - pxCenter) * scale),
+                   syCenter - static_cast<float>((f.v2.yProj - pyCenter) * scale)),
+            f.depth,
+            f.zAvg,
+            f.shade
+        });
+    }
+
+    // ImGui draw lists have no depth buffer, so we painter-sort triangles back-to-front.
+    std::sort(screenFaces.begin(), screenFaces.end(),
+              [](const ScreenFace& a, const ScreenFace& b) {
+                  return a.depth < b.depth;
+              });
+
+    ImVec2 clipMin(vt.screenOriginX, vt.screenOriginY);
+    ImVec2 clipMax(vt.screenOriginX + vt.screenWidth,
+                   vt.screenOriginY + vt.screenHeight);
+    dl->PushClipRect(clipMin, clipMax, true);
+
+    if (!(surfZMin < surfZMax)) {
+        surfZMin = zMinDomain;
+        surfZMax = zMaxDomain;
+    }
+    const double zRange = std::max(1e-6, surfZMax - surfZMin);
+    const float baseOpacity = std::clamp(options.opacity, 0.12f, 1.0f);
+    const float edgeThickness = std::clamp(options.wireThickness, 0.0f, 4.0f);
+
+    for (const ScreenFace& face : screenFaces) {
+        const double t = std::clamp((face.zAvg - surfZMin) / zRange, 0.0, 1.0);
+        const float gradientR = static_cast<float>(0.18 + 0.76 * t);
+        const float gradientG = static_cast<float>(0.28 + 0.48 * (1.0 - std::abs(2.0 * t - 1.0)));
+        const float gradientB = static_cast<float>(0.95 - 0.72 * t);
+
+        const float baseR = std::clamp(0.58f * color[0] + 0.42f * gradientR, 0.0f, 1.0f);
+        const float baseG = std::clamp(0.58f * color[1] + 0.42f * gradientG, 0.0f, 1.0f);
+        const float baseB = std::clamp(0.58f * color[2] + 0.42f * gradientB, 0.0f, 1.0f);
+        const float shadeMix = std::clamp(0.52f + 0.48f * face.shade, 0.0f, 1.0f);
+        const float r = std::clamp(baseR * shadeMix, 0.0f, 1.0f);
+        const float g = std::clamp(baseG * shadeMix, 0.0f, 1.0f);
+        const float b = std::clamp(baseB * shadeMix, 0.0f, 1.0f);
+
+        const ImU32 fill = IM_COL32(
+            static_cast<int>(r * 255.0f),
+            static_cast<int>(g * 255.0f),
+            static_cast<int>(b * 255.0f),
+            static_cast<int>(baseOpacity * 255.0f));
+
+        const ImU32 edge = IM_COL32(
+            static_cast<int>(std::clamp(r * 0.55f, 0.0f, 1.0f) * 255.0f),
+            static_cast<int>(std::clamp(g * 0.55f, 0.0f, 1.0f) * 255.0f),
+            static_cast<int>(std::clamp(b * 0.55f, 0.0f, 1.0f) * 255.0f),
+            200);
+
+        dl->AddTriangleFilled(face.p0, face.p1, face.p2, fill);
+        if (edgeThickness > 0.0f) {
+            dl->AddLine(face.p0, face.p1, edge, edgeThickness);
+            dl->AddLine(face.p1, face.p2, edge, edgeThickness);
+            dl->AddLine(face.p2, face.p0, edge, edgeThickness);
+        }
+    }
+
+    if (options.showEnvelope || options.showDimensionArrows) {
+        // Envelope/arrows are drawn from extracted surface bounds (not full sample box) to give
+        // a tighter visual wrapper around the actual shape.
+        if (!(surfXMin < surfXMax)) { surfXMin = xMin; surfXMax = xMax; }
+        if (!(surfYMin < surfYMax)) { surfYMin = yMin; surfYMax = yMax; }
+        if (!(surfZMin < surfZMax)) { surfZMin = zMinDomain; surfZMax = zMaxDomain; }
+
+        auto projectEnvelopePoint = [&](double wx, double wy, double wz) {
+            double xp, yp, depth;
+            projectPoint(wx, wy, wz, xp, yp, depth);
+            const float sx = sxCenter + static_cast<float>((xp - pxCenter) * scale);
+            const float sy = syCenter - static_cast<float>((yp - pyCenter) * scale);
+            return EnvelopePoint{ ImVec2(sx, sy), depth };
+        };
+
+        EnvelopePoint corners[8] = {
+            projectEnvelopePoint(surfXMin, surfYMin, surfZMin),
+            projectEnvelopePoint(surfXMax, surfYMin, surfZMin),
+            projectEnvelopePoint(surfXMax, surfYMax, surfZMin),
+            projectEnvelopePoint(surfXMin, surfYMax, surfZMin),
+            projectEnvelopePoint(surfXMin, surfYMin, surfZMax),
+            projectEnvelopePoint(surfXMax, surfYMin, surfZMax),
+            projectEnvelopePoint(surfXMax, surfYMax, surfZMax),
+            projectEnvelopePoint(surfXMin, surfYMax, surfZMax)
+        };
+
+        static const int kEdgeIndex[12][2] = {
+            { 0, 1 }, { 1, 2 }, { 2, 3 }, { 3, 0 },
+            { 4, 5 }, { 5, 6 }, { 6, 7 }, { 7, 4 },
+            { 0, 4 }, { 1, 5 }, { 2, 6 }, { 3, 7 }
+        };
+
+        std::vector<EnvelopeEdge> edges;
+        edges.reserve(12);
+        double edgeDepthMin = std::numeric_limits<double>::max();
+        double edgeDepthMax = std::numeric_limits<double>::lowest();
+        for (const auto& idx : kEdgeIndex) {
+            const double depth = (corners[idx[0]].depth + corners[idx[1]].depth) * 0.5;
+            edges.push_back({ idx[0], idx[1], depth });
+            edgeDepthMin = std::min(edgeDepthMin, depth);
+            edgeDepthMax = std::max(edgeDepthMax, depth);
+        }
+        std::sort(edges.begin(), edges.end(),
+                  [](const EnvelopeEdge& lhs, const EnvelopeEdge& rhs) {
+                      return lhs.depth < rhs.depth;
+                  });
+
+        if (options.showEnvelope) {
+            const float baseR = std::clamp(color[0] * 0.55f + 0.45f, 0.0f, 1.0f);
+            const float baseG = std::clamp(color[1] * 0.55f + 0.45f, 0.0f, 1.0f);
+            const float baseB = std::clamp(color[2] * 0.55f + 0.45f, 0.0f, 1.0f);
+            const double edgeRange = std::max(1e-6, edgeDepthMax - edgeDepthMin);
+            const float lineThickness = std::clamp(options.envelopeThickness, 0.2f, 4.0f);
+
+            for (const EnvelopeEdge& edge : edges) {
+                const double depthNorm = (edge.depth - edgeDepthMin) / edgeRange;
+                const float alpha = static_cast<float>(80.0 + depthNorm * 150.0);
+                const ImU32 lineColor = IM_COL32(
+                    static_cast<int>(baseR * 255),
+                    static_cast<int>(baseG * 255),
+                    static_cast<int>(baseB * 255),
+                    static_cast<int>(std::clamp(alpha, 40.0f, 255.0f)));
+                dl->AddLine(corners[edge.a].screen, corners[edge.b].screen,
+                            lineColor, lineThickness);
+            }
+        }
+
+        if (options.showDimensionArrows) {
+            auto drawArrow = [&](const ImVec2& from, const ImVec2& to,
+                                 const char* label, ImU32 arrowColor) {
+                const float dxs = to.x - from.x;
+                const float dys = to.y - from.y;
+                const float length = std::sqrt(dxs * dxs + dys * dys);
+                if (length < 1.0f) {
+                    return;
+                }
+
+                const float ux = dxs / length;
+                const float uy = dys / length;
+                const float px = -uy;
+                const float py = ux;
+                const float headLength = std::clamp(length * 0.12f, 8.0f, 18.0f);
+                const float headWidth = headLength * 0.5f;
+                const float thickness = std::clamp(options.envelopeThickness * 1.2f, 0.8f, 4.0f);
+
+                const ImVec2 shaftEnd(to.x - ux * headLength, to.y - uy * headLength);
+                dl->AddLine(from, shaftEnd, arrowColor, thickness);
+                dl->AddTriangleFilled(
+                    to,
+                    ImVec2(to.x - ux * headLength + px * headWidth,
+                           to.y - uy * headLength + py * headWidth),
+                    ImVec2(to.x - ux * headLength - px * headWidth,
+                           to.y - uy * headLength - py * headWidth),
+                    arrowColor);
+                dl->AddText(ImVec2(to.x + px * 4.0f, to.y + py * 4.0f), arrowColor, label);
+            };
+
+            const ImU32 colorX = IM_COL32(240, 95, 95, 245);
+            const ImU32 colorY = IM_COL32(95, 225, 120, 245);
+            const ImU32 colorZ = IM_COL32(110, 165, 250, 245);
+            const ImVec2 origin = corners[0].screen;
+            drawArrow(origin, corners[1].screen, "X", colorX);
+            drawArrow(origin, corners[3].screen, "Y", colorY);
+            drawArrow(origin, corners[4].screen, "Z", colorZ);
+        }
+    }
+
+    dl->PopClipRect();
+}
+
 // ---- implicit contour F(x,y)=0 ---------------------------------------------
 
 void PlotRenderer::drawImplicitContour2D(ImDrawList* dl, const Core::ViewTransform& vt,

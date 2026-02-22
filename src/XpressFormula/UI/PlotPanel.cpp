@@ -39,13 +39,14 @@ void PlotPanel::render(std::vector<FormulaEntry>& formulas,
     bool hasSurface = false;
     for (const auto& formula : formulas) {
         if (formula.visible && formula.isValid() &&
-            formula.renderKind == FormulaRenderKind::Surface3D) {
+            (formula.renderKind == FormulaRenderKind::Surface3D ||
+             (formula.renderKind == FormulaRenderKind::ScalarField3D && formula.isEquation))) {
             hasSurface = true;
             break;
         }
     }
 
-    if (hasSurface && settings.autoRotate) {
+    if (hasSurface && settings.xyRenderMode == XYRenderMode::Surface3D && settings.autoRotate) {
         settings.azimuthDeg += ImGui::GetIO().DeltaTime * settings.autoRotateSpeedDegPerSec;
         if (settings.azimuthDeg > 180.0f) {
             settings.azimuthDeg -= 360.0f;
@@ -66,6 +67,7 @@ void PlotPanel::render(std::vector<FormulaEntry>& formulas,
                     options.elevationDeg = settings.elevationDeg;
                     options.zScale = settings.zScale;
                     options.resolution = settings.surfaceResolution;
+                    options.implicitResolution = settings.implicitSurfaceResolution;
                     options.opacity = settings.surfaceOpacity;
                     options.wireThickness = settings.wireThickness;
                     options.showEnvelope = settings.showSurfaceEnvelope;
@@ -81,8 +83,24 @@ void PlotPanel::render(std::vector<FormulaEntry>& formulas,
                 Plotting::PlotRenderer::drawImplicitContour2D(dl, vt, f.ast, f.color, 2.0f);
                 break;
             case FormulaRenderKind::ScalarField3D:
-                Plotting::PlotRenderer::drawCrossSection(
-                    dl, vt, f.ast, f.zSlice, f.color, settings.heatmapOpacity);
+                if (f.isEquation && settings.xyRenderMode == XYRenderMode::Surface3D) {
+                    Plotting::PlotRenderer::Surface3DOptions options;
+                    options.azimuthDeg = settings.azimuthDeg;
+                    options.elevationDeg = settings.elevationDeg;
+                    options.zScale = settings.zScale;
+                    options.resolution = settings.surfaceResolution;
+                    options.implicitResolution = settings.implicitSurfaceResolution;
+                    options.opacity = settings.surfaceOpacity;
+                    options.wireThickness = settings.wireThickness;
+                    options.showEnvelope = settings.showSurfaceEnvelope;
+                    options.envelopeThickness = settings.envelopeThickness;
+                    options.showDimensionArrows = settings.showDimensionArrows;
+                    options.implicitZCenter = f.zSlice;
+                    Plotting::PlotRenderer::drawImplicitSurface3D(dl, vt, f.ast, f.color, options);
+                } else {
+                    Plotting::PlotRenderer::drawCrossSection(
+                        dl, vt, f.ast, f.zSlice, f.color, settings.heatmapOpacity);
+                }
                 break;
             default:
                 break;

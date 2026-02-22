@@ -80,10 +80,10 @@ ControlPanelActions ControlPanel::render(Core::ViewTransform& vt, PlotSettings& 
 
     ImGui::Spacing();
     ImGui::Separator();
-    ImGui::TextUnformatted("X/Y Formula Rendering");
+    ImGui::TextUnformatted("2D / 3D Formula Rendering");
 
     int renderMode = (settings.xyRenderMode == XYRenderMode::Surface3D) ? 0 : 1;
-    if (ImGui::RadioButton("3D Surface z=f(x,y)", renderMode == 0)) {
+    if (ImGui::RadioButton("3D Surfaces / Implicit (z=f(x,y), F(x,y,z)=0)", renderMode == 0)) {
         settings.xyRenderMode = XYRenderMode::Surface3D;
     }
     if (ImGui::RadioButton("2D Heatmap", renderMode == 1)) {
@@ -97,7 +97,8 @@ ControlPanelActions ControlPanel::render(Core::ViewTransform& vt, PlotSettings& 
         ImGui::SliderFloat("Azimuth", &settings.azimuthDeg, -180.0f, 180.0f, "%.1f deg");
         ImGui::SliderFloat("Elevation", &settings.elevationDeg, -85.0f, 85.0f, "%.1f deg");
         ImGui::SliderFloat("Z Scale", &settings.zScale, 0.1f, 8.0f, "%.2f");
-        ImGui::SliderInt("Surface Density", &settings.surfaceResolution, 12, 80);
+        ImGui::SliderInt("Surface Density (z=f(x,y))", &settings.surfaceResolution, 12, 96);
+        ImGui::SliderInt("Implicit Surface Quality (F=0)", &settings.implicitSurfaceResolution, 16, 96);
         ImGui::SliderFloat("Surface Opacity", &settings.surfaceOpacity, 0.25f, 1.0f, "%.2f");
         ImGui::SliderFloat("Wire Thickness", &settings.wireThickness, 0.25f, 2.5f, "%.2f");
         ImGui::Checkbox("Show Envelope Box", &settings.showSurfaceEnvelope);
@@ -116,7 +117,7 @@ ControlPanelActions ControlPanel::render(Core::ViewTransform& vt, PlotSettings& 
         if (hasSurfaceFormula) {
             ImGui::TextWrapped("Tip: Drag in the plot to pan X/Y domain and use wheel to zoom.");
         } else {
-            ImGui::TextWrapped("No z=f(x,y) formulas are currently visible.");
+            ImGui::TextWrapped("No 3D-capable formulas are currently visible (z=f(x,y) or F(x,y,z)=0).");
         }
     } else {
         ImGui::SliderFloat("Heatmap Opacity", &settings.heatmapOpacity, 0.1f, 1.0f, "%.2f");

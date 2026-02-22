@@ -55,6 +55,19 @@ TEST_CASE(FormulaEntry_EquationSolvedForZSurface) {
     Assert::IsTrue(std::abs(value - 25.0) < 1e-9);
 }
 
+TEST_CASE(FormulaEntry_EquationImplicit3DScalarField) {
+    FormulaEntry entry = parseFormula("x^2 + y^2 + z^2 = 4");
+    Assert::IsTrue(entry.isValid());
+    Assert::IsTrue(entry.isEquation);
+    Assert::IsTrue(entry.renderKind == FormulaRenderKind::ScalarField3D);
+    Assert::AreEqual(3, entry.variableCount);
+    Assert::AreEqual("F(x,y,z) = 0", entry.typeLabel());
+
+    Evaluator::Variables vars = { { "x", 2.0 }, { "y", 0.0 }, { "z", 0.0 } };
+    double value = Evaluator::evaluate(entry.ast, vars);
+    Assert::IsTrue(std::abs(value) < 1e-9);
+}
+
 TEST_CASE(FormulaEntry_EquationMultipleEqualsRejected) {
     FormulaEntry entry = parseFormula("x = y = 1");
     Assert::IsFalse(entry.isValid());
