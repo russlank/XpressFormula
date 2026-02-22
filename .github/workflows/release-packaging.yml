@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 name: Release Packaging
 
 on:
@@ -99,11 +100,20 @@ jobs:
         shell: pwsh
         run: |
           $solutionDir = Join-Path $env:GITHUB_WORKSPACE "src\"
+          $repoUrl = "${{ github.server_url }}/${{ github.repository }}"
+          $branch = "${{ github.ref_name }}"
+          $commit = "${{ github.sha }}"
+          $buildVersion = "${{ steps.version.outputs.app_version }}"
           Write-Host "Building with Configuration=$env:BUILD_CONFIGURATION Platform=$env:BUILD_PLATFORM PlatformToolset=$env:MSVC_PLATFORM_TOOLSET"
+          Write-Host "Build metadata: repo=$repoUrl branch=$branch commit=$commit version=$buildVersion"
           msbuild src\XpressFormula\XpressFormula.vcxproj /t:Build /m `
             /p:Configuration=$env:BUILD_CONFIGURATION `
             /p:Platform=$env:BUILD_PLATFORM `
             /p:PlatformToolset=$env:MSVC_PLATFORM_TOOLSET `
+            /p:XfBuildRepoUrl="$repoUrl" `
+            /p:XfBuildBranch="$branch" `
+            /p:XfBuildCommit="$commit" `
+            /p:XfBuildVersion="$buildVersion" `
             /p:SolutionDir="$solutionDir" `
             /p:IntDir="$env:GITHUB_WORKSPACE\build\obj\" `
             /p:OutDir="$env:GITHUB_WORKSPACE\build\bin\"

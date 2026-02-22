@@ -1,6 +1,6 @@
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
   <Package Name="XpressFormula"
-           Manufacturer="Digixoil"
+           Manufacturer="Russlan Kafri"
            Version="$(var.ProductVersion)"
            UpgradeCode="{F4DE7D79-8A62-4A32-986B-0F5EAF77B0F7}"
            InstallerVersion="500"

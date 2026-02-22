@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Application.h - Main application class: owns the window, D3D11 device,
 //                  ImGui context, and orchestrates the UI panels.
 #pragma once

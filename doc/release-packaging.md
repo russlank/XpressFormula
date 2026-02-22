@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: MIT -->
 # Release and Packaging Guide
 
 This guide explains how to version, package, and publish XpressFormula releases.
@@ -42,6 +43,10 @@ The release job pins key versions with environment variables:
 
 `MSVC_PLATFORM_TOOLSET` is explicitly passed to MSBuild using `/p:PlatformToolset=...`.
 This prevents runner mismatch errors like `MSB8020` when a project file was saved with an unavailable toolset.
+The release build also injects `XF_BUILD_REPO_URL`, `XF_BUILD_BRANCH`, `XF_BUILD_COMMIT`,
+and `XF_BUILD_VERSION` into the binary so metadata appears in the running application.
+These are passed through MSBuild properties: `XfBuildRepoUrl`, `XfBuildBranch`,
+`XfBuildCommit`, and `XfBuildVersion`.
 
 The workflow currently uses `windows-2025-vs2026` to get MSBuild 18.x/VS 2026 toolchain on GitHub-hosted runners.
 
@@ -172,3 +177,7 @@ git push origin main --tags
 - WiX setup EXE bundle: `packaging/wix/Bundle.wxs`
 - Packaging script: `packaging/build-packages.ps1`
 - Local pipeline simulation script: `scripts/test-release-pipeline-local.ps1`
+
+## License
+
+This document is licensed under the MIT License. See `../LICENSE`.

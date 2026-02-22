@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 param(
     [Parameter(Mandatory = $true)]
     [string]$AppExePath,

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Application.cpp - Win32 + D3D11 + ImGui application implementation.
 #include "Application.h"
 #include "../Version.h"
@@ -23,6 +24,7 @@
 #include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <string>
 
 #pragma comment(lib, "windowscodecs.lib")
 
@@ -32,6 +34,29 @@ extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(
 
 // We store a pointer to the Application so the WndProc can access it.
 static XpressFormula::UI::Application* g_app = nullptr;
+
+static std::wstring utf8ToWide(const char* text) {
+    if (!text || text[0] == '\0') {
+        return {};
+    }
+
+    int size = ::MultiByteToWideChar(CP_UTF8, 0, text, -1, nullptr, 0);
+    if (size <= 1) {
+        return {};
+    }
+
+    std::wstring output(static_cast<size_t>(size - 1), L'\0');
+    ::MultiByteToWideChar(CP_UTF8, 0, text, -1, output.data(), size);
+    return output;
+}
+
+static std::wstring shortCommitWide(const char* commit) {
+    std::wstring commitWide = utf8ToWide(commit);
+    if (commitWide.size() > 12) {
+        commitWide.resize(12);
+    }
+    return commitWide;
+}
 
 static LRESULT WINAPI WndProc(HWND hWnd, UINT msg,
                                WPARAM wParam, LPARAM lParam) {
@@ -79,6 +104,19 @@ bool Application::initialize(HINSTANCE hInstance, int width, int height) {
 
     std::wstring windowTitle = L"XpressFormula v";
     windowTitle += XF_VERSION_WSTRING;
+
+    std::wstring branchWide = utf8ToWide(XF_BUILD_BRANCH);
+    std::wstring commitWide = shortCommitWide(XF_BUILD_COMMIT);
+    if (!branchWide.empty() && branchWide != L"unknown") {
+        windowTitle += L" [";
+        windowTitle += branchWide;
+        if (!commitWide.empty() && commitWide != L"unknown") {
+            windowTitle += L" @ ";
+            windowTitle += commitWide;
+        }
+        windowTitle += L"]";
+    }
+
     windowTitle += L" - Math Expression Plotter";
 
     m_hWnd = ::CreateWindowExW(
@@ -197,6 +235,14 @@ void Application::renderFrame() {
         m_viewTransform, m_plotSettings, hasSurfaceFormula, m_exportStatus);
     m_pendingSavePlotImage = m_pendingSavePlotImage || actions.requestSavePlotImage;
     m_pendingCopyPlotImage = m_pendingCopyPlotImage || actions.requestCopyPlotImage;
+
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::TextDisabled("Build Metadata");
+    ImGui::TextDisabled("Version: %s", XF_BUILD_VERSION);
+    ImGui::TextDisabled("Repo: %s", XF_BUILD_REPO_URL);
+    ImGui::TextDisabled("Branch: %s", XF_BUILD_BRANCH);
+    ImGui::TextDisabled("Commit: %s", XF_BUILD_COMMIT);
     ImGui::End();
 
     // ---- Plot area ----

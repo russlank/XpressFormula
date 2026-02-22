@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: MIT -->
 # XpressFormula
 
 XpressFormula is a Windows desktop proof-of-concept for entering and plotting mathematical expressions with an ImGui-based UI.
@@ -63,3 +64,8 @@ See `doc/project-vendors.md` for source, license, and update notes.
 
 - `dotnet build` is not the primary build path for this native C++ solution; use MSBuild/Visual Studio.
 - In Debug builds, the app attempts to use the Direct3D debug layer and falls back when unavailable.
+- Build metadata (`repo URL`, `branch`, `version`, `commit`) is shown in the application UI when provided by the build pipeline.
+
+## License
+
+This project is licensed under the MIT License. See `LICENSE`.

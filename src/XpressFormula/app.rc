@@ -21,7 +21,7 @@ BEGIN
     BEGIN
         BLOCK "040904B0"
         BEGIN
-            VALUE "CompanyName", "Digixoil\0"
+            VALUE "Author", "Russlan Kafri\0"
             VALUE "FileDescription", "XpressFormula Mathematical Plotter\0"
             VALUE "FileVersion", XF_VERSION_STRING "\0"
             VALUE "InternalName", "XpressFormula\0"
