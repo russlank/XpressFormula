@@ -7,7 +7,7 @@ This document tracks third-party code vendored directly into this repository.
 
 | Component | Local Path | Upstream | License | Pinned Revision | Purpose |
 |---|---|---|---|---|---|
-| Dear ImGui | `src/vendor/imgui` | https://github.com/ocornut/imgui | MIT | https://github.com/ocornut/imgui/commit/37b7a7a9dfc4a775c371bbd0ab8ceaf132c78fce | Immediate-mode GUI + backends (`Win32`, `DX11`) |
+| Dear ImGui | [`src/vendor/imgui`](../src/vendor/imgui) | https://github.com/ocornut/imgui | MIT | https://github.com/ocornut/imgui/commit/37b7a7a9dfc4a775c371bbd0ab8ceaf132c78fce | Immediate-mode GUI + backends (`Win32`, `DX11`) |
 
 ## Usage Notes
 
@@ -19,7 +19,7 @@ This document tracks third-party code vendored directly into this repository.
 ## Update Process (Suggested)
 
 1. Choose and record an upstream commit/tag.
-2. Replace/update files under `src/vendor/imgui`.
+2. Replace/update files under [`src/vendor/imgui`](../src/vendor/imgui).
 3. Build and run:
    - application (`Debug|x64`)
    - tests (`XpressFormula.Tests`)
@@ -27,5 +27,5 @@ This document tracks third-party code vendored directly into this repository.
 
 ## License
 
-This documentation file is licensed under the MIT License. See `../LICENSE`.
+This documentation file is licensed under the MIT License. See [`../LICENSE`](../LICENSE).
 Vendored dependencies may use their own licenses as listed above.

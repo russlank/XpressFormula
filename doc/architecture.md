@@ -11,30 +11,30 @@ XpressFormula is organized into three primary layers:
 
 ## Module Breakdown
 
-- `src/XpressFormula/Core/Tokenizer.*`
+- [`src/XpressFormula/Core/Tokenizer.h`](../src/XpressFormula/Core/Tokenizer.h) and [`src/XpressFormula/Core/Tokenizer.cpp`](../src/XpressFormula/Core/Tokenizer.cpp)
   - Converts expression text into token stream.
-- `src/XpressFormula/Core/Parser.*`
+- [`src/XpressFormula/Core/Parser.h`](../src/XpressFormula/Core/Parser.h) and [`src/XpressFormula/Core/Parser.cpp`](../src/XpressFormula/Core/Parser.cpp)
   - Recursive-descent parser producing an AST.
-- `src/XpressFormula/Core/Evaluator.*`
+- [`src/XpressFormula/Core/Evaluator.h`](../src/XpressFormula/Core/Evaluator.h) and [`src/XpressFormula/Core/Evaluator.cpp`](../src/XpressFormula/Core/Evaluator.cpp)
   - Evaluates AST values for provided variables.
-- `src/XpressFormula/Core/ViewTransform.*`
+- [`src/XpressFormula/Core/ViewTransform.h`](../src/XpressFormula/Core/ViewTransform.h) and [`src/XpressFormula/Core/ViewTransform.cpp`](../src/XpressFormula/Core/ViewTransform.cpp)
   - Handles world-to-screen mapping, zoom, pan, and grid spacing.
-- `src/XpressFormula/UI/Application.*`
+- [`src/XpressFormula/UI/Application.h`](../src/XpressFormula/UI/Application.h) and [`src/XpressFormula/UI/Application.cpp`](../src/XpressFormula/UI/Application.cpp)
   - Owns Win32 window, D3D11 resources, ImGui lifecycle, frame loop.
-- `src/XpressFormula/UI/FormulaPanel.*`
+- [`src/XpressFormula/UI/FormulaPanel.h`](../src/XpressFormula/UI/FormulaPanel.h) and [`src/XpressFormula/UI/FormulaPanel.cpp`](../src/XpressFormula/UI/FormulaPanel.cpp)
   - Formula list management and per-formula controls.
-- `src/XpressFormula/UI/ControlPanel.*`
+- [`src/XpressFormula/UI/ControlPanel.h`](../src/XpressFormula/UI/ControlPanel.h) and [`src/XpressFormula/UI/ControlPanel.cpp`](../src/XpressFormula/UI/ControlPanel.cpp)
   - Global 2D view controls, 3D surface camera settings, and export actions.
-- `src/XpressFormula/UI/PlotPanel.*`
+- [`src/XpressFormula/UI/PlotPanel.h`](../src/XpressFormula/UI/PlotPanel.h) and [`src/XpressFormula/UI/PlotPanel.cpp`](../src/XpressFormula/UI/PlotPanel.cpp)
   - Interactive plotting area and mouse interactions.
-- `src/XpressFormula/Version.h`
+- [`src/XpressFormula/Version.h`](../src/XpressFormula/Version.h)
   - Centralized semantic version metadata used by window title, resources, and packaging.
-- `src/XpressFormula/Plotting/PlotRenderer.*`
+- [`src/XpressFormula/Plotting/PlotRenderer.h`](../src/XpressFormula/Plotting/PlotRenderer.h) and [`src/XpressFormula/Plotting/PlotRenderer.cpp`](../src/XpressFormula/Plotting/PlotRenderer.cpp)
   - Rendering primitives and formula visualizations (2D + 3D).
 
 ## Runtime Flow
 
-1. `main.cpp` constructs `UI::Application`.
+1. [`src/XpressFormula/main.cpp`](../src/XpressFormula/main.cpp) constructs `UI::Application`.
 2. `Application::initialize()` creates Win32 window, D3D11 swap chain/device, and ImGui context.
 3. `Application::run()` drives the message loop and rendering frames.
 4. `FormulaPanel` updates formula text and triggers parse.
@@ -75,4 +75,4 @@ Render mapping:
 
 ## License
 
-This document is licensed under the MIT License. See `../LICENSE`.
+This document is licensed under the MIT License. See [`../LICENSE`](../LICENSE).

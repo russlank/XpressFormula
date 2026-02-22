@@ -7,7 +7,7 @@ This guide explains how to version, package, and publish XpressFormula releases.
 
 Version values are defined in:
 
-- `src/XpressFormula/Version.h`
+- [`src/XpressFormula/Version.h`](../src/XpressFormula/Version.h)
 
 Key macros:
 
@@ -30,7 +30,7 @@ Packaging produces three files:
 
 Workflow file:
 
-- `.github/workflows/release-packaging.yml`
+- [`.github/workflows/release-packaging.yml`](../.github/workflows/release-packaging.yml)
 
 The release job pins key versions with environment variables:
 
@@ -68,7 +68,7 @@ wix extension add --global WixToolset.Bal.wixext/$wixVersion
 wix --version
 ```
 
-`packaging/build-packages.ps1` expects the BAL extension to already be installed and prints the exact install command if it is missing.
+[`packaging/build-packages.ps1`](../packaging/build-packages.ps1) expects the BAL extension to already be installed and prints the exact install command if it is missing.
 For WiX 6, the script also auto-detects and uses the extension DLL path when the extension cache reports the package as damaged.
 
 Build app binary:
@@ -127,15 +127,15 @@ Write-Host "Expected release tag: $expectedTag"
 ## How to Change Versions
 
 1. Application version:
-- Edit `XF_VERSION_MAJOR`, `XF_VERSION_MINOR`, and `XF_VERSION_PATCH` in `src/XpressFormula/Version.h`.
+- Edit `XF_VERSION_MAJOR`, `XF_VERSION_MINOR`, and `XF_VERSION_PATCH` in [`src/XpressFormula/Version.h`](../src/XpressFormula/Version.h).
 - Create a matching Git tag (`v<major>.<minor>.<patch>`).
 2. CI dependency versions:
-- Edit `DOTNET_VERSION`, `PYTHON_VERSION`, and `WIX_VERSION` in `.github/workflows/release-packaging.yml`.
+- Edit `DOTNET_VERSION`, `PYTHON_VERSION`, and `WIX_VERSION` in [`.github/workflows/release-packaging.yml`](../.github/workflows/release-packaging.yml).
 3. MSVC toolset version used by CI:
-- Edit `MSVC_PLATFORM_TOOLSET` in `.github/workflows/release-packaging.yml`.
+- Edit `MSVC_PLATFORM_TOOLSET` in [`.github/workflows/release-packaging.yml`](../.github/workflows/release-packaging.yml).
 - Ensure the selected runner image has that toolset installed, or the build will fail with `MSB8020`.
 4. Local simulation defaults:
-- Use parameters on `scripts/test-release-pipeline-local.ps1` (`-PlatformToolset`, `-WixVersion`, `-Configuration`, `-Platform`, `-OutputDir`).
+- Use parameters on [`scripts/test-release-pipeline-local.ps1`](../scripts/test-release-pipeline-local.ps1) (`-PlatformToolset`, `-WixVersion`, `-Configuration`, `-Platform`, `-OutputDir`).
 
 ## GitHub Release Pipeline
 
@@ -153,7 +153,7 @@ Pipeline actions:
 
 ## Creating a New Release
 
-1. Update version in `src/XpressFormula/Version.h`.
+1. Update version in [`src/XpressFormula/Version.h`](../src/XpressFormula/Version.h).
 2. Commit changes:
 
 ```powershell
@@ -173,11 +173,11 @@ git push origin main --tags
 
 ## Packaging Sources
 
-- WiX MSI definition: `packaging/wix/Product.wxs`
-- WiX setup EXE bundle: `packaging/wix/Bundle.wxs`
-- Packaging script: `packaging/build-packages.ps1`
-- Local pipeline simulation script: `scripts/test-release-pipeline-local.ps1`
+- WiX MSI definition: [`packaging/wix/Product.wxs`](../packaging/wix/Product.wxs)
+- WiX setup EXE bundle: [`packaging/wix/Bundle.wxs`](../packaging/wix/Bundle.wxs)
+- Packaging script: [`packaging/build-packages.ps1`](../packaging/build-packages.ps1)
+- Local pipeline simulation script: [`scripts/test-release-pipeline-local.ps1`](../scripts/test-release-pipeline-local.ps1)
 
 ## License
 
-This document is licensed under the MIT License. See `../LICENSE`.
+This document is licensed under the MIT License. See [`../LICENSE`](../LICENSE).

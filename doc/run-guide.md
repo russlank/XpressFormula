@@ -9,13 +9,13 @@
 
 See also:
 
-- `../README.md`
-- `index.md`
-- `project-vendors.md`
+- [`../README.md`](../README.md)
+- [`index.md`](index.md)
+- [`project-vendors.md`](project-vendors.md)
 
 ## Run from Visual Studio
 
-1. Open `src\XpressFormula.slnx` in Visual Studio.
+1. Open [`src/XpressFormula.slnx`](../src/XpressFormula.slnx) in Visual Studio.
 2. Set startup project to `XpressFormula`.
 3. Select configuration:
    - `Debug | x64` (recommended)
@@ -28,10 +28,10 @@ To run tests in Visual Studio:
 
 ## Run from VS Code
 
-This repository includes VS Code configuration:
+If your local checkout includes VS Code configuration:
 
-- Tasks: `.vscode\tasks.json`
-- Launch configs: `.vscode\launch.json`
+- Tasks: `.vscode/tasks.json`
+- Launch configs: `.vscode/launch.json`
 
 Steps:
 
@@ -107,4 +107,4 @@ These values are embedded at compile time by CI/local pipeline scripts.
 
 ## License
 
-This document is licensed under the MIT License. See `../LICENSE`.
+This document is licensed under the MIT License. See [`../LICENSE`](../LICENSE).

@@ -89,4 +89,4 @@ Only variables `x`, `y`, and `z` are supported for plotting.
 
 ## License
 
-This document is licensed under the MIT License. See `../LICENSE`.
+This document is licensed under the MIT License. See [`../LICENSE`](../LICENSE).

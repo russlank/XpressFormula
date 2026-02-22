@@ -3,12 +3,12 @@
 
 ## Test Project
 
-- Project: `src/XpressFormula.Tests/XpressFormula.Tests.vcxproj`
+- Project: [`src/XpressFormula.Tests/XpressFormula.Tests.vcxproj`](../src/XpressFormula.Tests/XpressFormula.Tests.vcxproj)
 - Output executable:
   - x64: `src\x64\Debug\XpressFormula.Tests.exe`
   - x86: `src\Debug\XpressFormula.Tests.exe`
 
-The project uses a lightweight in-repo test harness (`CppUnitTest.h`) and does not require external MSTest headers.
+The project uses a lightweight in-repo test harness ([`src/XpressFormula.Tests/CppUnitTest.h`](../src/XpressFormula.Tests/CppUnitTest.h)) and does not require external MSTest headers.
 
 ## What Is Covered
 
@@ -49,4 +49,4 @@ The project uses a lightweight in-repo test harness (`CppUnitTest.h`) and does n
 
 ## License
 
-This document is licensed under the MIT License. See `../LICENSE`.
+This document is licensed under the MIT License. See [`../LICENSE`](../LICENSE).

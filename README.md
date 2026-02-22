@@ -49,7 +49,7 @@ Common path:
 - [`src/XpressFormula.Tests`](src/XpressFormula.Tests) test runner and tests
 - [`src/vendor/imgui`](src/vendor/imgui) vendored Dear ImGui
 - [`doc`](doc) project documentation
-- [`.vscode`](.vscode) VS Code tasks and launch configurations
+- `VS Code` tasks and launch configs can be added locally in `.vscode/` (optional)
 
 ## Documentation
 
