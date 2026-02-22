@@ -15,12 +15,16 @@ public:
         float elevationDeg = 30.0f;
         float zScale = 1.0f;
         int   resolution = 36;
+        // Used by implicit F(x,y,z)=0 extraction. Kept separate because implicit meshing
+        // is O(N^3) and usually needs a different quality/perf tradeoff than z=f(x,y).
         int   implicitResolution = 64;
         float opacity = 0.82f;
         float wireThickness = 1.0f;
         bool  showEnvelope = true;
         float envelopeThickness = 1.25f;
         bool  showDimensionArrows = true;
+        // Center of the implicit z sampling window. The sampled z range is derived from the
+        // current x/y view span around this center (so panning/zooming the view changes mesh).
         float implicitZCenter = 0.0f;
     };
 
@@ -54,7 +58,8 @@ public:
                               const Core::ASTNodePtr& ast, const float color[4],
                               const Surface3DOptions& options);
 
-    /// Plot the implicit 3D surface F(x,y,z)=0 using sampled triangles.
+    /// Plot the implicit 3D surface F(x,y,z)=0 using a cached surface-nets style mesh,
+    /// then project/draw it as depth-sorted triangles in ImGui.
     static void drawImplicitSurface3D(ImDrawList* dl, const Core::ViewTransform& vt,
                                       const Core::ASTNodePtr& ast, const float color[4],
                                       const Surface3DOptions& options);
