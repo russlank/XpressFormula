@@ -18,6 +18,12 @@ The app supports:
 - Plot image export to `.png`/`.bmp` and clipboard copy
 - Versioned binary metadata and installer packaging (`.msi` + setup `.exe`)
 
+## Screenshots
+
+| Formula View | Surface/Heatmap View |
+|---|---|
+| ![XpressFormula screenshot 1](doc/images/image-01.png) | ![XpressFormula screenshot 2](doc/images/image-02.png) |
+
 ## Project Goals
 
 - Fast interactive plotting in a native C++ application
