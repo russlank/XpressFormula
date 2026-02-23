@@ -67,6 +67,40 @@ void PlotPanel::render(std::vector<FormulaEntry>& formulas,
         }
     }
 
+    const bool is3DMode = (settings.xyRenderMode == XYRenderMode::Surface3D);
+    const bool isDraggingLeft = isActive && ImGui::IsMouseDragging(ImGuiMouseButton_Left);
+    const bool isZoomingView = isHovered && (ImGui::GetIO().MouseWheel != 0.0f);
+    const bool useInteractive3DThrottle =
+        settings.optimizeRendering && hasSurface && is3DMode && (isDraggingLeft || isZoomingView);
+
+    // Panning/zooming implicit F(x,y,z)=0 changes the sampled domain, which invalidates the mesh cache
+    // and can force a full O(N^3) remesh every mouse move. Temporarily lowering mesh density (and
+    // suppressing wireframe lines) keeps interaction responsive, then full quality returns on release.
+    int interactiveSurfaceResolution = settings.surfaceResolution;
+    if (useInteractive3DThrottle) {
+        if (interactiveSurfaceResolution > 24) {
+            interactiveSurfaceResolution = (interactiveSurfaceResolution * 2) / 3;
+        }
+        if (interactiveSurfaceResolution < 24) {
+            interactiveSurfaceResolution = 24;
+        }
+    }
+
+    int interactiveImplicitResolution = settings.implicitSurfaceResolution;
+    if (useInteractive3DThrottle) {
+        if (interactiveImplicitResolution > 20) {
+            interactiveImplicitResolution /= 2;
+        }
+        if (interactiveImplicitResolution > 40) {
+            interactiveImplicitResolution = 40;
+        }
+        if (interactiveImplicitResolution < 20) {
+            interactiveImplicitResolution = 20;
+        }
+    }
+
+    const float interactionWireThickness = useInteractive3DThrottle ? 0.0f : effectiveWireThickness;
+
     // Draw each formula
     for (auto& f : formulas) {
         if (!f.visible || !f.isValid()) continue;
@@ -80,10 +114,10 @@ void PlotPanel::render(std::vector<FormulaEntry>& formulas,
                     options.azimuthDeg = settings.azimuthDeg;
                     options.elevationDeg = settings.elevationDeg;
                     options.zScale = settings.zScale;
-                    options.resolution = settings.surfaceResolution;
-                    options.implicitResolution = settings.implicitSurfaceResolution;
+                    options.resolution = interactiveSurfaceResolution;
+                    options.implicitResolution = interactiveImplicitResolution;
                     options.opacity = settings.surfaceOpacity;
-                    options.wireThickness = effectiveWireThickness;
+                    options.wireThickness = interactionWireThickness;
                     options.showEnvelope = showEnvelope;
                     options.envelopeThickness = settings.envelopeThickness;
                     options.showDimensionArrows = settings.showDimensionArrows && showCoordinates;
@@ -102,10 +136,10 @@ void PlotPanel::render(std::vector<FormulaEntry>& formulas,
                     options.azimuthDeg = settings.azimuthDeg;
                     options.elevationDeg = settings.elevationDeg;
                     options.zScale = settings.zScale;
-                    options.resolution = settings.surfaceResolution;
-                    options.implicitResolution = settings.implicitSurfaceResolution;
+                    options.resolution = interactiveSurfaceResolution;
+                    options.implicitResolution = interactiveImplicitResolution;
                     options.opacity = settings.surfaceOpacity;
-                    options.wireThickness = effectiveWireThickness;
+                    options.wireThickness = interactionWireThickness;
                     options.showEnvelope = showEnvelope;
                     options.envelopeThickness = settings.envelopeThickness;
                     options.showDimensionArrows = settings.showDimensionArrows && showCoordinates;

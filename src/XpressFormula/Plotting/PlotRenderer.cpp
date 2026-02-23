@@ -406,9 +406,6 @@ void PlotRenderer::drawSurface3D(ImDrawList* dl, const Core::ViewTransform& vt,
     const double yMax = vt.worldYMax();
     const double dx = (xMax - xMin) / nx;
     const double dy = (yMax - yMin) / ny;
-    const double xCenter = (xMin + xMax) * 0.5;
-    const double yCenter = (yMin + yMax) * 0.5;
-
     std::vector<double> values((nx + 1) * (ny + 1), std::numeric_limits<double>::quiet_NaN());
     double zMin = std::numeric_limits<double>::max();
     double zMax = std::numeric_limits<double>::lowest();
@@ -442,10 +439,6 @@ void PlotRenderer::drawSurface3D(ImDrawList* dl, const Core::ViewTransform& vt,
     const double sinE = std::sin(elevation);
 
     std::vector<Vertex> projected((nx + 1) * (ny + 1));
-    double pxMin = std::numeric_limits<double>::max();
-    double pxMax = std::numeric_limits<double>::lowest();
-    double pyMin = std::numeric_limits<double>::max();
-    double pyMax = std::numeric_limits<double>::lowest();
     int validPointCount = 0;
 
     for (int iy = 0; iy <= ny; ++iy) {
@@ -460,8 +453,8 @@ void PlotRenderer::drawSurface3D(ImDrawList* dl, const Core::ViewTransform& vt,
                 continue;
             }
 
-            const double x = wx - xCenter;
-            const double y = wy - yCenter;
+            const double x = wx;
+            const double y = wy;
             const double zWorld = z * options.zScale;
 
             const double xYaw = cosA * x - sinA * y;
@@ -474,10 +467,6 @@ void PlotRenderer::drawSurface3D(ImDrawList* dl, const Core::ViewTransform& vt,
             v.valid = true;
             validPointCount++;
 
-            pxMin = std::min(pxMin, v.xProj);
-            pxMax = std::max(pxMax, v.xProj);
-            pyMin = std::min(pyMin, v.yProj);
-            pyMax = std::max(pyMax, v.yProj);
         }
     }
 
@@ -485,17 +474,12 @@ void PlotRenderer::drawSurface3D(ImDrawList* dl, const Core::ViewTransform& vt,
         return;
     }
 
-    const double spanX = std::max(1e-6, pxMax - pxMin);
-    const double spanY = std::max(1e-6, pyMax - pyMin);
-    const double margin = 24.0;
-    const double plotW = std::max(40.0, static_cast<double>(vt.screenWidth) - margin * 2.0);
-    const double plotH = std::max(40.0, static_cast<double>(vt.screenHeight) - margin * 2.0);
-    const double scale = std::min(plotW / spanX, plotH / spanY);
-
-    const double pxCenter = (pxMin + pxMax) * 0.5;
-    const double pyCenter = (pyMin + pyMax) * 0.5;
-    const float sxCenter = vt.screenOriginX + vt.screenWidth * 0.5f;
-    const float syCenter = vt.screenOriginY + vt.screenHeight * 0.5f;
+    // Anchor 3D projection to the world origin so the 3D scene stays aligned with the 2D axes/grid
+    // while panning/zooming. Previously this auto-centered to the visible surface bounds, which made
+    // the 3D scene appear to "swim" relative to the 2D coordinates.
+    const double scale = std::max(1e-6, std::min(vt.scaleX, vt.scaleY));
+    const float sxCenter = vt.worldToScreen(0.0, 0.0).x;
+    const float syCenter = vt.worldToScreen(0.0, 0.0).y;
 
     std::vector<ScreenVertex> screenVerts((nx + 1) * (ny + 1));
     for (size_t i = 0; i < projected.size(); ++i) {
@@ -505,8 +489,8 @@ void PlotRenderer::drawSurface3D(ImDrawList* dl, const Core::ViewTransform& vt,
             s.valid = false;
             continue;
         }
-        s.x = sxCenter + static_cast<float>((v.xProj - pxCenter) * scale);
-        s.y = syCenter - static_cast<float>((v.yProj - pyCenter) * scale);
+        s.x = sxCenter + static_cast<float>(v.xProj * scale);
+        s.y = syCenter - static_cast<float>(v.yProj * scale);
         s.depth = v.depth;
         s.value = v.value;
         s.valid = true;
@@ -594,8 +578,8 @@ void PlotRenderer::drawSurface3D(ImDrawList* dl, const Core::ViewTransform& vt,
         };
 
         auto projectEnvelopePoint = [&](double wx, double wy, double wz) {
-            const double x = wx - xCenter;
-            const double y = wy - yCenter;
+            const double x = wx;
+            const double y = wy;
             const double zWorld = wz * options.zScale;
 
             const double xYaw = cosA * x - sinA * y;
@@ -605,8 +589,8 @@ void PlotRenderer::drawSurface3D(ImDrawList* dl, const Core::ViewTransform& vt,
             const double yProj = cosE * yYaw - sinE * zWorld;
             const double depth = sinE * yYaw + cosE * zWorld;
 
-            const float sx = sxCenter + static_cast<float>((xProj - pxCenter) * scale);
-            const float sy = syCenter - static_cast<float>((yProj - pyCenter) * scale);
+            const float sx = sxCenter + static_cast<float>(xProj * scale);
+            const float sy = syCenter - static_cast<float>(yProj * scale);
             return EnvelopePoint{ ImVec2(sx, sy), depth };
         };
 
@@ -814,9 +798,6 @@ void PlotRenderer::drawImplicitSurface3D(ImDrawList* dl, const Core::ViewTransfo
     const double zMaxDomain = zCenter + zHalfSpan;
     const double dz = std::max(1e-6, (zMaxDomain - zMinDomain) / nz);
 
-    const double xCenter = (xMin + xMax) * 0.5;
-    const double yCenter = (yMin + yMax) * 0.5;
-
     auto gridIndex = [&](int ix, int iy, int iz) -> size_t {
         return static_cast<size_t>(((iz * (ny + 1)) + iy) * (nx + 1) + ix);
     };
@@ -847,9 +828,9 @@ void PlotRenderer::drawImplicitSurface3D(ImDrawList* dl, const Core::ViewTransfo
     // Shared 3D->2D projection used for mesh triangles and the optional envelope/arrows.
     auto projectPoint = [&](double wx, double wy, double wz,
                             double& outXProj, double& outYProj, double& outDepth) {
-        const double x = wx - xCenter;
-        const double y = wy - yCenter;
-        const double zWorld = (wz - zCenter) * options.zScale;
+        const double x = wx;
+        const double y = wy;
+        const double zWorld = wz * options.zScale;
 
         const double xYaw = cosA * x - sinA * y;
         const double yYaw = sinA * x + cosA * y;
@@ -880,10 +861,6 @@ void PlotRenderer::drawImplicitSurface3D(ImDrawList* dl, const Core::ViewTransfo
                        static_cast<size_t>(nz) * 2u);
     const std::vector<WorldFace>* meshFaces = nullptr;
 
-    double pxMin = std::numeric_limits<double>::max();
-    double pxMax = std::numeric_limits<double>::lowest();
-    double pyMin = std::numeric_limits<double>::max();
-    double pyMax = std::numeric_limits<double>::lowest();
     double surfXMin = std::numeric_limits<double>::max();
     double surfXMax = std::numeric_limits<double>::lowest();
     double surfYMin = std::numeric_limits<double>::max();
@@ -1225,41 +1202,27 @@ void PlotRenderer::drawImplicitSurface3D(ImDrawList* dl, const Core::ViewTransfo
 
         projectedFaces.push_back(face);
 
-        const ProjectedVertex* verts[3] = { &face.v0, &face.v1, &face.v2 };
-        for (const ProjectedVertex* v : verts) {
-            pxMin = std::min(pxMin, v->xProj);
-            pxMax = std::max(pxMax, v->xProj);
-            pyMin = std::min(pyMin, v->yProj);
-            pyMax = std::max(pyMax, v->yProj);
-        }
     }
 
     if (projectedFaces.empty()) {
         return;
     }
 
-    const double spanX = std::max(1e-6, pxMax - pxMin);
-    const double spanY = std::max(1e-6, pyMax - pyMin);
-    const double margin = 24.0;
-    const double plotW = std::max(40.0, static_cast<double>(vt.screenWidth) - margin * 2.0);
-    const double plotH = std::max(40.0, static_cast<double>(vt.screenHeight) - margin * 2.0);
-    const double scale = std::min(plotW / spanX, plotH / spanY);
-
-    const double pxCenter = (pxMin + pxMax) * 0.5;
-    const double pyCenter = (pyMin + pyMax) * 0.5;
-    const float sxCenter = vt.screenOriginX + vt.screenWidth * 0.5f;
-    const float syCenter = vt.screenOriginY + vt.screenHeight * 0.5f;
+    // Anchor implicit 3D projection to world origin for stable alignment with the 2D grid/axes.
+    const double scale = std::max(1e-6, std::min(vt.scaleX, vt.scaleY));
+    const float sxCenter = vt.worldToScreen(0.0, 0.0).x;
+    const float syCenter = vt.worldToScreen(0.0, 0.0).y;
 
     std::vector<ScreenFace> screenFaces;
     screenFaces.reserve(projectedFaces.size());
     for (const ProjectedFace& f : projectedFaces) {
         screenFaces.push_back({
-            ImVec2(sxCenter + static_cast<float>((f.v0.xProj - pxCenter) * scale),
-                   syCenter - static_cast<float>((f.v0.yProj - pyCenter) * scale)),
-            ImVec2(sxCenter + static_cast<float>((f.v1.xProj - pxCenter) * scale),
-                   syCenter - static_cast<float>((f.v1.yProj - pyCenter) * scale)),
-            ImVec2(sxCenter + static_cast<float>((f.v2.xProj - pxCenter) * scale),
-                   syCenter - static_cast<float>((f.v2.yProj - pyCenter) * scale)),
+            ImVec2(sxCenter + static_cast<float>(f.v0.xProj * scale),
+                   syCenter - static_cast<float>(f.v0.yProj * scale)),
+            ImVec2(sxCenter + static_cast<float>(f.v1.xProj * scale),
+                   syCenter - static_cast<float>(f.v1.yProj * scale)),
+            ImVec2(sxCenter + static_cast<float>(f.v2.xProj * scale),
+                   syCenter - static_cast<float>(f.v2.yProj * scale)),
             f.depth,
             f.zAvg,
             f.shade
@@ -1329,8 +1292,8 @@ void PlotRenderer::drawImplicitSurface3D(ImDrawList* dl, const Core::ViewTransfo
         auto projectEnvelopePoint = [&](double wx, double wy, double wz) {
             double xp, yp, depth;
             projectPoint(wx, wy, wz, xp, yp, depth);
-            const float sx = sxCenter + static_cast<float>((xp - pxCenter) * scale);
-            const float sy = syCenter - static_cast<float>((yp - pyCenter) * scale);
+            const float sx = sxCenter + static_cast<float>(xp * scale);
+            const float sy = syCenter - static_cast<float>(yp * scale);
             return EnvelopePoint{ ImVec2(sx, sy), depth };
         };
 
