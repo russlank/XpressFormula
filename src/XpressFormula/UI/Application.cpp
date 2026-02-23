@@ -342,8 +342,8 @@ void Application::renderExportDialog(float sidebarWidth, float viewportHeight) {
         m_exportDialogSettings.showCoordinates = m_plotSettings.showCoordinates;
         m_exportDialogSettings.showWires = m_plotSettings.showWires;
         m_exportDialogSettings.showEnvelope = m_plotSettings.showSurfaceEnvelope;
-        m_exportPreviewDirty = true;
-        m_exportPreviewStatus = "Preview refresh scheduled.";
+        m_exportPreviewDirty = false;
+        m_exportPreviewStatus = "Preview may be out of date. Click Refresh Preview.";
     }
 
     if (!m_exportDialogOpen) {
@@ -448,11 +448,11 @@ void Application::renderExportDialog(float sidebarWidth, float viewportHeight) {
         ImGui::Separator();
         ImGui::TextUnformatted("Preview");
         if (ImGui::Button("Refresh Preview")) {
-            previewChanged = true;
-        }
-        if (previewChanged) {
             m_exportPreviewDirty = true;
             m_exportPreviewStatus = "Preview refresh scheduled.";
+        }
+        if (previewChanged) {
+            m_exportPreviewStatus = "Preview out of date. Click Refresh Preview.";
         }
 
         if (m_exportPreviewSrv && m_exportPreviewWidth > 0 && m_exportPreviewHeight > 0) {
@@ -1120,6 +1120,17 @@ bool Application::renderPlotPixelsOffscreen(const Application::ExportDialogSetti
         Core::ViewTransform exportView = m_viewTransform;
         PlotSettings exportSettings = m_plotSettings;
         exportSettings.autoRotate = false;
+
+        // Preserve the same visible world-domain as the interactive plot. Export/preview size
+        // should change resolution, not crop the graph.
+        const double worldW = m_viewTransform.worldXMax() - m_viewTransform.worldXMin();
+        const double worldH = m_viewTransform.worldYMax() - m_viewTransform.worldYMin();
+        if (worldW > 1e-12) {
+            exportView.scaleX = static_cast<double>(targetWidth) / worldW;
+        }
+        if (worldH > 1e-12) {
+            exportView.scaleY = static_cast<double>(targetHeight) / worldH;
+        }
 
         PlotRenderOverrides exportOverrides;
         exportOverrides.active = true;
