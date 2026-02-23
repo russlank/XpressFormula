@@ -453,6 +453,9 @@ void PlotRenderer::drawSurface3D(ImDrawList* dl, const Core::ViewTransform& vt,
                 continue;
             }
 
+            // Keep X/Y in world coordinates so the projected 3D geometry remains anchored to the
+            // same origin used by the 2D grid/axes (ViewTransform). Subtracting the current view
+            // center here would re-center the mesh every frame and cause visible "swimming".
             const double x = wx;
             const double y = wy;
             const double zWorld = z * options.zScale;
@@ -477,6 +480,8 @@ void PlotRenderer::drawSurface3D(ImDrawList* dl, const Core::ViewTransform& vt,
     // Anchor 3D projection to the world origin so the 3D scene stays aligned with the 2D axes/grid
     // while panning/zooming. Previously this auto-centered to the visible surface bounds, which made
     // the 3D scene appear to "swim" relative to the 2D coordinates.
+    // We also reuse the 2D pixel/unit scale (ViewTransform) so moving the view changes both the
+    // overlays and the 3D geometry consistently.
     const double scale = std::max(1e-6, std::min(vt.scaleX, vt.scaleY));
     const float sxCenter = vt.worldToScreen(0.0, 0.0).x;
     const float syCenter = vt.worldToScreen(0.0, 0.0).y;
@@ -826,8 +831,13 @@ void PlotRenderer::drawImplicitSurface3D(ImDrawList* dl, const Core::ViewTransfo
     const double sinE = std::sin(elevation);
 
     // Shared 3D->2D projection used for mesh triangles and the optional envelope/arrows.
+    // The projection is world-origin anchored (no per-frame centering by sampled-box center)
+    // so implicit meshes remain aligned with the 2D grid/axes during panning and zooming.
     auto projectPoint = [&](double wx, double wy, double wz,
                             double& outXProj, double& outYProj, double& outDepth) {
+        // This helper projects a world-space point using the current 3D camera but keeps the same
+        // world origin reference as the 2D axes/grid. It is shared by triangles, envelope edges,
+        // and XYZ dimension arrows so those overlays remain aligned.
         const double x = wx;
         const double y = wy;
         const double zWorld = wz * options.zScale;

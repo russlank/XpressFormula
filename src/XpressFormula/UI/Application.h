@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <d3d11.h>
 #include <array>
+#include <future>
 #include <string>
 #include <vector>
 
@@ -35,6 +36,15 @@ public:
         bool showWires = true;
         bool showEnvelope = true;
         std::array<float, 4> backgroundColor = { 0.098f, 0.098f, 0.118f, 1.0f };
+    };
+
+    struct UpdateCheckResult {
+        bool requestSucceeded = false;
+        bool updateAvailable = false;
+        bool manualRequest = false;
+        std::string latestTag;
+        std::string releaseUrl;
+        std::string statusMessage;
     };
 
     Application();
@@ -60,6 +70,8 @@ private:
     bool createDeviceD3D(HWND hWnd);
     void cleanupDeviceD3D();
     void renderFrame();
+    void startUpdateCheck(bool manualRequest);
+    void pollUpdateCheckResult();
     bool promptSaveImagePath(std::wstring& path);
     bool capturePlotPixels(std::vector<std::uint8_t>& pixels, int& width, int& height);
     bool renderPlotPixelsOffscreen(const ExportDialogSettings& settings,
@@ -128,6 +140,13 @@ private:
     bool                      m_exportPreviewDirty = false;
     std::string               m_exportPreviewStatus;
     std::string               m_exportStatus;
+    std::future<UpdateCheckResult> m_updateCheckFuture;
+    bool                      m_updateCheckInProgress = false;
+    bool                      m_updateAvailable = false;
+    bool                      m_updateNoticeDismissed = false;
+    std::string               m_updateLatestTag;
+    std::string               m_updateReleaseUrl = "https://github.com/russlank/XpressFormula/releases";
+    std::string               m_updateStatus;
 
     // UI panels
     FormulaPanel  m_formulaPanel;

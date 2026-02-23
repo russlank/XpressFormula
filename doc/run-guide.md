@@ -83,6 +83,7 @@ After launch:
    - Choose **3D Surfaces / Implicit** or **2D Heatmap** for `x,y` and implicit `F(x,y,z)=0` formulas.
    - Tune azimuth, elevation, z-scale, surface density, implicit surface quality, and opacity for 3D.
    - Use **Show Grid**, **Show Coordinates**, and **Show Wires** to simplify the on-screen plot when needed.
+   - Keep **Optimize Rendering** enabled for lower idle GPU usage and smoother 3D dragging/zooming (temporary interaction-time quality reduction for heavy implicit meshes).
    - For implicit 3D equations, keep the formula `z slice / center` near the shape center (often `0`) and make sure the visible `X/Y` range contains the shape (for example, a sphere `x^2+y^2+z^2=16` needs roughly `[-4,4]` in both `X` and `Y`).
 4. Use mouse drag to pan and mouse wheel to zoom domain coordinates.
 
@@ -119,6 +120,19 @@ The sidebar includes a **Build Metadata** section showing:
 - build version
 
 These values are embedded at compile time by CI/local pipeline scripts.
+
+## Update Notifications
+
+The sidebar includes an **Updates** section that:
+
+- checks GitHub releases in the background after startup
+- shows a notification when a newer version is available
+- lets you manually run **Check For Updates**
+- opens the releases page with **Open Releases Page**
+
+Release source used by the app:
+
+- `https://github.com/russlank/XpressFormula/releases`
 
 ## Troubleshooting
 

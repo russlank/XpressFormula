@@ -161,7 +161,9 @@ void PlotPanel::render(std::vector<FormulaEntry>& formulas,
 
     // --- Mouse interaction ---
     if (isHovered) {
-        // Pan with left drag
+        // Pan with left drag.
+        // In 3D surface mode this still pans the X/Y sampling domain (not the camera orbit), so
+        // implicit F(x,y,z)=0 meshes may need to be rebuilt if the visible domain changes.
         if (isActive && ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
             ImVec2 delta = ImGui::GetIO().MouseDelta;
             vt.panPixels(delta.x, delta.y);
@@ -172,7 +174,9 @@ void PlotPanel::render(std::vector<FormulaEntry>& formulas,
         if (wheel != 0.0f) {
             double factor = (wheel > 0) ? 1.15 : (1.0 / 1.15);
 
-            // Zoom toward cursor position
+            // Zoom toward cursor position in world coordinates so the point under the cursor stays
+            // visually stable. This is shared by 2D and 3D modes because 3D plots still use the
+            // 2D X/Y view domain as the sampling box for explicit/implicit surfaces.
             ImVec2 mousePos = ImGui::GetIO().MousePos;
             double wxBefore, wyBefore;
             vt.screenToWorld(mousePos.x, mousePos.y, wxBefore, wyBefore);

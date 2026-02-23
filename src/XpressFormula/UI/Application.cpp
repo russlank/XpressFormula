@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Application.cpp - Win32 + D3D11 + ImGui application implementation.
 #include "Application.h"
+#include "../Core/UpdateVersionUtils.h"
 #include "../Version.h"
 #include "../resource.h"
 
@@ -16,20 +17,30 @@
 #include <d3d11.h>
 #include <dxgi.h>
 #include <objbase.h>
+#include <shellapi.h>
 #include <tchar.h>
+#include <winhttp.h>
 #include <wincodec.h>
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <cwchar>
 #include <cwctype>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <string>
 
 #pragma comment(lib, "windowscodecs.lib")
+#pragma comment(lib, "shell32.lib")
+#pragma comment(lib, "winhttp.lib")
+
+#ifndef WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY
+#define WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY WINHTTP_ACCESS_TYPE_DEFAULT_PROXY
+#endif
 
 // Forward-declare the ImGui Win32 message handler
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(
@@ -37,6 +48,157 @@ extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(
 
 // We store a pointer to the Application so the WndProc can access it.
 static XpressFormula::UI::Application* g_app = nullptr;
+
+namespace {
+
+constexpr const wchar_t* kGitHubLatestReleaseApiHost = L"api.github.com";
+constexpr const wchar_t* kGitHubLatestReleaseApiPath = L"/repos/russlank/XpressFormula/releases/latest";
+constexpr const wchar_t* kGitHubReleasesUrlW = L"https://github.com/russlank/XpressFormula/releases";
+constexpr const char* kGitHubReleasesUrlUtf8 = "https://github.com/russlank/XpressFormula/releases";
+
+std::string readWinHttpResponseBody(HINTERNET requestHandle) {
+    std::string response;
+    if (!requestHandle) {
+        return response;
+    }
+
+    for (;;) {
+        DWORD bytesAvailable = 0;
+        if (!::WinHttpQueryDataAvailable(requestHandle, &bytesAvailable)) {
+            return {};
+        }
+        if (bytesAvailable == 0) {
+            break;
+        }
+
+        const size_t oldSize = response.size();
+        response.resize(oldSize + static_cast<size_t>(bytesAvailable));
+        DWORD bytesRead = 0;
+        if (!::WinHttpReadData(requestHandle, response.data() + oldSize, bytesAvailable, &bytesRead)) {
+            return {};
+        }
+        response.resize(oldSize + static_cast<size_t>(bytesRead));
+        if (bytesRead == 0) {
+            break;
+        }
+    }
+
+    return response;
+}
+
+bool openUrlInBrowser(const wchar_t* url) {
+    if (!url || url[0] == L'\0') {
+        return false;
+    }
+    const HINSTANCE result = ::ShellExecuteW(nullptr, L"open", url, nullptr, nullptr, SW_SHOWNORMAL);
+    return reinterpret_cast<INT_PTR>(result) > 32;
+}
+
+// Background worker: query GitHub Releases API, parse the latest tag/url, and compare against the
+// app semantic version. This runs off the UI thread so startup and manual checks do not stall ImGui.
+XpressFormula::UI::Application::UpdateCheckResult fetchLatestReleaseFromGitHub(bool manualRequest) {
+    using namespace XpressFormula::Core::UpdateVersionUtils;
+
+    XpressFormula::UI::Application::UpdateCheckResult result;
+    result.manualRequest = manualRequest;
+    result.releaseUrl = kGitHubReleasesUrlUtf8;
+
+    HINTERNET session = ::WinHttpOpen(L"XpressFormula/" XF_VERSION_WSTRING,
+                                      WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
+                                      WINHTTP_NO_PROXY_NAME,
+                                      WINHTTP_NO_PROXY_BYPASS,
+                                      0);
+    if (!session) {
+        result.statusMessage = "Update check failed: could not initialize HTTP session.";
+        return result;
+    }
+
+    ::WinHttpSetTimeouts(session, 3000, 3000, 5000, 5000);
+
+    HINTERNET connection = ::WinHttpConnect(session, kGitHubLatestReleaseApiHost,
+                                            INTERNET_DEFAULT_HTTPS_PORT, 0);
+    if (!connection) {
+        ::WinHttpCloseHandle(session);
+        result.statusMessage = "Update check failed: could not connect to GitHub.";
+        return result;
+    }
+
+    HINTERNET request = ::WinHttpOpenRequest(connection, L"GET", kGitHubLatestReleaseApiPath,
+                                             nullptr, WINHTTP_NO_REFERER,
+                                             WINHTTP_DEFAULT_ACCEPT_TYPES,
+                                             WINHTTP_FLAG_SECURE);
+    if (!request) {
+        ::WinHttpCloseHandle(connection);
+        ::WinHttpCloseHandle(session);
+        result.statusMessage = "Update check failed: could not create HTTP request.";
+        return result;
+    }
+
+    const wchar_t* headers =
+        L"Accept: application/vnd.github+json\r\n"
+        L"X-GitHub-Api-Version: 2022-11-28\r\n";
+    BOOL sendOk = ::WinHttpSendRequest(request, headers, static_cast<DWORD>(-1L),
+                                       WINHTTP_NO_REQUEST_DATA, 0, 0, 0);
+    if (sendOk) {
+        sendOk = ::WinHttpReceiveResponse(request, nullptr);
+    }
+    if (!sendOk) {
+        ::WinHttpCloseHandle(request);
+        ::WinHttpCloseHandle(connection);
+        ::WinHttpCloseHandle(session);
+        result.statusMessage = "Update check failed: request to GitHub was not successful.";
+        return result;
+    }
+
+    DWORD statusCode = 0;
+    DWORD statusCodeSize = sizeof(statusCode);
+    if (!::WinHttpQueryHeaders(request,
+                               WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+                               WINHTTP_HEADER_NAME_BY_INDEX,
+                               &statusCode, &statusCodeSize, WINHTTP_NO_HEADER_INDEX) ||
+        statusCode != 200) {
+        ::WinHttpCloseHandle(request);
+        ::WinHttpCloseHandle(connection);
+        ::WinHttpCloseHandle(session);
+        std::ostringstream oss;
+        oss << "Update check failed: GitHub returned HTTP " << statusCode << ".";
+        result.statusMessage = oss.str();
+        return result;
+    }
+
+    const std::string body = readWinHttpResponseBody(request);
+    ::WinHttpCloseHandle(request);
+    ::WinHttpCloseHandle(connection);
+    ::WinHttpCloseHandle(session);
+    if (body.empty()) {
+        result.statusMessage = "Update check failed: empty response from GitHub.";
+        return result;
+    }
+
+    // We only need two fields from the GitHub JSON payload for the in-app notification.
+    const std::string latestTag = extractJsonStringField(body, "tag_name");
+    const std::string htmlUrl = extractJsonStringField(body, "html_url");
+    if (!htmlUrl.empty()) {
+        result.releaseUrl = htmlUrl;
+    }
+    if (latestTag.empty()) {
+        result.statusMessage = "Update check failed: release tag not found in GitHub response.";
+        return result;
+    }
+
+    result.requestSucceeded = true;
+    result.latestTag = latestTag;
+    result.updateAvailable = isRemoteVersionNewer(XF_VERSION_STRING, latestTag);
+
+    if (result.updateAvailable) {
+        result.statusMessage = "Update available: " + latestTag + " (current " XF_VERSION_STRING ").";
+    } else {
+        result.statusMessage = "You are running the latest version (" XF_VERSION_STRING ").";
+    }
+    return result;
+}
+
+} // namespace
 
 static std::wstring utf8ToWide(const char* text) {
     if (!text || text[0] == '\0') {
@@ -169,6 +331,10 @@ bool Application::initialize(HINSTANCE hInstance, int width, int height) {
     defaultEntry.parse();
     m_formulas.push_back(std::move(defaultEntry));
 
+    // Start a non-blocking startup update check. The result is polled in the render loop so we
+    // avoid any startup pause caused by network latency.
+    startUpdateCheck(false);
+
     return true;
 }
 
@@ -222,6 +388,10 @@ int Application::run() {
 // ---- per-frame render -------------------------------------------------------
 
 void Application::renderFrame() {
+    // Poll async update-check completion before building the UI so the sidebar can show any
+    // newly available result in the same visible frame.
+    pollUpdateCheckResult();
+
     // Export is intentionally deferred to a fresh frame after the export dialog closes.
     // This prevents the dialog window from being captured inside the exported image.
     if (m_scheduledSavePlotImage || m_scheduledCopyPlotImage) {
@@ -276,6 +446,45 @@ void Application::renderFrame() {
     ImGui::TextDisabled("Repo: %s", XF_BUILD_REPO_URL);
     ImGui::TextDisabled("Branch: %s", XF_BUILD_BRANCH);
     ImGui::TextDisabled("Commit: %s", XF_BUILD_COMMIT);
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::TextDisabled("Updates");
+    if (m_updateCheckInProgress) {
+        ImGui::TextWrapped("Checking GitHub releases...");
+    } else {
+        if (m_updateAvailable && !m_updateNoticeDismissed) {
+            ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 214, 110, 255));
+            ImGui::TextWrapped("New version available: %s", m_updateLatestTag.c_str());
+            ImGui::PopStyleColor();
+        } else if (!m_updateStatus.empty()) {
+            ImGui::TextWrapped("%s", m_updateStatus.c_str());
+        } else {
+            ImGui::TextWrapped("Checks for newer releases on GitHub.");
+        }
+    }
+
+    if (ImGui::Button("Check For Updates", ImVec2(ImGui::GetContentRegionAvail().x, 0.0f))) {
+        startUpdateCheck(true);
+    }
+    if (ImGui::Button("Open Releases Page", ImVec2(ImGui::GetContentRegionAvail().x, 0.0f))) {
+        std::wstring releaseUrlWide = m_updateReleaseUrl.empty()
+            ? std::wstring(kGitHubReleasesUrlW)
+            : utf8ToWide(m_updateReleaseUrl.c_str());
+        if (releaseUrlWide.empty()) {
+            releaseUrlWide = kGitHubReleasesUrlW;
+        }
+        if (!openUrlInBrowser(releaseUrlWide.c_str())) {
+            m_updateStatus = "Could not open browser. Visit: " + std::string(kGitHubReleasesUrlUtf8);
+        } else if (m_updateAvailable) {
+            m_updateNoticeDismissed = true;
+        }
+        m_redrawRequested = true;
+    }
+    if (m_updateAvailable && !m_updateNoticeDismissed &&
+        ImGui::Button("Dismiss Update Notice", ImVec2(ImGui::GetContentRegionAvail().x, 0.0f))) {
+        m_updateNoticeDismissed = true;
+        m_redrawRequested = true;
+    }
     ImGui::End();
 
     renderExportDialog(sidebar, totalH);
@@ -311,6 +520,85 @@ void Application::renderFrame() {
 
     HRESULT hr = m_swapChain->Present(1, 0); // VSync
     m_swapChainOccluded = (hr == DXGI_STATUS_OCCLUDED);
+}
+
+void Application::startUpdateCheck(bool manualRequest) {
+    if (m_updateCheckInProgress) {
+        if (manualRequest) {
+            m_updateStatus = "Update check already in progress.";
+            m_redrawRequested = true;
+        }
+        return;
+    }
+
+    // If a previous future was never consumed (for example after a refactor/early-return path),
+    // clear it here before launching a new request to keep ownership of the async state simple.
+    if (m_updateCheckFuture.valid()) {
+        if (m_updateCheckFuture.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready) {
+            (void)m_updateCheckFuture.get();
+        } else if (manualRequest) {
+            m_updateStatus = "Previous update check is still running.";
+            m_redrawRequested = true;
+            return;
+        } else {
+            return;
+        }
+    }
+
+    m_updateCheckInProgress = true;
+    m_updateStatus = manualRequest ? "Checking GitHub releases..." : "Checking for updates in background...";
+    m_redrawRequested = true;
+
+    try {
+        m_updateCheckFuture = std::async(std::launch::async, [manualRequest]() {
+            return fetchLatestReleaseFromGitHub(manualRequest);
+        });
+    } catch (const std::exception& ex) {
+        m_updateCheckInProgress = false;
+        m_updateStatus = std::string("Could not start update check worker: ") + ex.what();
+        m_redrawRequested = true;
+    } catch (...) {
+        m_updateCheckInProgress = false;
+        m_updateStatus = "Could not start update check worker.";
+        m_redrawRequested = true;
+    }
+}
+
+void Application::pollUpdateCheckResult() {
+    if (!m_updateCheckInProgress || !m_updateCheckFuture.valid()) {
+        return;
+    }
+
+    if (m_updateCheckFuture.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
+        return;
+    }
+
+    // `get()` transfers the completed worker result back to the UI thread exactly once.
+    UpdateCheckResult result = m_updateCheckFuture.get();
+    m_updateCheckInProgress = false;
+
+    if (!result.releaseUrl.empty()) {
+        m_updateReleaseUrl = result.releaseUrl;
+    } else {
+        m_updateReleaseUrl = kGitHubReleasesUrlUtf8;
+    }
+    m_updateLatestTag = result.latestTag;
+    m_updateAvailable = result.requestSucceeded && result.updateAvailable;
+    if (!m_updateAvailable && result.manualRequest) {
+        m_updateNoticeDismissed = false;
+    }
+    if (result.updateAvailable) {
+        m_updateNoticeDismissed = false;
+    }
+    if (!result.statusMessage.empty()) {
+        m_updateStatus = result.statusMessage;
+    } else if (result.requestSucceeded) {
+        m_updateStatus = result.updateAvailable ? "Update available." : "You are running the latest version.";
+    } else {
+        m_updateStatus = "Update check failed.";
+    }
+
+    m_redrawRequested = true;
 }
 
 void Application::initialiseExportDialogSize() {
@@ -784,6 +1072,14 @@ void Application::applyExportPostProcessing(std::vector<std::uint8_t>& pixels,
 // ---- shutdown ---------------------------------------------------------------
 
 void Application::shutdown() {
+    if (m_updateCheckFuture.valid()) {
+        // `std::future` from std::async may block on destruction. Wait/get here while the UI is
+        // still alive so we shut down deterministically and avoid implicit blocking elsewhere.
+        m_updateCheckFuture.wait();
+        (void)m_updateCheckFuture.get();
+    }
+    m_updateCheckInProgress = false;
+
     ImGui_ImplDX11_Shutdown();
     ImGui_ImplWin32_Shutdown();
     ImGui::DestroyContext();

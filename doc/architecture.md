@@ -19,6 +19,8 @@ XpressFormula is organized into three primary layers:
   - Evaluates AST values for provided variables.
 - [`src/XpressFormula/Core/ViewTransform.h`](../src/XpressFormula/Core/ViewTransform.h) and [`src/XpressFormula/Core/ViewTransform.cpp`](../src/XpressFormula/Core/ViewTransform.cpp)
   - Handles world-to-screen mapping, zoom, pan, and grid spacing.
+- [`src/XpressFormula/Core/UpdateVersionUtils.h`](../src/XpressFormula/Core/UpdateVersionUtils.h)
+  - Small header-only utilities for semantic-version parsing/comparison and extracting GitHub release fields from API JSON.
 - [`src/XpressFormula/UI/Application.h`](../src/XpressFormula/UI/Application.h) and [`src/XpressFormula/UI/Application.cpp`](../src/XpressFormula/UI/Application.cpp)
   - Owns Win32 window, D3D11 resources, ImGui lifecycle, frame loop.
 - [`src/XpressFormula/UI/FormulaPanel.h`](../src/XpressFormula/UI/FormulaPanel.h) and [`src/XpressFormula/UI/FormulaPanel.cpp`](../src/XpressFormula/UI/FormulaPanel.cpp)
@@ -36,11 +38,12 @@ XpressFormula is organized into three primary layers:
 
 1. [`src/XpressFormula/main.cpp`](../src/XpressFormula/main.cpp) constructs `UI::Application`.
 2. `Application::initialize()` creates Win32 window, D3D11 swap chain/device, and ImGui context.
-3. `Application::run()` drives the message loop and rendering frames.
+3. `Application::run()` drives the message loop and rendering frames (including idle redraw optimization).
 4. `FormulaPanel` updates formula text and triggers parse.
 5. `PlotPanel` updates `ViewTransform` from current viewport and delegates drawing to `PlotRenderer`.
 6. `PlotRenderer` evaluates formulas through `Core::Evaluator` and draws based on variable dimensionality and equation form.
-7. Export requests trigger a plot-only offscreen render pass (temporary D3D11 render target) with export-specific overrides, then post-processing (pixel-format normalization, optional resize/grayscale) before file/clipboard output.
+7. `Application` also polls a background GitHub release check future and updates sidebar notification state when a result arrives.
+8. Export requests trigger a plot-only offscreen render pass (temporary D3D11 render target) with export-specific overrides, then post-processing (pixel-format normalization, optional resize/grayscale) before file/clipboard output.
 
 ## Formula Rendering Modes
 
@@ -65,6 +68,8 @@ Render mapping:
 - Implicit `F(x,y,z)=0` surfaces are extracted from sampled scalar-field data using a surface-nets style mesh.
 - The extracted world-space mesh is cached and re-used across camera-only changes (azimuth/elevation/z-scale/style), then re-projected each frame.
 - The implicit sampling domain is derived from the current visible `x/y` range and the formula `z slice / center`, so shapes can appear clipped if the view box does not fully contain them.
+- 3D projection is anchored to the same world origin as the 2D grid/axes (`ViewTransform`) to avoid visual drift/"swimming" while the user pans/zooms.
+- With **Optimize Rendering** enabled, `PlotPanel` temporarily reduces 3D mesh density and suppresses wireframe lines while dragging/zooming to improve responsiveness, then restores full quality when interaction stops.
 
 ## Error Handling
 

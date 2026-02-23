@@ -179,6 +179,11 @@ Used by `ControlPanel` for one-shot actions:
 
 - open export settings dialog
 
+Used by `Application` (outside panel code) for other side-effecting actions:
+
+- background update checks (GitHub releases)
+- opening the releases page in the system browser
+
 `ControlPanel::render(...)` returns `ControlPanelActions`.
 
 Why this is good:
@@ -315,6 +320,21 @@ This avoids mixing:
 - clipboard operations
 
 It also ensures the plot image is captured from a valid rendered frame while keeping OS dialogs, clipboard APIs, and pixel processing out of panel widget code.
+
+## 13.1 Sidebar Update Notification Pattern (Background Work + Frame Polling)
+
+The app checks GitHub releases without blocking the UI:
+
+1. `Application::initialize()` starts an async update check (`std::async`).
+2. `Application::renderFrame()` polls the future each frame (non-blocking).
+3. When ready, the result updates sidebar state (`update available`, `latest tag`, status text).
+4. The sidebar exposes buttons to re-check or open the releases page.
+
+Why this pattern is useful in ImGui apps:
+
+- avoids freezing the UI during HTTP requests
+- keeps networking logic out of panel widget code
+- makes the result easy to render as regular ImGui text/buttons
 
 ## 14. Practical ImGui Patterns Used in This Repo
 

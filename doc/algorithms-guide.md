@@ -409,6 +409,12 @@ Then triangles are:
 2. sorted by depth
 3. drawn with fill color and optional wireframe
 
+Important alignment detail (recent fix):
+
+- 3D projected geometry is anchored to the same world origin (`0,0`) used by the 2D grid/axes.
+- The renderer does **not** auto-center the mesh to the viewport every frame.
+- This avoids the visual "swimming" effect where the 3D shape drifts relative to the 2D coordinates while panning/dragging.
+
 Shading:
 
 - A simple directional light is used
@@ -430,6 +436,15 @@ Main cost drivers for implicit 3D:
 - how much of the domain is visible
 - wireframe enabled (extra line drawing)
 - number of triangles after meshing
+
+Interaction optimization currently used (when **Optimize Rendering** is enabled):
+
+- while dragging/zooming in 3D, the app temporarily lowers 3D mesh density
+- implicit `F(x,y,z)=0` quality is reduced during active interaction
+- wireframe is temporarily suppressed during interaction
+- full quality returns when interaction stops
+
+This improves responsiveness because panning changes the sampled x/y domain, which can invalidate the implicit mesh cache and force a rebuild.
 
 ## Part 8: Practical Mental Model for Debugging
 

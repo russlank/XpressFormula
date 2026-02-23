@@ -76,7 +76,7 @@ ControlPanelActions ControlPanel::render(Core::ViewTransform& vt, PlotSettings& 
     ImGui::Separator();
     ImGui::TextUnformatted("Performance");
     ImGui::Checkbox("Optimize Rendering", &settings.optimizeRendering);
-    ImGui::TextWrapped("When enabled, the app stops redrawing while idle and resumes instantly on input.");
+    ImGui::TextWrapped("When enabled, the app stops redrawing while idle and temporarily lowers 3D quality while dragging/zooming to keep interaction responsive.");
 
     ImGui::Spacing();
     ImGui::Separator();
