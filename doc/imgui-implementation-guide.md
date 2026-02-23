@@ -177,8 +177,7 @@ Used for persistent state like:
 
 Used by `ControlPanel` for one-shot actions:
 
-- save plot image
-- copy plot to clipboard
+- open export settings dialog
 
 `ControlPanel::render(...)` returns `ControlPanelActions`.
 
@@ -301,9 +300,11 @@ The UI does not directly save images when a button is clicked.
 
 Instead:
 
-1. Control panel returns action flags
-2. `Application` stores pending actions
-3. Export is processed after frame rendering (`processPendingExportActions()`)
+1. `ControlPanel` returns a one-shot action to open the export dialog.
+2. `Application` owns and renders the export settings window (size, colors, background, include/exclude overlays).
+3. When the user clicks **Save** or **Copy**, `Application` stores pending export flags + a snapshot of export settings.
+4. `PlotPanel` receives temporary render overrides for that frame (background/grid/coordinates/wires).
+5. Export is processed after frame rendering (`processPendingExportActions()`), including post-processing (resize/grayscale), then file/clipboard output.
 
 This avoids mixing:
 
@@ -312,7 +313,7 @@ This avoids mixing:
 - file encoding
 - clipboard operations
 
-It also ensures the plot image is captured from a valid rendered frame.
+It also ensures the plot image is captured from a valid rendered frame while keeping OS dialogs, clipboard APIs, and pixel processing out of panel widget code.
 
 ## 14. Practical ImGui Patterns Used in This Repo
 

@@ -12,6 +12,7 @@
 
 #include <cstdint>
 #include <d3d11.h>
+#include <array>
 #include <string>
 #include <vector>
 
@@ -49,6 +50,17 @@ private:
     void renderFrame();
     bool promptSaveImagePath(std::wstring& path);
     bool capturePlotPixels(std::vector<std::uint8_t>& pixels, int& width, int& height);
+    void renderExportDialog(float sidebarWidth, float viewportHeight);
+    void initialiseExportDialogSize();
+    void applyExportPostProcessing(std::vector<std::uint8_t>& pixels,
+                                   int sourceWidth, int sourceHeight,
+                                   std::vector<std::uint8_t>& outputPixels,
+                                   int& outputWidth, int& outputHeight);
+    static void resizePixelsBilinear(const std::vector<std::uint8_t>& srcPixels,
+                                     int srcWidth, int srcHeight,
+                                     int dstWidth, int dstHeight,
+                                     std::vector<std::uint8_t>& dstPixels);
+    static void convertPixelsToGrayscale(std::vector<std::uint8_t>& pixels);
     bool saveImageToPath(const std::wstring& path,
                          const std::vector<std::uint8_t>& pixels,
                          int width, int height, std::string& error);
@@ -63,6 +75,18 @@ private:
     void processPendingExportActions();
     static std::string narrowUtf8(const std::wstring& text);
 
+    struct ExportDialogSettings {
+        int width = 0;
+        int height = 0;
+        bool lockAspectRatio = true;
+        bool grayscaleOutput = false;
+        bool showGrid = true;
+        bool showCoordinates = true;
+        bool showWires = true;
+        bool showEnvelope = true;
+        std::array<float, 4> backgroundColor = { 0.098f, 0.098f, 0.118f, 1.0f };
+    };
+
     HWND                      m_hWnd               = nullptr;
     ID3D11Device*             m_device              = nullptr;
     ID3D11DeviceContext*      m_deviceContext        = nullptr;
@@ -76,6 +100,13 @@ private:
     std::vector<FormulaEntry> m_formulas;
     Core::ViewTransform       m_viewTransform;
     PlotSettings              m_plotSettings;
+    bool                      m_exportDialogOpen = false;
+    bool                      m_exportDialogOpenRequested = false;
+    bool                      m_exportDialogSizeInitialized = false;
+    ExportDialogSettings      m_exportDialogSettings;
+    ExportDialogSettings      m_pendingExportSettings;
+    bool                      m_scheduledSavePlotImage = false;
+    bool                      m_scheduledCopyPlotImage = false;
     bool                      m_pendingSavePlotImage = false;
     bool                      m_pendingCopyPlotImage = false;
     std::string               m_exportStatus;

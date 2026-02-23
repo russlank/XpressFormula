@@ -11,6 +11,9 @@ enum class XYRenderMode {
 struct PlotSettings {
     XYRenderMode xyRenderMode = XYRenderMode::Surface3D;
     bool optimizeRendering = true;
+    bool showGrid = true;
+    bool showCoordinates = true;
+    bool showWires = true;
 
     // 3D camera controls for z=f(x,y).
     //float azimuthDeg = 40.0f;

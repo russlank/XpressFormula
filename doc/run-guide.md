@@ -82,6 +82,7 @@ After launch:
 3. In the **View Controls** section:
    - Choose **3D Surfaces / Implicit** or **2D Heatmap** for `x,y` and implicit `F(x,y,z)=0` formulas.
    - Tune azimuth, elevation, z-scale, surface density, implicit surface quality, and opacity for 3D.
+   - Use **Show Grid**, **Show Coordinates**, and **Show Wires** to simplify the on-screen plot when needed.
    - For implicit 3D equations, keep the formula `z slice / center` near the shape center (often `0`) and make sure the visible `X/Y` range contains the shape (for example, a sphere `x^2+y^2+z^2=16` needs roughly `[-4,4]` in both `X` and `Y`).
 4. Use mouse drag to pan and mouse wheel to zoom domain coordinates.
 
@@ -89,8 +90,22 @@ After launch:
 
 Use the sidebar **Export** section:
 
-1. Click **Save Plot Image...** to export the current plot area to `.png` or `.bmp`.
-2. Click **Copy Plot To Clipboard** to copy the current plot area image.
+1. Click **Open Export Dialog...**.
+2. Configure export options:
+   - output `Width` / `Height`
+   - **Lock Aspect Ratio** (or free width/height)
+   - **Color** vs **Grayscale**
+   - exported **Background Color**
+   - include/exclude **Grid**, **Coordinates**, and **Wires / Wireframe**
+   - include/exclude **Envelope Box (3D)**
+3. Click **Copy To Clipboard** to copy the exported plot image.
+4. Click **Save To File...** to save the exported plot as `.png` or `.bmp`.
+
+Notes:
+
+- Export uses the current formulas and current view/zoom.
+- Background/grid/coordinate/wire/envelope export options are applied only for the export capture (the app requests another redraw to restore the normal display immediately after export).
+- Size changes are applied to the captured plot image (resampled output).
 
 ## Build Metadata Display
 

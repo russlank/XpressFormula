@@ -7,7 +7,8 @@ namespace XpressFormula::UI {
 
 void PlotPanel::render(std::vector<FormulaEntry>& formulas,
                        Core::ViewTransform& vt,
-                       PlotSettings& settings) {
+                       PlotSettings& settings,
+                       const PlotRenderOverrides* overrides) {
     // Update the viewport transform from the ImGui window
     ImVec2 pos  = ImGui::GetCursorScreenPos();
     ImVec2 size = ImGui::GetContentRegionAvail();
@@ -28,13 +29,26 @@ void PlotPanel::render(std::vector<FormulaEntry>& formulas,
 
     // Draw background
     ImDrawList* dl = ImGui::GetWindowDrawList();
+    const bool useOverrides = (overrides && overrides->active);
+    const bool showGrid = useOverrides ? overrides->showGrid : settings.showGrid;
+    const bool showCoordinates = useOverrides ? overrides->showCoordinates : settings.showCoordinates;
+    const bool showWires = useOverrides ? overrides->showWires : settings.showWires;
+    const bool showEnvelope = useOverrides ? overrides->showEnvelope : settings.showSurfaceEnvelope;
+    const float effectiveWireThickness =
+        (showWires && settings.wireThickness > 0.01f) ? settings.wireThickness : 0.0f;
+    const std::array<float, 4> bg = useOverrides ? overrides->backgroundColor
+                                                  : std::array<float, 4>{0.098f, 0.098f, 0.118f, 1.0f};
     dl->AddRectFilled(pos, ImVec2(pos.x + size.x, pos.y + size.y),
-                      IM_COL32(25, 25, 30, 255));
+                      ImGui::ColorConvertFloat4ToU32(ImVec4(bg[0], bg[1], bg[2], bg[3])));
 
     // Grid, axes, labels
-    Plotting::PlotRenderer::drawGrid(dl, vt);
-    Plotting::PlotRenderer::drawAxes(dl, vt);
-    Plotting::PlotRenderer::drawAxisLabels(dl, vt);
+    if (showGrid) {
+        Plotting::PlotRenderer::drawGrid(dl, vt);
+    }
+    if (showCoordinates) {
+        Plotting::PlotRenderer::drawAxes(dl, vt);
+        Plotting::PlotRenderer::drawAxisLabels(dl, vt);
+    }
 
     bool hasSurface = false;
     for (const auto& formula : formulas) {
@@ -69,10 +83,10 @@ void PlotPanel::render(std::vector<FormulaEntry>& formulas,
                     options.resolution = settings.surfaceResolution;
                     options.implicitResolution = settings.implicitSurfaceResolution;
                     options.opacity = settings.surfaceOpacity;
-                    options.wireThickness = settings.wireThickness;
-                    options.showEnvelope = settings.showSurfaceEnvelope;
+                    options.wireThickness = effectiveWireThickness;
+                    options.showEnvelope = showEnvelope;
                     options.envelopeThickness = settings.envelopeThickness;
-                    options.showDimensionArrows = settings.showDimensionArrows;
+                    options.showDimensionArrows = settings.showDimensionArrows && showCoordinates;
                     Plotting::PlotRenderer::drawSurface3D(dl, vt, f.ast, f.color, options);
                 } else {
                     Plotting::PlotRenderer::drawHeatmap(
@@ -91,10 +105,10 @@ void PlotPanel::render(std::vector<FormulaEntry>& formulas,
                     options.resolution = settings.surfaceResolution;
                     options.implicitResolution = settings.implicitSurfaceResolution;
                     options.opacity = settings.surfaceOpacity;
-                    options.wireThickness = settings.wireThickness;
-                    options.showEnvelope = settings.showSurfaceEnvelope;
+                    options.wireThickness = effectiveWireThickness;
+                    options.showEnvelope = showEnvelope;
                     options.envelopeThickness = settings.envelopeThickness;
-                    options.showDimensionArrows = settings.showDimensionArrows;
+                    options.showDimensionArrows = settings.showDimensionArrows && showCoordinates;
                     options.implicitZCenter = f.zSlice;
                     Plotting::PlotRenderer::drawImplicitSurface3D(dl, vt, f.ast, f.color, options);
                 } else {

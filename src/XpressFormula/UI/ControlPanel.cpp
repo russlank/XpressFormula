@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// ControlPanel.cpp - Zoom / pan / reset controls implementation.
+// ControlPanel.cpp - Sidebar view/render/export controls implementation.
 #include "ControlPanel.h"
 #include "imgui.h"
 #include <cmath>
@@ -80,6 +80,13 @@ ControlPanelActions ControlPanel::render(Core::ViewTransform& vt, PlotSettings& 
 
     ImGui::Spacing();
     ImGui::Separator();
+    ImGui::TextUnformatted("Display");
+    ImGui::Checkbox("Show Grid", &settings.showGrid);
+    ImGui::Checkbox("Show Coordinates", &settings.showCoordinates);
+    ImGui::Checkbox("Show Wires", &settings.showWires);
+
+    ImGui::Spacing();
+    ImGui::Separator();
     ImGui::TextUnformatted("2D / 3D Formula Rendering");
 
     int renderMode = (settings.xyRenderMode == XYRenderMode::Surface3D) ? 0 : 1;
@@ -100,7 +107,9 @@ ControlPanelActions ControlPanel::render(Core::ViewTransform& vt, PlotSettings& 
         ImGui::SliderInt("Surface Density (z=f(x,y))", &settings.surfaceResolution, 12, 96);
         ImGui::SliderInt("Implicit Surface Quality (F=0)", &settings.implicitSurfaceResolution, 16, 96);
         ImGui::SliderFloat("Surface Opacity", &settings.surfaceOpacity, 0.25f, 1.0f, "%.2f");
-        ImGui::SliderFloat("Wire Thickness", &settings.wireThickness, 0.25f, 2.5f, "%.2f");
+        ImGui::BeginDisabled(!settings.showWires);
+        ImGui::SliderFloat("Wire Thickness", &settings.wireThickness, 0.0f, 2.5f, "%.2f");
+        ImGui::EndDisabled();
         ImGui::Checkbox("Show Envelope Box", &settings.showSurfaceEnvelope);
         if (settings.showSurfaceEnvelope) {
             ImGui::SliderFloat("Envelope Thickness", &settings.envelopeThickness,
@@ -126,11 +135,8 @@ ControlPanelActions ControlPanel::render(Core::ViewTransform& vt, PlotSettings& 
     ImGui::Spacing();
     ImGui::Separator();
     ImGui::TextUnformatted("Export");
-    if (ImGui::Button("Save Plot Image...", ImVec2(ImGui::GetContentRegionAvail().x, 0))) {
-        actions.requestSavePlotImage = true;
-    }
-    if (ImGui::Button("Copy Plot To Clipboard", ImVec2(ImGui::GetContentRegionAvail().x, 0))) {
-        actions.requestCopyPlotImage = true;
+    if (ImGui::Button("Open Export Dialog...", ImVec2(ImGui::GetContentRegionAvail().x, 0))) {
+        actions.requestOpenExportDialog = true;
     }
 
     if (!exportStatus.empty()) {

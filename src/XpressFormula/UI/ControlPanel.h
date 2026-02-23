@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// ControlPanel.h - ImGui panel for zoom, pan, and reset controls.
+// ControlPanel.h - ImGui sidebar panel for view controls, rendering settings, and export actions.
 #pragma once
 
 #include "../Core/ViewTransform.h"
@@ -9,11 +9,10 @@
 namespace XpressFormula::UI {
 
 struct ControlPanelActions {
-    bool requestSavePlotImage = false;
-    bool requestCopyPlotImage = false;
+    bool requestOpenExportDialog = false;
 };
 
-/// Renders zoom / pan / reset controls for the plot viewport.
+/// Renders view controls, plot rendering settings, and export actions.
 class ControlPanel {
 public:
     ControlPanelActions render(Core::ViewTransform& vt, PlotSettings& settings,

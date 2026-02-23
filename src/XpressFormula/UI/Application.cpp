@@ -8,6 +8,9 @@
 #include "imgui_impl_win32.h"
 #include "imgui_impl_dx11.h"
 
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <Windows.h>
 #include <commdlg.h>
 #include <d3d11.h>
@@ -219,6 +222,15 @@ int Application::run() {
 // ---- per-frame render -------------------------------------------------------
 
 void Application::renderFrame() {
+    // Export is intentionally deferred to a fresh frame after the export dialog closes.
+    // This prevents the dialog window from being captured inside the exported image.
+    if (m_scheduledSavePlotImage || m_scheduledCopyPlotImage) {
+        m_pendingSavePlotImage = m_pendingSavePlotImage || m_scheduledSavePlotImage;
+        m_pendingCopyPlotImage = m_pendingCopyPlotImage || m_scheduledCopyPlotImage;
+        m_scheduledSavePlotImage = false;
+        m_scheduledCopyPlotImage = false;
+    }
+
     ImGui_ImplDX11_NewFrame();
     ImGui_ImplWin32_NewFrame();
     ImGui::NewFrame();
@@ -248,8 +260,7 @@ void Application::renderFrame() {
     ImGui::Spacing();
     ControlPanelActions actions = m_controlPanel.render(
         m_viewTransform, m_plotSettings, hasSurfaceFormula, m_exportStatus);
-    m_pendingSavePlotImage = m_pendingSavePlotImage || actions.requestSavePlotImage;
-    m_pendingCopyPlotImage = m_pendingCopyPlotImage || actions.requestCopyPlotImage;
+    m_exportDialogOpenRequested = m_exportDialogOpenRequested || actions.requestOpenExportDialog;
 
     ImGui::Spacing();
     ImGui::Separator();
@@ -260,6 +271,8 @@ void Application::renderFrame() {
     ImGui::TextDisabled("Commit: %s", XF_BUILD_COMMIT);
     ImGui::End();
 
+    renderExportDialog(sidebar, totalH);
+
     // ---- Plot area ----
     ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + sidebar,
                                    viewport->WorkPos.y));
@@ -268,7 +281,17 @@ void Application::renderFrame() {
                  ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
                  ImGuiWindowFlags_NoMove     | ImGuiWindowFlags_NoCollapse |
                  ImGuiWindowFlags_NoScrollbar);
-    m_plotPanel.render(m_formulas, m_viewTransform, m_plotSettings);
+    PlotRenderOverrides exportOverrides;
+    if (m_pendingSavePlotImage || m_pendingCopyPlotImage) {
+        exportOverrides.active = true;
+        exportOverrides.showGrid = m_pendingExportSettings.showGrid;
+        exportOverrides.showCoordinates = m_pendingExportSettings.showCoordinates;
+        exportOverrides.showWires = m_pendingExportSettings.showWires;
+        exportOverrides.showEnvelope = m_pendingExportSettings.showEnvelope;
+        exportOverrides.backgroundColor = m_pendingExportSettings.backgroundColor;
+    }
+    m_plotPanel.render(m_formulas, m_viewTransform, m_plotSettings,
+                       exportOverrides.active ? &exportOverrides : nullptr);
     ImGui::End();
 
     // ---- Render ----
@@ -281,6 +304,230 @@ void Application::renderFrame() {
 
     HRESULT hr = m_swapChain->Present(1, 0); // VSync
     m_swapChainOccluded = (hr == DXGI_STATUS_OCCLUDED);
+}
+
+void Application::initialiseExportDialogSize() {
+    if (m_exportDialogSizeInitialized) {
+        return;
+    }
+
+    int width = static_cast<int>(std::lround((std::max)(1.0f, m_viewTransform.screenWidth)));
+    int height = static_cast<int>(std::lround((std::max)(1.0f, m_viewTransform.screenHeight)));
+    if (width <= 0) width = 1024;
+    if (height <= 0) height = 768;
+
+    m_exportDialogSettings.width = width;
+    m_exportDialogSettings.height = height;
+    m_exportDialogSizeInitialized = true;
+}
+
+void Application::renderExportDialog(float sidebarWidth, float viewportHeight) {
+    if (m_exportDialogOpenRequested) {
+        m_exportDialogOpenRequested = false;
+        m_exportDialogOpen = true;
+        m_exportDialogSizeInitialized = false;
+        // Default export visibility follows the current interactive view state.
+        m_exportDialogSettings.showGrid = m_plotSettings.showGrid;
+        m_exportDialogSettings.showCoordinates = m_plotSettings.showCoordinates;
+        m_exportDialogSettings.showWires = m_plotSettings.showWires;
+        m_exportDialogSettings.showEnvelope = m_plotSettings.showSurfaceEnvelope;
+    }
+
+    if (!m_exportDialogOpen) {
+        return;
+    }
+
+    initialiseExportDialogSize();
+
+    const ImGuiViewport* viewport = ImGui::GetMainViewport();
+    const float maxWidth = (std::max)(300.0f, sidebarWidth - 20.0f);
+    const float maxHeight = (std::max)(360.0f, viewportHeight - 24.0f);
+    ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + 10.0f, viewport->WorkPos.y + 10.0f),
+                            ImGuiCond_Appearing);
+    ImGui::SetNextWindowSize(ImVec2(maxWidth, (std::min)(620.0f, maxHeight)), ImGuiCond_Appearing);
+    ImGui::SetNextWindowSizeConstraints(ImVec2(300.0f, 320.0f), ImVec2(maxWidth, maxHeight));
+
+    bool open = m_exportDialogOpen;
+    if (ImGui::Begin("Export Plot Settings", &open, ImGuiWindowFlags_NoCollapse)) {
+        int sourceWidth = static_cast<int>(std::lround((std::max)(1.0f, m_viewTransform.screenWidth)));
+        int sourceHeight = static_cast<int>(std::lround((std::max)(1.0f, m_viewTransform.screenHeight)));
+        if (sourceWidth > 0 && sourceHeight > 0) {
+            ImGui::Text("Current plot capture size: %d x %d", sourceWidth, sourceHeight);
+        } else {
+            ImGui::TextUnformatted("Current plot capture size: unavailable (render the plot once).");
+        }
+        if (ImGui::Button("Use Current Plot Size")) {
+            if (sourceWidth > 0 && sourceHeight > 0) {
+                m_exportDialogSettings.width = sourceWidth;
+                m_exportDialogSettings.height = sourceHeight;
+            }
+        }
+
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::TextUnformatted("Output Size");
+
+        int width = m_exportDialogSettings.width;
+        int height = m_exportDialogSettings.height;
+        const int prevWidth = (std::max)(1, width);
+        const int prevHeight = (std::max)(1, height);
+        bool widthChanged = ImGui::InputInt("Width", &width, 16, 128);
+        bool heightChanged = ImGui::InputInt("Height", &height, 16, 128);
+        width = std::clamp(width, 16, 8192);
+        height = std::clamp(height, 16, 8192);
+
+        if (m_exportDialogSettings.lockAspectRatio && widthChanged && !heightChanged) {
+            height = std::clamp(static_cast<int>(std::lround(
+                                    static_cast<double>(width) * prevHeight / prevWidth)),
+                                16, 8192);
+        } else if (m_exportDialogSettings.lockAspectRatio && heightChanged && !widthChanged) {
+            width = std::clamp(static_cast<int>(std::lround(
+                                   static_cast<double>(height) * prevWidth / prevHeight)),
+                               16, 8192);
+        }
+
+        m_exportDialogSettings.width = width;
+        m_exportDialogSettings.height = height;
+        ImGui::Checkbox("Lock Aspect Ratio", &m_exportDialogSettings.lockAspectRatio);
+
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::TextUnformatted("Appearance");
+        if (ImGui::RadioButton("Color", !m_exportDialogSettings.grayscaleOutput)) {
+            m_exportDialogSettings.grayscaleOutput = false;
+        }
+        ImGui::SameLine();
+        if (ImGui::RadioButton("Grayscale", m_exportDialogSettings.grayscaleOutput)) {
+            m_exportDialogSettings.grayscaleOutput = true;
+        }
+        ImGui::ColorEdit4("Background Color", m_exportDialogSettings.backgroundColor.data(),
+                          ImGuiColorEditFlags_DisplayRGB);
+
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::TextUnformatted("Include In Export");
+        ImGui::Checkbox("Grid", &m_exportDialogSettings.showGrid);
+        ImGui::Checkbox("Coordinates (axes + labels)", &m_exportDialogSettings.showCoordinates);
+        ImGui::Checkbox("Wires / Wireframe", &m_exportDialogSettings.showWires);
+        ImGui::Checkbox("Envelope Box (3D)", &m_exportDialogSettings.showEnvelope);
+        ImGui::TextWrapped("Wires affect 3D surfaces/implicit meshes. 2D curves are always drawn.");
+
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::TextWrapped("Export uses the current formulas and view. Size changes are applied to the captured plot image.");
+
+        const float buttonWidth = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
+        if (ImGui::Button("Copy To Clipboard", ImVec2(buttonWidth, 0.0f))) {
+            m_pendingExportSettings = m_exportDialogSettings;
+            m_scheduledCopyPlotImage = true;
+            m_scheduledSavePlotImage = false;
+            open = false;
+            m_redrawRequested = true;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Save To File...", ImVec2(buttonWidth, 0.0f))) {
+            m_pendingExportSettings = m_exportDialogSettings;
+            m_scheduledSavePlotImage = true;
+            m_scheduledCopyPlotImage = false;
+            open = false;
+            m_redrawRequested = true;
+        }
+    }
+    ImGui::End();
+    m_exportDialogOpen = open;
+}
+
+void Application::resizePixelsBilinear(const std::vector<std::uint8_t>& srcPixels,
+                                       int srcWidth, int srcHeight,
+                                       int dstWidth, int dstHeight,
+                                       std::vector<std::uint8_t>& dstPixels) {
+    dstPixels.clear();
+    if (srcWidth <= 0 || srcHeight <= 0 || dstWidth <= 0 || dstHeight <= 0) {
+        return;
+    }
+    if (srcWidth == dstWidth && srcHeight == dstHeight) {
+        dstPixels = srcPixels;
+        return;
+    }
+
+    dstPixels.resize(static_cast<size_t>(dstWidth) * static_cast<size_t>(dstHeight) * 4u);
+
+    const auto sampleIndex = [srcWidth](int x, int y) {
+        return (static_cast<size_t>(y) * static_cast<size_t>(srcWidth) +
+                static_cast<size_t>(x)) * 4u;
+    };
+
+    for (int y = 0; y < dstHeight; ++y) {
+        double srcY = ((static_cast<double>(y) + 0.5) * srcHeight / dstHeight) - 0.5;
+        int y0 = static_cast<int>(std::floor(srcY));
+        int y1 = y0 + 1;
+        double fy = srcY - y0;
+        y0 = std::clamp(y0, 0, srcHeight - 1);
+        y1 = std::clamp(y1, 0, srcHeight - 1);
+
+        for (int x = 0; x < dstWidth; ++x) {
+            double srcX = ((static_cast<double>(x) + 0.5) * srcWidth / dstWidth) - 0.5;
+            int x0 = static_cast<int>(std::floor(srcX));
+            int x1 = x0 + 1;
+            double fx = srcX - x0;
+            x0 = std::clamp(x0, 0, srcWidth - 1);
+            x1 = std::clamp(x1, 0, srcWidth - 1);
+
+            size_t outIndex = (static_cast<size_t>(y) * static_cast<size_t>(dstWidth) +
+                               static_cast<size_t>(x)) * 4u;
+            const size_t i00 = sampleIndex(x0, y0);
+            const size_t i10 = sampleIndex(x1, y0);
+            const size_t i01 = sampleIndex(x0, y1);
+            const size_t i11 = sampleIndex(x1, y1);
+
+            for (int c = 0; c < 4; ++c) {
+                const double v00 = srcPixels[i00 + c];
+                const double v10 = srcPixels[i10 + c];
+                const double v01 = srcPixels[i01 + c];
+                const double v11 = srcPixels[i11 + c];
+                const double top = v00 + (v10 - v00) * fx;
+                const double bottom = v01 + (v11 - v01) * fx;
+                const double value = top + (bottom - top) * fy;
+                dstPixels[outIndex + c] = static_cast<std::uint8_t>(
+                    std::clamp(static_cast<int>(std::lround(value)), 0, 255));
+            }
+        }
+    }
+}
+
+void Application::convertPixelsToGrayscale(std::vector<std::uint8_t>& pixels) {
+    for (size_t i = 0; i + 3 < pixels.size(); i += 4) {
+        const float b = static_cast<float>(pixels[i + 0]);
+        const float g = static_cast<float>(pixels[i + 1]);
+        const float r = static_cast<float>(pixels[i + 2]);
+        const std::uint8_t gray = static_cast<std::uint8_t>(std::clamp(
+            static_cast<int>(std::lround(0.114f * b + 0.587f * g + 0.299f * r)), 0, 255));
+        pixels[i + 0] = gray;
+        pixels[i + 1] = gray;
+        pixels[i + 2] = gray;
+    }
+}
+
+void Application::applyExportPostProcessing(std::vector<std::uint8_t>& pixels,
+                                            int sourceWidth, int sourceHeight,
+                                            std::vector<std::uint8_t>& outputPixels,
+                                            int& outputWidth, int& outputHeight) {
+    outputWidth = sourceWidth;
+    outputHeight = sourceHeight;
+    outputPixels = pixels;
+
+    const int targetWidth = std::clamp(m_pendingExportSettings.width, 16, 8192);
+    const int targetHeight = std::clamp(m_pendingExportSettings.height, 16, 8192);
+    if (targetWidth != sourceWidth || targetHeight != sourceHeight) {
+        resizePixelsBilinear(pixels, sourceWidth, sourceHeight,
+                             targetWidth, targetHeight, outputPixels);
+        outputWidth = targetWidth;
+        outputHeight = targetHeight;
+    }
+
+    if (m_pendingExportSettings.grayscaleOutput) {
+        convertPixelsToGrayscale(outputPixels);
+    }
 }
 
 // ---- shutdown ---------------------------------------------------------------
@@ -684,22 +931,29 @@ void Application::processPendingExportActions() {
     }
 
     std::vector<std::string> messages;
-    std::vector<std::uint8_t> pixels;
-    int width = 0;
-    int height = 0;
-    if (!capturePlotPixels(pixels, width, height)) {
+    std::vector<std::uint8_t> capturedPixels;
+    int capturedWidth = 0;
+    int capturedHeight = 0;
+    if (!capturePlotPixels(capturedPixels, capturedWidth, capturedHeight)) {
         messages.emplace_back("Export failed: unable to capture plot area.");
         m_pendingSavePlotImage = false;
         m_pendingCopyPlotImage = false;
+        m_redrawRequested = true;
         m_exportStatus = messages.front();
         return;
     }
+
+    std::vector<std::uint8_t> outputPixels;
+    int outputWidth = 0;
+    int outputHeight = 0;
+    applyExportPostProcessing(capturedPixels, capturedWidth, capturedHeight,
+                              outputPixels, outputWidth, outputHeight);
 
     if (m_pendingSavePlotImage) {
         std::wstring path;
         if (promptSaveImagePath(path)) {
             std::string error;
-            if (saveImageToPath(path, pixels, width, height, error)) {
+            if (saveImageToPath(path, outputPixels, outputWidth, outputHeight, error)) {
                 messages.emplace_back("Saved plot image to: " + narrowUtf8(path));
             } else {
                 messages.emplace_back("Save failed: " + error);
@@ -711,7 +965,7 @@ void Application::processPendingExportActions() {
 
     if (m_pendingCopyPlotImage) {
         std::string error;
-        if (copyPixelsToClipboard(pixels, width, height, error)) {
+        if (copyPixelsToClipboard(outputPixels, outputWidth, outputHeight, error)) {
             messages.emplace_back("Copied plot image to clipboard.");
         } else {
             messages.emplace_back("Clipboard copy failed: " + error);
@@ -720,6 +974,9 @@ void Application::processPendingExportActions() {
 
     m_pendingSavePlotImage = false;
     m_pendingCopyPlotImage = false;
+    // The export frame may be rendered with export-only overrides. Request one more frame
+    // so the interactive view returns to the user's normal display settings.
+    m_redrawRequested = true;
 
     if (!messages.empty()) {
         std::ostringstream oss;

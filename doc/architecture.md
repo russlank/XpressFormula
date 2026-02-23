@@ -24,9 +24,9 @@ XpressFormula is organized into three primary layers:
 - [`src/XpressFormula/UI/FormulaPanel.h`](../src/XpressFormula/UI/FormulaPanel.h) and [`src/XpressFormula/UI/FormulaPanel.cpp`](../src/XpressFormula/UI/FormulaPanel.cpp)
   - Formula list management and per-formula controls.
 - [`src/XpressFormula/UI/ControlPanel.h`](../src/XpressFormula/UI/ControlPanel.h) and [`src/XpressFormula/UI/ControlPanel.cpp`](../src/XpressFormula/UI/ControlPanel.cpp)
-  - Global 2D view controls, 3D surface camera settings, and export actions.
+  - Global 2D view controls, display toggles (grid/coordinates/wires), 3D surface camera settings, and export dialog launch action.
 - [`src/XpressFormula/UI/PlotPanel.h`](../src/XpressFormula/UI/PlotPanel.h) and [`src/XpressFormula/UI/PlotPanel.cpp`](../src/XpressFormula/UI/PlotPanel.cpp)
-  - Interactive plotting area and mouse interactions.
+  - Interactive plotting area, mouse interactions, and export-time plot render overrides (background/grid/coordinates/wires).
 - [`src/XpressFormula/Version.h`](../src/XpressFormula/Version.h)
   - Centralized semantic version metadata used by window title, resources, and packaging.
 - [`src/XpressFormula/Plotting/PlotRenderer.h`](../src/XpressFormula/Plotting/PlotRenderer.h) and [`src/XpressFormula/Plotting/PlotRenderer.cpp`](../src/XpressFormula/Plotting/PlotRenderer.cpp)
@@ -40,6 +40,7 @@ XpressFormula is organized into three primary layers:
 4. `FormulaPanel` updates formula text and triggers parse.
 5. `PlotPanel` updates `ViewTransform` from current viewport and delegates drawing to `PlotRenderer`.
 6. `PlotRenderer` evaluates formulas through `Core::Evaluator` and draws based on variable dimensionality and equation form.
+7. Export requests are captured after rendering and can apply export-only render overrides plus post-processing (resize/grayscale) before file/clipboard output.
 
 ## Formula Rendering Modes
 
