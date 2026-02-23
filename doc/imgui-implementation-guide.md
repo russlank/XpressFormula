@@ -303,8 +303,8 @@ Instead:
 1. `ControlPanel` returns a one-shot action to open the export dialog.
 2. `Application` owns and renders the export settings window (size, colors, background, include/exclude overlays).
 3. When the user clicks **Save** or **Copy**, `Application` stores pending export flags + a snapshot of export settings.
-4. `PlotPanel` receives temporary render overrides for that frame (background/grid/coordinates/wires).
-5. Export is processed after frame rendering (`processPendingExportActions()`), including post-processing (resize/grayscale), then file/clipboard output.
+4. `PlotPanel` receives temporary render overrides for export and is rendered into a temporary offscreen D3D11 render target (plot-only ImGui frame).
+5. Export is processed after frame rendering (`processPendingExportActions()`), including pixel-format normalization (RGBA->BGRA, alpha handling) and post-processing (optional resize/grayscale), then file/clipboard output.
 
 This avoids mixing:
 

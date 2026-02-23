@@ -414,7 +414,7 @@ void Application::renderExportDialog(float sidebarWidth, float viewportHeight) {
 
         ImGui::Spacing();
         ImGui::Separator();
-        ImGui::TextWrapped("Export uses the current formulas and view. Size changes are applied to the captured plot image.");
+        ImGui::TextWrapped("Export uses the current formulas and view. Width/Height define the offscreen render size used for export.");
 
         const float buttonWidth = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
         if (ImGui::Button("Copy To Clipboard", ImVec2(buttonWidth, 0.0f))) {
@@ -495,6 +495,35 @@ void Application::resizePixelsBilinear(const std::vector<std::uint8_t>& srcPixel
     }
 }
 
+void Application::convertPixelsRgbaToBgra(std::vector<std::uint8_t>& pixels) {
+    for (size_t i = 0; i + 3 < pixels.size(); i += 4) {
+        std::swap(pixels[i + 0], pixels[i + 2]);
+    }
+}
+
+void Application::unpremultiplyPixels(std::vector<std::uint8_t>& pixels) {
+    for (size_t i = 0; i + 3 < pixels.size(); i += 4) {
+        const int a = pixels[i + 3];
+        if (a <= 0) {
+            pixels[i + 0] = 0;
+            pixels[i + 1] = 0;
+            pixels[i + 2] = 0;
+            continue;
+        }
+        if (a >= 255) {
+            continue;
+        }
+
+        const float scale = 255.0f / static_cast<float>(a);
+        pixels[i + 0] = static_cast<std::uint8_t>(std::clamp(
+            static_cast<int>(std::lround(pixels[i + 0] * scale)), 0, 255));
+        pixels[i + 1] = static_cast<std::uint8_t>(std::clamp(
+            static_cast<int>(std::lround(pixels[i + 1] * scale)), 0, 255));
+        pixels[i + 2] = static_cast<std::uint8_t>(std::clamp(
+            static_cast<int>(std::lround(pixels[i + 2] * scale)), 0, 255));
+    }
+}
+
 void Application::convertPixelsToGrayscale(std::vector<std::uint8_t>& pixels) {
     for (size_t i = 0; i + 3 < pixels.size(); i += 4) {
         const float b = static_cast<float>(pixels[i + 0]);
@@ -524,6 +553,13 @@ void Application::applyExportPostProcessing(std::vector<std::uint8_t>& pixels,
         outputWidth = targetWidth;
         outputHeight = targetHeight;
     }
+
+    // D3D11 render-target readback for DXGI_FORMAT_R8G8B8A8_UNORM returns RGBA bytes, while
+    // file/clipboard export paths below expect BGRA. Convert once here, then normalize alpha.
+    convertPixelsRgbaToBgra(outputPixels);
+    // ImGui rendering over a transparent target stores premultiplied color in the render target.
+    // PNG/clipboard consumers generally expect straight alpha color channels.
+    unpremultiplyPixels(outputPixels);
 
     if (m_pendingExportSettings.grayscaleOutput) {
         convertPixelsToGrayscale(outputPixels);
@@ -732,6 +768,175 @@ bool Application::capturePlotPixels(std::vector<std::uint8_t>& pixels, int& widt
     return true;
 }
 
+bool Application::readTexturePixelsRgba(ID3D11Texture2D* sourceTexture,
+                                        std::vector<std::uint8_t>& pixels,
+                                        int& width, int& height) {
+    width = 0;
+    height = 0;
+    pixels.clear();
+
+    if (!sourceTexture || !m_device || !m_deviceContext) {
+        return false;
+    }
+
+    D3D11_TEXTURE2D_DESC srcDesc = {};
+    sourceTexture->GetDesc(&srcDesc);
+    if (srcDesc.Width == 0 || srcDesc.Height == 0) {
+        return false;
+    }
+
+    width = static_cast<int>(srcDesc.Width);
+    height = static_cast<int>(srcDesc.Height);
+
+    D3D11_TEXTURE2D_DESC stagingDesc = srcDesc;
+    stagingDesc.BindFlags = 0;
+    stagingDesc.MiscFlags = 0;
+    stagingDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+    stagingDesc.Usage = D3D11_USAGE_STAGING;
+
+    ID3D11Texture2D* stagingTexture = nullptr;
+    if (FAILED(m_device->CreateTexture2D(&stagingDesc, nullptr, &stagingTexture)) || !stagingTexture) {
+        return false;
+    }
+
+    m_deviceContext->CopyResource(stagingTexture, sourceTexture);
+
+    D3D11_MAPPED_SUBRESOURCE mapped = {};
+    HRESULT mapResult = m_deviceContext->Map(stagingTexture, 0, D3D11_MAP_READ, 0, &mapped);
+    if (FAILED(mapResult)) {
+        stagingTexture->Release();
+        return false;
+    }
+
+    const size_t rowBytes = static_cast<size_t>(width) * 4u;
+    pixels.resize(static_cast<size_t>(height) * rowBytes);
+    for (int y = 0; y < height; ++y) {
+        const auto* src = static_cast<const std::uint8_t*>(mapped.pData) +
+            static_cast<size_t>(y) * mapped.RowPitch;
+        auto* dst = pixels.data() + static_cast<size_t>(y) * rowBytes;
+        std::memcpy(dst, src, rowBytes);
+    }
+
+    m_deviceContext->Unmap(stagingTexture, 0);
+    stagingTexture->Release();
+    return true;
+}
+
+bool Application::renderPlotPixelsOffscreen(std::vector<std::uint8_t>& pixels, int& width, int& height) {
+    width = 0;
+    height = 0;
+    pixels.clear();
+
+    if (!m_device || !m_deviceContext) {
+        return false;
+    }
+
+    const int targetWidth = std::clamp(m_pendingExportSettings.width, 16, 8192);
+    const int targetHeight = std::clamp(m_pendingExportSettings.height, 16, 8192);
+
+    D3D11_TEXTURE2D_DESC texDesc = {};
+    texDesc.Width = static_cast<UINT>(targetWidth);
+    texDesc.Height = static_cast<UINT>(targetHeight);
+    texDesc.MipLevels = 1;
+    texDesc.ArraySize = 1;
+    texDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    texDesc.SampleDesc.Count = 1;
+    texDesc.Usage = D3D11_USAGE_DEFAULT;
+    texDesc.BindFlags = D3D11_BIND_RENDER_TARGET;
+
+    ID3D11Texture2D* renderTexture = nullptr;
+    ID3D11RenderTargetView* exportRTV = nullptr;
+    if (FAILED(m_device->CreateTexture2D(&texDesc, nullptr, &renderTexture)) || !renderTexture) {
+        return false;
+    }
+    if (FAILED(m_device->CreateRenderTargetView(renderTexture, nullptr, &exportRTV)) || !exportRTV) {
+        renderTexture->Release();
+        return false;
+    }
+
+    ID3D11RenderTargetView* previousRTV = nullptr;
+    ID3D11DepthStencilView* previousDSV = nullptr;
+    m_deviceContext->OMGetRenderTargets(1, &previousRTV, &previousDSV);
+
+    UINT prevViewportCount = 1;
+    D3D11_VIEWPORT prevViewport = {};
+    m_deviceContext->RSGetViewports(&prevViewportCount, &prevViewport);
+
+    D3D11_VIEWPORT exportViewport = {};
+    exportViewport.TopLeftX = 0.0f;
+    exportViewport.TopLeftY = 0.0f;
+    exportViewport.Width = static_cast<float>(targetWidth);
+    exportViewport.Height = static_cast<float>(targetHeight);
+    exportViewport.MinDepth = 0.0f;
+    exportViewport.MaxDepth = 1.0f;
+
+    m_deviceContext->OMSetRenderTargets(1, &exportRTV, nullptr);
+    m_deviceContext->RSSetViewports(1, &exportViewport);
+    const float clear[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+    m_deviceContext->ClearRenderTargetView(exportRTV, clear);
+
+    ImGui_ImplDX11_NewFrame();
+    ImGui_ImplWin32_NewFrame();
+    ImGuiIO& io = ImGui::GetIO();
+    const ImVec2 prevDisplaySize = io.DisplaySize;
+    const ImVec2 prevMousePos = io.MousePos;
+    const float prevMouseWheel = io.MouseWheel;
+    const float prevMouseWheelH = io.MouseWheelH;
+    io.DisplaySize = ImVec2(static_cast<float>(targetWidth), static_cast<float>(targetHeight));
+    io.MousePos = ImVec2(-100000.0f, -100000.0f);
+    io.MouseWheel = 0.0f;
+    io.MouseWheelH = 0.0f;
+
+    ImGui::NewFrame();
+    ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f));
+    ImGui::SetNextWindowSize(ImVec2(static_cast<float>(targetWidth), static_cast<float>(targetHeight)));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+    if (ImGui::Begin("##ExportPlotOffscreen", nullptr,
+                     ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                     ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse |
+                     ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings |
+                     ImGuiWindowFlags_NoInputs)) {
+        Core::ViewTransform exportView = m_viewTransform;
+        PlotSettings exportSettings = m_plotSettings;
+        exportSettings.autoRotate = false;
+
+        PlotRenderOverrides exportOverrides;
+        exportOverrides.active = true;
+        exportOverrides.showGrid = m_pendingExportSettings.showGrid;
+        exportOverrides.showCoordinates = m_pendingExportSettings.showCoordinates;
+        exportOverrides.showWires = m_pendingExportSettings.showWires;
+        exportOverrides.showEnvelope = m_pendingExportSettings.showEnvelope;
+        exportOverrides.backgroundColor = m_pendingExportSettings.backgroundColor;
+
+        m_plotPanel.render(m_formulas, exportView, exportSettings, &exportOverrides);
+    }
+    ImGui::End();
+    ImGui::PopStyleColor();
+    ImGui::PopStyleVar(2);
+    ImGui::Render();
+    ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+
+    io.DisplaySize = prevDisplaySize;
+    io.MousePos = prevMousePos;
+    io.MouseWheel = prevMouseWheel;
+    io.MouseWheelH = prevMouseWheelH;
+
+    const bool readOk = readTexturePixelsRgba(renderTexture, pixels, width, height);
+
+    if (prevViewportCount > 0) {
+        m_deviceContext->RSSetViewports(1, &prevViewport);
+    }
+    m_deviceContext->OMSetRenderTargets(1, &previousRTV, previousDSV);
+
+    if (previousDSV) previousDSV->Release();
+    if (previousRTV) previousRTV->Release();
+    if (exportRTV) exportRTV->Release();
+    if (renderTexture) renderTexture->Release();
+    return readOk;
+}
+
 bool Application::saveImageToPath(const std::wstring& path,
                                   const std::vector<std::uint8_t>& pixels,
                                   int width, int height, std::string& error) {
@@ -934,13 +1139,17 @@ void Application::processPendingExportActions() {
     std::vector<std::uint8_t> capturedPixels;
     int capturedWidth = 0;
     int capturedHeight = 0;
-    if (!capturePlotPixels(capturedPixels, capturedWidth, capturedHeight)) {
-        messages.emplace_back("Export failed: unable to capture plot area.");
-        m_pendingSavePlotImage = false;
-        m_pendingCopyPlotImage = false;
-        m_redrawRequested = true;
-        m_exportStatus = messages.front();
-        return;
+    if (!renderPlotPixelsOffscreen(capturedPixels, capturedWidth, capturedHeight)) {
+        // Fallback to visible backbuffer capture if offscreen rendering fails unexpectedly.
+        if (!capturePlotPixels(capturedPixels, capturedWidth, capturedHeight)) {
+            messages.emplace_back("Export failed: unable to render/capture plot area.");
+            m_pendingSavePlotImage = false;
+            m_pendingCopyPlotImage = false;
+            m_redrawRequested = true;
+            m_exportStatus = messages.front();
+            return;
+        }
+        messages.emplace_back("Warning: export used fallback screen capture path.");
     }
 
     std::vector<std::uint8_t> outputPixels;

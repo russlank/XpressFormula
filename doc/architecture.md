@@ -40,7 +40,7 @@ XpressFormula is organized into three primary layers:
 4. `FormulaPanel` updates formula text and triggers parse.
 5. `PlotPanel` updates `ViewTransform` from current viewport and delegates drawing to `PlotRenderer`.
 6. `PlotRenderer` evaluates formulas through `Core::Evaluator` and draws based on variable dimensionality and equation form.
-7. Export requests are captured after rendering and can apply export-only render overrides plus post-processing (resize/grayscale) before file/clipboard output.
+7. Export requests trigger a plot-only offscreen render pass (temporary D3D11 render target) with export-specific overrides, then post-processing (pixel-format normalization, optional resize/grayscale) before file/clipboard output.
 
 ## Formula Rendering Modes
 

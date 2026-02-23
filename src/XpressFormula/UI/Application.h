@@ -50,6 +50,10 @@ private:
     void renderFrame();
     bool promptSaveImagePath(std::wstring& path);
     bool capturePlotPixels(std::vector<std::uint8_t>& pixels, int& width, int& height);
+    bool renderPlotPixelsOffscreen(std::vector<std::uint8_t>& pixels, int& width, int& height);
+    bool readTexturePixelsRgba(ID3D11Texture2D* sourceTexture,
+                               std::vector<std::uint8_t>& pixels,
+                               int& width, int& height);
     void renderExportDialog(float sidebarWidth, float viewportHeight);
     void initialiseExportDialogSize();
     void applyExportPostProcessing(std::vector<std::uint8_t>& pixels,
@@ -60,6 +64,8 @@ private:
                                      int srcWidth, int srcHeight,
                                      int dstWidth, int dstHeight,
                                      std::vector<std::uint8_t>& dstPixels);
+    static void convertPixelsRgbaToBgra(std::vector<std::uint8_t>& pixels);
+    static void unpremultiplyPixels(std::vector<std::uint8_t>& pixels);
     static void convertPixelsToGrayscale(std::vector<std::uint8_t>& pixels);
     bool saveImageToPath(const std::wstring& path,
                          const std::vector<std::uint8_t>& pixels,

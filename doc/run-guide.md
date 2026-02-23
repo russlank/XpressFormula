@@ -104,8 +104,9 @@ Use the sidebar **Export** section:
 Notes:
 
 - Export uses the current formulas and current view/zoom.
-- Background/grid/coordinate/wire/envelope export options are applied only for the export capture (the app requests another redraw to restore the normal display immediately after export).
-- Size changes are applied to the captured plot image (resampled output).
+- Background/grid/coordinate/wire/envelope export options are applied only to an offscreen export render pass (the on-screen plot is not used as the export source).
+- Export size is used as the offscreen render size (fallback screen-capture path may resample if offscreen export fails).
+- Transparent backgrounds are supported in PNG export. Some viewers may display fully transparent pixels as black because the RGB value of fully transparent pixels is not visually meaningful.
 
 ## Build Metadata Display
 
