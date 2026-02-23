@@ -231,6 +231,13 @@ void Application::renderFrame() {
         m_scheduledCopyPlotImage = false;
     }
 
+    if (m_exportDialogOpen && m_exportPreviewDirty) {
+        refreshExportPreviewTexture();
+        // Offscreen preview rendering uses a separate hidden ImGui frame in the same context,
+        // which can clear popup state. Re-open the export popup in the visible UI frame.
+        m_exportDialogPopupOpenNextFrame = true;
+    }
+
     ImGui_ImplDX11_NewFrame();
     ImGui_ImplWin32_NewFrame();
     ImGui::NewFrame();
@@ -322,15 +329,21 @@ void Application::initialiseExportDialogSize() {
 }
 
 void Application::renderExportDialog(float sidebarWidth, float viewportHeight) {
+    static const char* kExportDialogPopupId = "Export Plot Settings";
+
     if (m_exportDialogOpenRequested) {
         m_exportDialogOpenRequested = false;
         m_exportDialogOpen = true;
+        m_exportDialogPopupOpenNextFrame = true;
+        m_exportDialogCenterOnOpen = true;
         m_exportDialogSizeInitialized = false;
         // Default export visibility follows the current interactive view state.
         m_exportDialogSettings.showGrid = m_plotSettings.showGrid;
         m_exportDialogSettings.showCoordinates = m_plotSettings.showCoordinates;
         m_exportDialogSettings.showWires = m_plotSettings.showWires;
         m_exportDialogSettings.showEnvelope = m_plotSettings.showSurfaceEnvelope;
+        m_exportPreviewDirty = true;
+        m_exportPreviewStatus = "Preview refresh scheduled.";
     }
 
     if (!m_exportDialogOpen) {
@@ -339,16 +352,28 @@ void Application::renderExportDialog(float sidebarWidth, float viewportHeight) {
 
     initialiseExportDialogSize();
 
+    if (m_exportDialogPopupOpenNextFrame) {
+        ImGui::OpenPopup(kExportDialogPopupId);
+        m_exportDialogPopupOpenNextFrame = false;
+    }
+
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
     const float maxWidth = (std::max)(300.0f, sidebarWidth - 20.0f);
     const float maxHeight = (std::max)(360.0f, viewportHeight - 24.0f);
-    ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + 10.0f, viewport->WorkPos.y + 10.0f),
-                            ImGuiCond_Appearing);
-    ImGui::SetNextWindowSize(ImVec2(maxWidth, (std::min)(620.0f, maxHeight)), ImGuiCond_Appearing);
+    const ImVec2 defaultDialogSize(maxWidth, (std::min)(620.0f, maxHeight));
+    if (m_exportDialogCenterOnOpen) {
+        const ImVec2 center(viewport->WorkPos.x + viewport->WorkSize.x * 0.5f,
+                            viewport->WorkPos.y + viewport->WorkSize.y * 0.5f);
+        ImGui::SetNextWindowPos(center, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+        ImGui::SetNextWindowSize(defaultDialogSize, ImGuiCond_Always);
+    } else {
+        ImGui::SetNextWindowSize(defaultDialogSize, ImGuiCond_FirstUseEver);
+    }
     ImGui::SetNextWindowSizeConstraints(ImVec2(300.0f, 320.0f), ImVec2(maxWidth, maxHeight));
 
     bool open = m_exportDialogOpen;
-    if (ImGui::Begin("Export Plot Settings", &open, ImGuiWindowFlags_NoCollapse)) {
+    if (ImGui::BeginPopupModal(kExportDialogPopupId, &open, ImGuiWindowFlags_NoCollapse)) {
+        bool previewChanged = false;
         int sourceWidth = static_cast<int>(std::lround((std::max)(1.0f, m_viewTransform.screenWidth)));
         int sourceHeight = static_cast<int>(std::lround((std::max)(1.0f, m_viewTransform.screenHeight)));
         if (sourceWidth > 0 && sourceHeight > 0) {
@@ -360,6 +385,7 @@ void Application::renderExportDialog(float sidebarWidth, float viewportHeight) {
             if (sourceWidth > 0 && sourceHeight > 0) {
                 m_exportDialogSettings.width = sourceWidth;
                 m_exportDialogSettings.height = sourceHeight;
+                previewChanged = true;
             }
         }
 
@@ -388,29 +414,88 @@ void Application::renderExportDialog(float sidebarWidth, float viewportHeight) {
 
         m_exportDialogSettings.width = width;
         m_exportDialogSettings.height = height;
-        ImGui::Checkbox("Lock Aspect Ratio", &m_exportDialogSettings.lockAspectRatio);
+        previewChanged = previewChanged || widthChanged || heightChanged;
+        previewChanged = ImGui::Checkbox("Lock Aspect Ratio", &m_exportDialogSettings.lockAspectRatio) || previewChanged;
 
         ImGui::Spacing();
         ImGui::Separator();
         ImGui::TextUnformatted("Appearance");
         if (ImGui::RadioButton("Color", !m_exportDialogSettings.grayscaleOutput)) {
             m_exportDialogSettings.grayscaleOutput = false;
+            previewChanged = true;
         }
         ImGui::SameLine();
         if (ImGui::RadioButton("Grayscale", m_exportDialogSettings.grayscaleOutput)) {
             m_exportDialogSettings.grayscaleOutput = true;
+            previewChanged = true;
         }
-        ImGui::ColorEdit4("Background Color", m_exportDialogSettings.backgroundColor.data(),
-                          ImGuiColorEditFlags_DisplayRGB);
+        previewChanged = ImGui::ColorEdit3("Background Color", m_exportDialogSettings.backgroundColor.data(),
+                                           ImGuiColorEditFlags_DisplayRGB) || previewChanged;
+        previewChanged = ImGui::SliderFloat("Background Opacity",
+                                            &m_exportDialogSettings.backgroundColor[3],
+                                            0.0f, 1.0f, "%.2f") || previewChanged;
 
         ImGui::Spacing();
         ImGui::Separator();
         ImGui::TextUnformatted("Include In Export");
-        ImGui::Checkbox("Grid", &m_exportDialogSettings.showGrid);
-        ImGui::Checkbox("Coordinates (axes + labels)", &m_exportDialogSettings.showCoordinates);
-        ImGui::Checkbox("Wires / Wireframe", &m_exportDialogSettings.showWires);
-        ImGui::Checkbox("Envelope Box (3D)", &m_exportDialogSettings.showEnvelope);
+        previewChanged = ImGui::Checkbox("Grid", &m_exportDialogSettings.showGrid) || previewChanged;
+        previewChanged = ImGui::Checkbox("Coordinates (axes + labels)", &m_exportDialogSettings.showCoordinates) || previewChanged;
+        previewChanged = ImGui::Checkbox("Wires / Wireframe", &m_exportDialogSettings.showWires) || previewChanged;
+        previewChanged = ImGui::Checkbox("Envelope Box (3D)", &m_exportDialogSettings.showEnvelope) || previewChanged;
         ImGui::TextWrapped("Wires affect 3D surfaces/implicit meshes. 2D curves are always drawn.");
+
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::TextUnformatted("Preview");
+        if (ImGui::Button("Refresh Preview")) {
+            previewChanged = true;
+        }
+        if (previewChanged) {
+            m_exportPreviewDirty = true;
+            m_exportPreviewStatus = "Preview refresh scheduled.";
+        }
+
+        if (m_exportPreviewSrv && m_exportPreviewWidth > 0 && m_exportPreviewHeight > 0) {
+            float availW = ImGui::GetContentRegionAvail().x;
+            float drawW = std::clamp(availW, 120.0f, 360.0f);
+            float drawH = drawW * static_cast<float>(m_exportPreviewHeight) /
+                          static_cast<float>(m_exportPreviewWidth);
+            if (drawH > 220.0f) {
+                drawH = 220.0f;
+                drawW = drawH * static_cast<float>(m_exportPreviewWidth) /
+                        static_cast<float>(m_exportPreviewHeight);
+            }
+            // Draw a checkerboard under the preview image so transparent pixels are visible.
+            ImVec2 previewPos = ImGui::GetCursorScreenPos();
+            ImVec2 previewMax(previewPos.x + drawW, previewPos.y + drawH);
+            ImDrawList* previewDl = ImGui::GetWindowDrawList();
+            const float checkerSize = 10.0f;
+            const ImU32 checkerA = IM_COL32(88, 88, 96, 255);
+            const ImU32 checkerB = IM_COL32(120, 120, 132, 255);
+            previewDl->AddRectFilled(previewPos, previewMax, checkerA);
+            previewDl->PushClipRect(previewPos, previewMax, true);
+            for (float y = previewPos.y; y < previewMax.y; y += checkerSize) {
+                for (float x = previewPos.x; x < previewMax.x; x += checkerSize) {
+                    const int ix = static_cast<int>((x - previewPos.x) / checkerSize);
+                    const int iy = static_cast<int>((y - previewPos.y) / checkerSize);
+                    if (((ix + iy) & 1) == 0) {
+                        continue;
+                    }
+                    ImVec2 tileMin(x, y);
+                    ImVec2 tileMax((std::min)(x + checkerSize, previewMax.x),
+                                   (std::min)(y + checkerSize, previewMax.y));
+                    previewDl->AddRectFilled(tileMin, tileMax, checkerB);
+                }
+            }
+            previewDl->PopClipRect();
+            ImGui::Image(reinterpret_cast<ImTextureID>(m_exportPreviewSrv), ImVec2(drawW, drawH));
+            previewDl->AddRect(previewPos, previewMax, IM_COL32(140, 140, 150, 180));
+        } else {
+            ImGui::TextDisabled("Preview not available yet.");
+        }
+        if (!m_exportPreviewStatus.empty()) {
+            ImGui::TextWrapped("%s", m_exportPreviewStatus.c_str());
+        }
 
         ImGui::Spacing();
         ImGui::Separator();
@@ -421,6 +506,7 @@ void Application::renderExportDialog(float sidebarWidth, float viewportHeight) {
             m_pendingExportSettings = m_exportDialogSettings;
             m_scheduledCopyPlotImage = true;
             m_scheduledSavePlotImage = false;
+            ImGui::CloseCurrentPopup();
             open = false;
             m_redrawRequested = true;
         }
@@ -429,12 +515,24 @@ void Application::renderExportDialog(float sidebarWidth, float viewportHeight) {
             m_pendingExportSettings = m_exportDialogSettings;
             m_scheduledSavePlotImage = true;
             m_scheduledCopyPlotImage = false;
+            ImGui::CloseCurrentPopup();
             open = false;
             m_redrawRequested = true;
         }
+        if (ImGui::Button("Close", ImVec2(ImGui::GetContentRegionAvail().x, 0.0f))) {
+            ImGui::CloseCurrentPopup();
+            open = false;
+        }
+
+        ImGui::EndPopup();
     }
-    ImGui::End();
-    m_exportDialogOpen = open;
+    m_exportDialogCenterOnOpen = false;
+    if (!ImGui::IsPopupOpen(kExportDialogPopupId)) {
+        m_exportDialogOpen = false;
+        m_exportDialogPopupOpenNextFrame = false;
+    } else {
+        m_exportDialogOpen = open;
+    }
 }
 
 void Application::resizePixelsBilinear(const std::vector<std::uint8_t>& srcPixels,
@@ -537,6 +635,123 @@ void Application::convertPixelsToGrayscale(std::vector<std::uint8_t>& pixels) {
     }
 }
 
+void Application::convertPixelsToGrayscaleRgba(std::vector<std::uint8_t>& pixels) {
+    for (size_t i = 0; i + 3 < pixels.size(); i += 4) {
+        const float r = static_cast<float>(pixels[i + 0]);
+        const float g = static_cast<float>(pixels[i + 1]);
+        const float b = static_cast<float>(pixels[i + 2]);
+        const std::uint8_t gray = static_cast<std::uint8_t>(std::clamp(
+            static_cast<int>(std::lround(0.299f * r + 0.587f * g + 0.114f * b)), 0, 255));
+        pixels[i + 0] = gray;
+        pixels[i + 1] = gray;
+        pixels[i + 2] = gray;
+    }
+}
+
+void Application::cleanupExportPreviewResources() {
+    if (m_exportPreviewSrv) {
+        m_exportPreviewSrv->Release();
+        m_exportPreviewSrv = nullptr;
+    }
+    if (m_exportPreviewTexture) {
+        m_exportPreviewTexture->Release();
+        m_exportPreviewTexture = nullptr;
+    }
+    m_exportPreviewWidth = 0;
+    m_exportPreviewHeight = 0;
+}
+
+bool Application::refreshExportPreviewTexture() {
+    m_exportPreviewDirty = false;
+    m_exportPreviewStatus.clear();
+
+    if (!m_device || !m_deviceContext || !m_hWnd || !::IsWindow(m_hWnd)) {
+        m_exportPreviewStatus = "Preview unavailable: renderer not initialized.";
+        return false;
+    }
+
+    const int srcW = (std::max)(16, m_exportDialogSettings.width);
+    const int srcH = (std::max)(16, m_exportDialogSettings.height);
+    const double aspect = std::clamp(static_cast<double>(srcW) / static_cast<double>(srcH),
+                                     1.0 / 8.0, 8.0);
+    int previewW = 320;
+    int previewH = static_cast<int>(std::lround(previewW / aspect));
+    if (previewH > 220) {
+        previewH = 220;
+        previewW = static_cast<int>(std::lround(previewH * aspect));
+    }
+    previewW = std::clamp(previewW, 120, 480);
+    previewH = std::clamp(previewH, 80, 300);
+
+    ExportDialogSettings previewSettings = m_exportDialogSettings;
+    previewSettings.width = previewW;
+    previewSettings.height = previewH;
+
+    std::vector<std::uint8_t> pixels;
+    int renderedW = 0;
+    int renderedH = 0;
+    if (!renderPlotPixelsOffscreen(previewSettings, pixels, renderedW, renderedH)) {
+        m_exportPreviewStatus = "Preview render failed.";
+        cleanupExportPreviewResources();
+        return false;
+    }
+
+    unpremultiplyPixels(pixels);
+    if (previewSettings.grayscaleOutput) {
+        convertPixelsToGrayscaleRgba(pixels);
+    }
+
+    if (renderedW <= 0 || renderedH <= 0) {
+        m_exportPreviewStatus = "Preview render produced invalid size.";
+        cleanupExportPreviewResources();
+        return false;
+    }
+
+    const bool recreateTexture =
+        (m_exportPreviewTexture == nullptr || m_exportPreviewSrv == nullptr ||
+         m_exportPreviewWidth != renderedW || m_exportPreviewHeight != renderedH);
+    if (recreateTexture) {
+        cleanupExportPreviewResources();
+
+        D3D11_TEXTURE2D_DESC texDesc = {};
+        texDesc.Width = static_cast<UINT>(renderedW);
+        texDesc.Height = static_cast<UINT>(renderedH);
+        texDesc.MipLevels = 1;
+        texDesc.ArraySize = 1;
+        texDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+        texDesc.SampleDesc.Count = 1;
+        texDesc.Usage = D3D11_USAGE_DEFAULT;
+        texDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+
+        D3D11_SUBRESOURCE_DATA initData = {};
+        initData.pSysMem = pixels.data();
+        initData.SysMemPitch = static_cast<UINT>(renderedW * 4);
+
+        if (FAILED(m_device->CreateTexture2D(&texDesc, &initData, &m_exportPreviewTexture)) ||
+            !m_exportPreviewTexture) {
+            m_exportPreviewStatus = "Preview texture creation failed.";
+            cleanupExportPreviewResources();
+            return false;
+        }
+
+        if (FAILED(m_device->CreateShaderResourceView(m_exportPreviewTexture, nullptr, &m_exportPreviewSrv)) ||
+            !m_exportPreviewSrv) {
+            m_exportPreviewStatus = "Preview texture view creation failed.";
+            cleanupExportPreviewResources();
+            return false;
+        }
+        m_exportPreviewWidth = renderedW;
+        m_exportPreviewHeight = renderedH;
+    } else {
+        m_deviceContext->UpdateSubresource(m_exportPreviewTexture, 0, nullptr, pixels.data(),
+                                           static_cast<UINT>(renderedW * 4), 0);
+    }
+
+    m_exportPreviewStatus = "Preview ready (" + std::to_string(renderedW) + "x" +
+        std::to_string(renderedH) + ").";
+    return true;
+}
+
 void Application::applyExportPostProcessing(std::vector<std::uint8_t>& pixels,
                                             int sourceWidth, int sourceHeight,
                                             std::vector<std::uint8_t>& outputPixels,
@@ -578,6 +793,7 @@ void Application::shutdown() {
         m_comInitialized = false;
     }
 
+    cleanupExportPreviewResources();
     cleanupDeviceD3D();
     ::DestroyWindow(m_hWnd);
     g_app = nullptr;
@@ -635,6 +851,7 @@ bool Application::createDeviceD3D(HWND hWnd) {
 }
 
 void Application::cleanupDeviceD3D() {
+    cleanupExportPreviewResources();
     cleanupRenderTarget();
     if (m_swapChain)     { m_swapChain->Release();     m_swapChain     = nullptr; }
     if (m_deviceContext) { m_deviceContext->Release(); m_deviceContext = nullptr; }
@@ -822,7 +1039,9 @@ bool Application::readTexturePixelsRgba(ID3D11Texture2D* sourceTexture,
     return true;
 }
 
-bool Application::renderPlotPixelsOffscreen(std::vector<std::uint8_t>& pixels, int& width, int& height) {
+bool Application::renderPlotPixelsOffscreen(const Application::ExportDialogSettings& settings,
+                                            std::vector<std::uint8_t>& pixels,
+                                            int& width, int& height) {
     width = 0;
     height = 0;
     pixels.clear();
@@ -831,8 +1050,8 @@ bool Application::renderPlotPixelsOffscreen(std::vector<std::uint8_t>& pixels, i
         return false;
     }
 
-    const int targetWidth = std::clamp(m_pendingExportSettings.width, 16, 8192);
-    const int targetHeight = std::clamp(m_pendingExportSettings.height, 16, 8192);
+    const int targetWidth = std::clamp(settings.width, 16, 8192);
+    const int targetHeight = std::clamp(settings.height, 16, 8192);
 
     D3D11_TEXTURE2D_DESC texDesc = {};
     texDesc.Width = static_cast<UINT>(targetWidth);
@@ -904,11 +1123,11 @@ bool Application::renderPlotPixelsOffscreen(std::vector<std::uint8_t>& pixels, i
 
         PlotRenderOverrides exportOverrides;
         exportOverrides.active = true;
-        exportOverrides.showGrid = m_pendingExportSettings.showGrid;
-        exportOverrides.showCoordinates = m_pendingExportSettings.showCoordinates;
-        exportOverrides.showWires = m_pendingExportSettings.showWires;
-        exportOverrides.showEnvelope = m_pendingExportSettings.showEnvelope;
-        exportOverrides.backgroundColor = m_pendingExportSettings.backgroundColor;
+        exportOverrides.showGrid = settings.showGrid;
+        exportOverrides.showCoordinates = settings.showCoordinates;
+        exportOverrides.showWires = settings.showWires;
+        exportOverrides.showEnvelope = settings.showEnvelope;
+        exportOverrides.backgroundColor = settings.backgroundColor;
 
         m_plotPanel.render(m_formulas, exportView, exportSettings, &exportOverrides);
     }
@@ -1139,7 +1358,8 @@ void Application::processPendingExportActions() {
     std::vector<std::uint8_t> capturedPixels;
     int capturedWidth = 0;
     int capturedHeight = 0;
-    if (!renderPlotPixelsOffscreen(capturedPixels, capturedWidth, capturedHeight)) {
+    if (!renderPlotPixelsOffscreen(m_pendingExportSettings,
+                                   capturedPixels, capturedWidth, capturedHeight)) {
         // Fallback to visible backbuffer capture if offscreen rendering fails unexpectedly.
         if (!capturePlotPixels(capturedPixels, capturedWidth, capturedHeight)) {
             messages.emplace_back("Export failed: unable to render/capture plot area.");

@@ -25,6 +25,18 @@ namespace XpressFormula::UI {
 
 class Application {
 public:
+    struct ExportDialogSettings {
+        int width = 0;
+        int height = 0;
+        bool lockAspectRatio = true;
+        bool grayscaleOutput = false;
+        bool showGrid = true;
+        bool showCoordinates = true;
+        bool showWires = true;
+        bool showEnvelope = true;
+        std::array<float, 4> backgroundColor = { 0.098f, 0.098f, 0.118f, 1.0f };
+    };
+
     Application();
     ~Application();
 
@@ -50,12 +62,15 @@ private:
     void renderFrame();
     bool promptSaveImagePath(std::wstring& path);
     bool capturePlotPixels(std::vector<std::uint8_t>& pixels, int& width, int& height);
-    bool renderPlotPixelsOffscreen(std::vector<std::uint8_t>& pixels, int& width, int& height);
+    bool renderPlotPixelsOffscreen(const ExportDialogSettings& settings,
+                                   std::vector<std::uint8_t>& pixels, int& width, int& height);
     bool readTexturePixelsRgba(ID3D11Texture2D* sourceTexture,
                                std::vector<std::uint8_t>& pixels,
                                int& width, int& height);
     void renderExportDialog(float sidebarWidth, float viewportHeight);
     void initialiseExportDialogSize();
+    void cleanupExportPreviewResources();
+    bool refreshExportPreviewTexture();
     void applyExportPostProcessing(std::vector<std::uint8_t>& pixels,
                                    int sourceWidth, int sourceHeight,
                                    std::vector<std::uint8_t>& outputPixels,
@@ -67,6 +82,7 @@ private:
     static void convertPixelsRgbaToBgra(std::vector<std::uint8_t>& pixels);
     static void unpremultiplyPixels(std::vector<std::uint8_t>& pixels);
     static void convertPixelsToGrayscale(std::vector<std::uint8_t>& pixels);
+    static void convertPixelsToGrayscaleRgba(std::vector<std::uint8_t>& pixels);
     bool saveImageToPath(const std::wstring& path,
                          const std::vector<std::uint8_t>& pixels,
                          int width, int height, std::string& error);
@@ -80,18 +96,6 @@ private:
                                int width, int height, std::string& error);
     void processPendingExportActions();
     static std::string narrowUtf8(const std::wstring& text);
-
-    struct ExportDialogSettings {
-        int width = 0;
-        int height = 0;
-        bool lockAspectRatio = true;
-        bool grayscaleOutput = false;
-        bool showGrid = true;
-        bool showCoordinates = true;
-        bool showWires = true;
-        bool showEnvelope = true;
-        std::array<float, 4> backgroundColor = { 0.098f, 0.098f, 0.118f, 1.0f };
-    };
 
     HWND                      m_hWnd               = nullptr;
     ID3D11Device*             m_device              = nullptr;
@@ -108,6 +112,8 @@ private:
     PlotSettings              m_plotSettings;
     bool                      m_exportDialogOpen = false;
     bool                      m_exportDialogOpenRequested = false;
+    bool                      m_exportDialogPopupOpenNextFrame = false;
+    bool                      m_exportDialogCenterOnOpen = false;
     bool                      m_exportDialogSizeInitialized = false;
     ExportDialogSettings      m_exportDialogSettings;
     ExportDialogSettings      m_pendingExportSettings;
@@ -115,6 +121,12 @@ private:
     bool                      m_scheduledCopyPlotImage = false;
     bool                      m_pendingSavePlotImage = false;
     bool                      m_pendingCopyPlotImage = false;
+    ID3D11Texture2D*          m_exportPreviewTexture = nullptr;
+    ID3D11ShaderResourceView* m_exportPreviewSrv = nullptr;
+    int                       m_exportPreviewWidth = 0;
+    int                       m_exportPreviewHeight = 0;
+    bool                      m_exportPreviewDirty = false;
+    std::string               m_exportPreviewStatus;
     std::string               m_exportStatus;
 
     // UI panels

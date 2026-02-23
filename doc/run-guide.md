@@ -95,9 +95,10 @@ Use the sidebar **Export** section:
    - output `Width` / `Height`
    - **Lock Aspect Ratio** (or free width/height)
    - **Color** vs **Grayscale**
-   - exported **Background Color**
+   - exported **Background Color** and **Background Opacity**
    - include/exclude **Grid**, **Coordinates**, and **Wires / Wireframe**
    - include/exclude **Envelope Box (3D)**
+   - use the **Preview** section to inspect export settings and click **Refresh Preview** after major changes if needed
 3. Click **Copy To Clipboard** to copy the exported plot image.
 4. Click **Save To File...** to save the exported plot as `.png` or `.bmp`.
 
