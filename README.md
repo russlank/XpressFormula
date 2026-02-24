@@ -68,6 +68,7 @@ Common path:
 - Math API cheatsheet (quick reference + where used): [`doc/math-api-cheatsheet.md`](doc/math-api-cheatsheet.md)
 - Algorithms guide (parsing/rendering/meshing): [`doc/algorithms-guide.md`](doc/algorithms-guide.md)
 - ImGui implementation guide (UI architecture/patterns): [`doc/imgui-implementation-guide.md`](doc/imgui-implementation-guide.md)
+- Linux portability plan (ImGui/Linux migration roadmap): [`doc/linux-portability-plan.md`](doc/linux-portability-plan.md)
 - Expression language reference: [`doc/expression-language.md`](doc/expression-language.md)
 - Testing guide: [`doc/testing.md`](doc/testing.md)
 - Release and packaging guide: [`doc/release-packaging.md`](doc/release-packaging.md)

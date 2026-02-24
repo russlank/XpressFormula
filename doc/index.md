@@ -8,6 +8,7 @@
 - Math API cheatsheet (quick reference + usage locations): [`math-api-cheatsheet.md`](math-api-cheatsheet.md)
 - Algorithms guide (beginner-friendly): [`algorithms-guide.md`](algorithms-guide.md)
 - ImGui implementation guide: [`imgui-implementation-guide.md`](imgui-implementation-guide.md)
+- Linux portability plan (ImGui on Linux / migration roadmap): [`linux-portability-plan.md`](linux-portability-plan.md)
 - Expression language: [`expression-language.md`](expression-language.md)
 - Testing: [`testing.md`](testing.md)
 - Release and packaging: [`release-packaging.md`](release-packaging.md)
@@ -22,9 +23,10 @@ Recommended reading order for new contributors:
 5. [`math-api-cheatsheet.md`](math-api-cheatsheet.md)
 6. [`algorithms-guide.md`](algorithms-guide.md)
 7. [`imgui-implementation-guide.md`](imgui-implementation-guide.md)
-8. [`expression-language.md`](expression-language.md)
-9. [`testing.md`](testing.md)
-10. [`release-packaging.md`](release-packaging.md)
+8. [`linux-portability-plan.md`](linux-portability-plan.md)
+9. [`expression-language.md`](expression-language.md)
+10. [`testing.md`](testing.md)
+11. [`release-packaging.md`](release-packaging.md)
 
 ## License
 
