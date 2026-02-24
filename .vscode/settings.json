@@ -1,0 +1,38 @@
+{
+  "files.exclude": {
+    ".vs": true,
+    "artifacts": true,
+    "build": true,
+    "x64": true,
+    "x86": true,
+    "Debug": true,
+    "Release": true,
+    "src/x64": true,
+    "src/x86": true,
+    "src/Debug": true,
+    "src/Release": true
+  },
+  "search.exclude": {
+    ".vs": true,
+    "artifacts": true,
+    "build": true,
+    "x64": true,
+    "x86": true,
+    "Debug": true,
+    "Release": true,
+    "src/x64": true,
+    "src/x86": true,
+    "src/Debug": true,
+    "src/Release": true
+  },
+  "files.watcherExclude": {
+    "**/.git/objects/**": true,
+    "**/.git/subtree-cache/**": true,
+    "**/artifacts/**": true,
+    "**/build/**": true,
+    "**/x64/**": true,
+    "**/x86/**": true,
+    "**/Debug/**": true,
+    "**/Release/**": true
+  }
+}

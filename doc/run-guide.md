@@ -6,6 +6,10 @@
 - Windows 10/11
 - Visual Studio 2022/2026 with **Desktop development with C++**
 - Windows 10/11 SDK
+- VS Code (optional, if using the VS Code workflow)
+- VS Code extensions (recommended for VS Code workflow):
+  - `ms-vscode.cpptools` (C/C++)
+  - `ms-vscode.powershell` (PowerShell tasks/scripts)
 
 See also:
 
@@ -19,7 +23,14 @@ See also:
 2. Set startup project to `XpressFormula`.
 3. Select configuration:
    - `Debug | x64` (recommended)
+   - `Debug | Win32` (optional legacy/compatibility build)
 4. Press `F5` (Debug) or `Ctrl+F5` (Run without Debugger).
+
+Recommended Visual Studio debugging settings:
+
+- Keep startup project set to `XpressFormula` for app debugging.
+- Use `XpressFormula.Tests` as startup project when debugging the test runner.
+- Keep the working directory as the project folder (`$(ProjectDir)`) if you want behavior consistent with the repo VS Code launch config (for example `imgui.ini` location).
 
 To run tests in Visual Studio:
 
@@ -28,10 +39,22 @@ To run tests in Visual Studio:
 
 ## Run from VS Code
 
-If your local checkout includes VS Code configuration:
+This repository includes shared VS Code workspace configuration:
 
 - Tasks: `.vscode/tasks.json`
 - Launch configs: `.vscode/launch.json`
+- Extension recommendations: `.vscode/extensions.json`
+- C/C++ IntelliSense config: `.vscode/c_cpp_properties.json`
+- Minimal shared workspace settings: `.vscode/settings.json`
+
+Recommended VS Code setup/settings:
+
+- Open the repository root folder (not only `src/`), so the shared tasks and launch configs are detected.
+- Install the recommended extensions when prompted.
+- Use the `cppvsdbg` debugger configuration (the included launch configs already do this).
+- Keep the launch working directory as `src\\XpressFormula` (the included config already sets it) to match Visual Studio behavior.
+- In VS Code, use `C/C++: Select a Configuration` and choose `x64-Debug` (recommended) or `Win32-Debug` to match the build/debug target.
+- The shared `.vscode/settings.json` hides common build-output folders and reduces file-watcher/search noise; it does not set personal editor formatting/theme preferences.
 
 Steps:
 
@@ -41,19 +64,47 @@ Steps:
 3. Press `F5` and choose:
    - `Debug XpressFormula (x64)`
 
+Win32 alternative in VS Code (optional):
+
+1. `Terminal -> Run Task...`
+2. Select `Build XpressFormula (Win32 Debug)` (or `Run XpressFormula (Win32 Debug)`).
+3. Press `F5` and choose:
+   - `Debug XpressFormula (Win32)`
+
+Run without debugger in VS Code:
+
+1. `Terminal -> Run Task...`
+2. Select `Run XpressFormula (x64 Debug)`.
+
 Run tests in VS Code:
 
 1. `Terminal -> Run Task...`
 2. Select `Run Tests (x64 Debug)`.
+
+Debug the test runner in VS Code:
+
+1. Press `F5`
+2. Choose `Debug XpressFormula.Tests (x64)`.
+
+Win32 test alternatives in VS Code:
+
+1. `Terminal -> Run Task...`
+2. Select `Run Tests (Win32 Debug)`, or press `F5` and choose `Debug XpressFormula.Tests (Win32)`.
 
 ## Run from CLI (PowerShell)
 
 From repository root:
 
 ```powershell
-$vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
-$vs = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -property installationPath
-& "$vs\MSBuild\Current\Bin\MSBuild.exe" "src\XpressFormula.slnx" /t:Build /p:Configuration=Debug /p:Platform=x64 /m
+.\scripts\invoke-msbuild.ps1 -ProjectPath "src\XpressFormula.slnx" -Configuration Debug -Platform x64 -Targets Build
+```
+
+The VS Code build tasks call the same helper script so CLI and VS Code use the same MSBuild discovery logic.
+
+Win32 build example:
+
+```powershell
+.\scripts\invoke-msbuild.ps1 -ProjectPath "src\XpressFormula.slnx" -Configuration Debug -Platform Win32 -Targets Build
 ```
 
 Run app:
@@ -68,6 +119,11 @@ Run tests:
 .\src\x64\Debug\XpressFormula.Tests.exe
 ```
 
+Win32 outputs (if built with `Platform=Win32`):
+
+- App: `.\src\Debug\XpressFormula.exe`
+- Tests: `.\src\Debug\XpressFormula.Tests.exe`
+
 ## Using 2D and 3D Plot Modes
 
 After launch:
@@ -81,8 +137,8 @@ After launch:
    - `(x^2+y^2+z^2+21)^2 - 100*(x^2+y^2) = 0` for a torus-like implicit 3D surface
 3. In the **View Controls** section:
    - Choose **3D Surfaces / Implicit** or **2D Heatmap** for `x,y` and implicit `F(x,y,z)=0` formulas.
-   - Tune azimuth, elevation, z-scale, surface density, implicit surface quality, and opacity for 3D.
-   - Use **Show Grid**, **Show Coordinates**, and **Show Wires** to simplify the on-screen plot when needed.
+   - Open the **Display** accordion to toggle **Show Grid**, **Show Coordinates**, **Show Wires**, and 3D display helpers such as **Show Envelope Box**, **Show XYZ Dimension Arrows**, and **Auto Rotate**.
+   - Tune azimuth, elevation, z-scale, surface density, implicit surface quality, and opacity in the **3D Camera** section.
    - Keep **Optimize Rendering** enabled for lower idle GPU usage and smoother 3D dragging/zooming (temporary interaction-time quality reduction for heavy implicit meshes).
    - For implicit 3D equations, keep the formula `z slice / center` near the shape center (often `0`) and make sure the visible `X/Y` range contains the shape (for example, a sphere `x^2+y^2+z^2=16` needs roughly `[-4,4]` in both `X` and `Y`).
 4. Use mouse drag to pan and mouse wheel to zoom domain coordinates.
@@ -110,9 +166,9 @@ Notes:
 - Export size is used as the offscreen render size (fallback screen-capture path may resample if offscreen export fails).
 - Transparent backgrounds are supported in PNG export. Some viewers may display fully transparent pixels as black because the RGB value of fully transparent pixels is not visually meaningful.
 
-## Build Metadata Display
+## Version Details / Build Metadata
 
-The sidebar includes a **Build Metadata** section showing:
+The sidebar includes a **Version details** accordion that contains:
 
 - repository URL
 - branch
@@ -123,10 +179,11 @@ These values are embedded at compile time by CI/local pipeline scripts.
 
 ## Update Notifications
 
-The sidebar includes an **Updates** section that:
+The **Version details** accordion also includes the **Updates** section, which:
 
 - checks GitHub releases in the background after startup
 - shows a notification when a newer version is available
+- highlights the **Version details** accordion header in red with the latest version tag when a new release is available
 - lets you manually run **Check For Updates**
 - opens the releases page with **Open Releases Page**
 
@@ -138,6 +195,10 @@ Release source used by the app:
 
 - If the app does not open a window, rebuild `Debug|x64` and run again.
 - If startup fails, the app now shows a startup error dialog to indicate initialization failure.
+- If VS Code does not show the build/debug configurations, make sure you opened the repository root folder and not a subfolder.
+- If VS Code cannot start debugging, install the C/C++ extension (`ms-vscode.cpptools`) and reopen the folder.
+- If IntelliSense shows missing includes/symbols in VS Code, run `C/C++: Select a Configuration` and choose the matching config (`x64-Debug` or `Win32-Debug`).
+- Do not use `dotnet build` for this native C++ solution; use Visual Studio, VS Code tasks, or `scripts/invoke-msbuild.ps1`.
 
 ## License
 

@@ -1,0 +1,217 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Build XpressFormula (x64 Debug)",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}\\scripts\\invoke-msbuild.ps1",
+        "-ProjectPath",
+        "src\\XpressFormula.slnx",
+        "-Configuration",
+        "Debug",
+        "-Platform",
+        "x64",
+        "-Targets",
+        "Build"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": [
+        "$msCompile"
+      ]
+    },
+    {
+      "label": "Build XpressFormula (x64 Release)",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}\\scripts\\invoke-msbuild.ps1",
+        "-ProjectPath",
+        "src\\XpressFormula.slnx",
+        "-Configuration",
+        "Release",
+        "-Platform",
+        "x64",
+        "-Targets",
+        "Build"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": [
+        "$msCompile"
+      ]
+    },
+    {
+      "label": "Rebuild XpressFormula (x64 Debug)",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}\\scripts\\invoke-msbuild.ps1",
+        "-ProjectPath",
+        "src\\XpressFormula.slnx",
+        "-Configuration",
+        "Debug",
+        "-Platform",
+        "x64",
+        "-Targets",
+        "Rebuild"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": [
+        "$msCompile"
+      ]
+    },
+    {
+      "label": "Build XpressFormula (Win32 Debug)",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}\\scripts\\invoke-msbuild.ps1",
+        "-ProjectPath",
+        "src\\XpressFormula.slnx",
+        "-Configuration",
+        "Debug",
+        "-Platform",
+        "Win32",
+        "-Targets",
+        "Build"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": [
+        "$msCompile"
+      ]
+    },
+    {
+      "label": "Build XpressFormula (Win32 Release)",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}\\scripts\\invoke-msbuild.ps1",
+        "-ProjectPath",
+        "src\\XpressFormula.slnx",
+        "-Configuration",
+        "Release",
+        "-Platform",
+        "Win32",
+        "-Targets",
+        "Build"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": [
+        "$msCompile"
+      ]
+    },
+    {
+      "label": "Rebuild XpressFormula (Win32 Debug)",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}\\scripts\\invoke-msbuild.ps1",
+        "-ProjectPath",
+        "src\\XpressFormula.slnx",
+        "-Configuration",
+        "Debug",
+        "-Platform",
+        "Win32",
+        "-Targets",
+        "Rebuild"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": [
+        "$msCompile"
+      ]
+    },
+    {
+      "label": "Run XpressFormula (x64 Debug)",
+      "type": "process",
+      "command": "${workspaceFolder}\\src\\x64\\Debug\\XpressFormula.exe",
+      "options": {
+        "cwd": "${workspaceFolder}\\src\\XpressFormula"
+      },
+      "dependsOn": [
+        "Build XpressFormula (x64 Debug)"
+      ],
+      "dependsOrder": "sequence",
+      "problemMatcher": []
+    },
+    {
+      "label": "Run Tests (x64 Debug)",
+      "type": "process",
+      "command": "${workspaceFolder}\\src\\x64\\Debug\\XpressFormula.Tests.exe",
+      "options": {
+        "cwd": "${workspaceFolder}\\src\\XpressFormula.Tests"
+      },
+      "dependsOn": [
+        "Build XpressFormula (x64 Debug)"
+      ],
+      "dependsOrder": "sequence",
+      "problemMatcher": []
+    },
+    {
+      "label": "Run XpressFormula (Win32 Debug)",
+      "type": "process",
+      "command": "${workspaceFolder}\\src\\Debug\\XpressFormula.exe",
+      "options": {
+        "cwd": "${workspaceFolder}\\src\\XpressFormula"
+      },
+      "dependsOn": [
+        "Build XpressFormula (Win32 Debug)"
+      ],
+      "dependsOrder": "sequence",
+      "problemMatcher": []
+    },
+    {
+      "label": "Run Tests (Win32 Debug)",
+      "type": "process",
+      "command": "${workspaceFolder}\\src\\Debug\\XpressFormula.Tests.exe",
+      "options": {
+        "cwd": "${workspaceFolder}\\src\\XpressFormula.Tests"
+      },
+      "dependsOn": [
+        "Build XpressFormula (Win32 Debug)"
+      ],
+      "dependsOrder": "sequence",
+      "problemMatcher": []
+    }
+  ]
+}

@@ -57,7 +57,7 @@ Common path:
 - [`src/XpressFormula.Tests`](src/XpressFormula.Tests) test runner and tests
 - [`src/vendor/imgui`](src/vendor/imgui) vendored Dear ImGui
 - [`doc`](doc) project documentation
-- `VS Code` tasks and launch configs can be added locally in `.vscode/` (optional)
+- shared `VS Code` build/run/debug workspace configs in `.vscode/` (tasks, launch, extension recommendations, IntelliSense config, minimal workspace settings; optional alternative to Visual Studio)
 
 ## Documentation
 

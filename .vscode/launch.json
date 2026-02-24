@@ -1,0 +1,49 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug XpressFormula (x64)",
+      "type": "cppvsdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}\\src\\x64\\Debug\\XpressFormula.exe",
+      "args": [],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}\\src\\XpressFormula",
+      "environment": [],
+      "preLaunchTask": "Build XpressFormula (x64 Debug)"
+    },
+    {
+      "name": "Debug XpressFormula.Tests (x64)",
+      "type": "cppvsdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}\\src\\x64\\Debug\\XpressFormula.Tests.exe",
+      "args": [],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}\\src\\XpressFormula.Tests",
+      "environment": [],
+      "preLaunchTask": "Build XpressFormula (x64 Debug)"
+    },
+    {
+      "name": "Debug XpressFormula (Win32)",
+      "type": "cppvsdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}\\src\\Debug\\XpressFormula.exe",
+      "args": [],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}\\src\\XpressFormula",
+      "environment": [],
+      "preLaunchTask": "Build XpressFormula (Win32 Debug)"
+    },
+    {
+      "name": "Debug XpressFormula.Tests (Win32)",
+      "type": "cppvsdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}\\src\\Debug\\XpressFormula.Tests.exe",
+      "args": [],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}\\src\\XpressFormula.Tests",
+      "environment": [],
+      "preLaunchTask": "Build XpressFormula (Win32 Debug)"
+    }
+  ]
+}

@@ -32,8 +32,11 @@ The project uses a lightweight in-repo test harness ([`src/XpressFormula.Tests/C
 
 ### VS Code
 
-1. Run task `Build XpressFormula (x64 Debug)`.
-2. Run task `Run Tests (x64 Debug)`.
+1. Open the repository root folder in VS Code (so `.vscode/tasks.json` and `.vscode/launch.json` are detected).
+2. Run task `Run Tests (x64 Debug)` (it builds first, then runs the test executable).
+3. To debug tests instead of just running them, press `F5` and choose `Debug XpressFormula.Tests (x64)`.
+4. Optional Win32 path: use `Run Tests (Win32 Debug)` or `Debug XpressFormula.Tests (Win32)`.
+5. If IntelliSense is out of sync with your target, run `C/C++: Select a Configuration` and choose `x64-Debug` or `Win32-Debug`.
 
 ### CLI (PowerShell)
 
