@@ -18,6 +18,9 @@ public:
     ControlPanelActions render(Core::ViewTransform& vt, PlotSettings& settings,
                                bool hasSurfaceFormula,
                                const std::string& exportStatus);
+
+private:
+    bool m_displaySectionExpanded = false;
 };
 
 } // namespace XpressFormula::UI

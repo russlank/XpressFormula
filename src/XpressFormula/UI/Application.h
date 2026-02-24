@@ -144,6 +144,7 @@ private:
     bool                      m_updateCheckInProgress = false;
     bool                      m_updateAvailable = false;
     bool                      m_updateNoticeDismissed = false;
+    bool                      m_versionDetailsExpanded = false;
     std::string               m_updateLatestTag;
     std::string               m_updateReleaseUrl = "https://github.com/russlank/XpressFormula/releases";
     std::string               m_updateStatus;

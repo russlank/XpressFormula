@@ -80,13 +80,6 @@ ControlPanelActions ControlPanel::render(Core::ViewTransform& vt, PlotSettings& 
 
     ImGui::Spacing();
     ImGui::Separator();
-    ImGui::TextUnformatted("Display");
-    ImGui::Checkbox("Show Grid", &settings.showGrid);
-    ImGui::Checkbox("Show Coordinates", &settings.showCoordinates);
-    ImGui::Checkbox("Show Wires", &settings.showWires);
-
-    ImGui::Spacing();
-    ImGui::Separator();
     ImGui::TextUnformatted("2D / 3D Formula Rendering");
 
     int renderMode = (settings.xyRenderMode == XYRenderMode::Surface3D) ? 0 : 1;
@@ -97,8 +90,44 @@ ControlPanelActions ControlPanel::render(Core::ViewTransform& vt, PlotSettings& 
         settings.xyRenderMode = XYRenderMode::Heatmap2D;
     }
 
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::SetNextItemOpen(m_displaySectionExpanded, ImGuiCond_Always);
+    m_displaySectionExpanded = ImGui::CollapsingHeader(
+        "Display##DisplaySectionToggle", ImGuiTreeNodeFlags_SpanAvailWidth);
+    if (m_displaySectionExpanded) {
+        ImGui::Spacing();
+        ImGui::Checkbox("Show Grid", &settings.showGrid);
+        ImGui::Checkbox("Show Coordinates", &settings.showCoordinates);
+        ImGui::Checkbox("Show Wires", &settings.showWires);
+
+        if (settings.xyRenderMode == XYRenderMode::Surface3D) {
+            ImGui::Separator();
+            ImGui::TextDisabled("3D Display");
+            ImGui::BeginDisabled(!settings.showWires);
+            ImGui::SliderFloat("Wire Thickness", &settings.wireThickness, 0.0f, 2.5f, "%.2f");
+            ImGui::EndDisabled();
+
+            ImGui::Checkbox("Show Envelope Box", &settings.showSurfaceEnvelope);
+            if (settings.showSurfaceEnvelope) {
+                ImGui::SliderFloat("Envelope Thickness", &settings.envelopeThickness,
+                                   0.5f, 3.0f, "%.2f");
+            }
+
+            ImGui::Checkbox("Show XYZ Dimension Arrows", &settings.showDimensionArrows);
+            ImGui::Checkbox("Auto Rotate", &settings.autoRotate);
+            if (settings.autoRotate) {
+                ImGui::SliderFloat("Rotate Speed", &settings.autoRotateSpeedDegPerSec,
+                                   2.0f, 90.0f, "%.1f deg/s");
+            }
+        } else {
+            ImGui::TextDisabled("3D display overlays are available in 3D Surfaces mode.");
+        }
+    }
+
     if (settings.xyRenderMode == XYRenderMode::Surface3D) {
         ImGui::Spacing();
+        ImGui::Separator();
         ImGui::TextUnformatted("3D Camera");
 
         ImGui::SliderFloat("Azimuth", &settings.azimuthDeg, -180.0f, 180.0f, "%.1f deg");
@@ -107,21 +136,6 @@ ControlPanelActions ControlPanel::render(Core::ViewTransform& vt, PlotSettings& 
         ImGui::SliderInt("Surface Density (z=f(x,y))", &settings.surfaceResolution, 12, 96);
         ImGui::SliderInt("Implicit Surface Quality (F=0)", &settings.implicitSurfaceResolution, 16, 96);
         ImGui::SliderFloat("Surface Opacity", &settings.surfaceOpacity, 0.25f, 1.0f, "%.2f");
-        ImGui::BeginDisabled(!settings.showWires);
-        ImGui::SliderFloat("Wire Thickness", &settings.wireThickness, 0.0f, 2.5f, "%.2f");
-        ImGui::EndDisabled();
-        ImGui::Checkbox("Show Envelope Box", &settings.showSurfaceEnvelope);
-        if (settings.showSurfaceEnvelope) {
-            ImGui::SliderFloat("Envelope Thickness", &settings.envelopeThickness,
-                               0.5f, 3.0f, "%.2f");
-        }
-        ImGui::Checkbox("Show XYZ Dimension Arrows", &settings.showDimensionArrows);
-
-        ImGui::Checkbox("Auto Rotate", &settings.autoRotate);
-        if (settings.autoRotate) {
-            ImGui::SliderFloat("Rotate Speed", &settings.autoRotateSpeedDegPerSec,
-                               2.0f, 90.0f, "%.1f deg/s");
-        }
 
         if (hasSurfaceFormula) {
             ImGui::TextWrapped("Tip: Drag in the plot to pan X/Y domain and use wheel to zoom.");

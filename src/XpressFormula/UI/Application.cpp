@@ -441,49 +441,78 @@ void Application::renderFrame() {
 
     ImGui::Spacing();
     ImGui::Separator();
-    ImGui::TextDisabled("Build Metadata");
-    ImGui::TextDisabled("Version: %s", XF_BUILD_VERSION);
-    ImGui::TextDisabled("Repo: %s", XF_BUILD_REPO_URL);
-    ImGui::TextDisabled("Branch: %s", XF_BUILD_BRANCH);
-    ImGui::TextDisabled("Commit: %s", XF_BUILD_COMMIT);
-    ImGui::Spacing();
-    ImGui::Separator();
-    ImGui::TextDisabled("Updates");
-    if (m_updateCheckInProgress) {
-        ImGui::TextWrapped("Checking GitHub releases...");
+    const bool showUpdateAlert = m_updateAvailable && !m_updateNoticeDismissed;
+    std::string versionDetailsLabel;
+    if (showUpdateAlert && !m_updateLatestTag.empty()) {
+        versionDetailsLabel = "New version available " + m_updateLatestTag;
+    } else if (showUpdateAlert) {
+        versionDetailsLabel = "New version available";
+    } else if (m_updateCheckInProgress) {
+        versionDetailsLabel = "Version details (checking...)";
     } else {
-        if (m_updateAvailable && !m_updateNoticeDismissed) {
-            ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 214, 110, 255));
-            ImGui::TextWrapped("New version available: %s", m_updateLatestTag.c_str());
-            ImGui::PopStyleColor();
-        } else if (!m_updateStatus.empty()) {
-            ImGui::TextWrapped("%s", m_updateStatus.c_str());
-        } else {
-            ImGui::TextWrapped("Checks for newer releases on GitHub.");
-        }
+        versionDetailsLabel = "Version details";
+    }
+    versionDetailsLabel += "##VersionDetailsToggle";
+
+    if (showUpdateAlert) {
+        ImGui::PushStyleColor(ImGuiCol_Header,        ImVec4(0.76f, 0.18f, 0.18f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0.86f, 0.24f, 0.24f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_HeaderActive,  ImVec4(0.62f, 0.12f, 0.12f, 1.0f));
+    }
+    ImGui::SetNextItemOpen(m_versionDetailsExpanded, ImGuiCond_Always);
+    m_versionDetailsExpanded = ImGui::CollapsingHeader(
+        versionDetailsLabel.c_str(), ImGuiTreeNodeFlags_SpanAvailWidth);
+    if (showUpdateAlert) {
+        ImGui::PopStyleColor(3);
     }
 
-    if (ImGui::Button("Check For Updates", ImVec2(ImGui::GetContentRegionAvail().x, 0.0f))) {
-        startUpdateCheck(true);
-    }
-    if (ImGui::Button("Open Releases Page", ImVec2(ImGui::GetContentRegionAvail().x, 0.0f))) {
-        std::wstring releaseUrlWide = m_updateReleaseUrl.empty()
-            ? std::wstring(kGitHubReleasesUrlW)
-            : utf8ToWide(m_updateReleaseUrl.c_str());
-        if (releaseUrlWide.empty()) {
-            releaseUrlWide = kGitHubReleasesUrlW;
+    if (m_versionDetailsExpanded) {
+        ImGui::Spacing();
+        ImGui::TextDisabled("Build Metadata");
+        ImGui::TextDisabled("Version: %s", XF_BUILD_VERSION);
+        ImGui::TextDisabled("Repo: %s", XF_BUILD_REPO_URL);
+        ImGui::TextDisabled("Branch: %s", XF_BUILD_BRANCH);
+        ImGui::TextDisabled("Commit: %s", XF_BUILD_COMMIT);
+
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::TextDisabled("Updates");
+        if (m_updateCheckInProgress) {
+            ImGui::TextWrapped("Checking GitHub releases...");
+        } else {
+            if (showUpdateAlert) {
+                ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 214, 110, 255));
+                ImGui::TextWrapped("New version available: %s", m_updateLatestTag.c_str());
+                ImGui::PopStyleColor();
+            } else if (!m_updateStatus.empty()) {
+                ImGui::TextWrapped("%s", m_updateStatus.c_str());
+            } else {
+                ImGui::TextWrapped("Checks for newer releases on GitHub.");
+            }
         }
-        if (!openUrlInBrowser(releaseUrlWide.c_str())) {
-            m_updateStatus = "Could not open browser. Visit: " + std::string(kGitHubReleasesUrlUtf8);
-        } else if (m_updateAvailable) {
+
+        if (ImGui::Button("Check For Updates", ImVec2(ImGui::GetContentRegionAvail().x, 0.0f))) {
+            startUpdateCheck(true);
+        }
+        if (ImGui::Button("Open Releases Page", ImVec2(ImGui::GetContentRegionAvail().x, 0.0f))) {
+            std::wstring releaseUrlWide = m_updateReleaseUrl.empty()
+                ? std::wstring(kGitHubReleasesUrlW)
+                : utf8ToWide(m_updateReleaseUrl.c_str());
+            if (releaseUrlWide.empty()) {
+                releaseUrlWide = kGitHubReleasesUrlW;
+            }
+            if (!openUrlInBrowser(releaseUrlWide.c_str())) {
+                m_updateStatus = "Could not open browser. Visit: " + std::string(kGitHubReleasesUrlUtf8);
+            } else if (m_updateAvailable) {
+                m_updateNoticeDismissed = true;
+            }
+            m_redrawRequested = true;
+        }
+        if (m_updateAvailable && !m_updateNoticeDismissed &&
+            ImGui::Button("Dismiss Update Notice", ImVec2(ImGui::GetContentRegionAvail().x, 0.0f))) {
             m_updateNoticeDismissed = true;
+            m_redrawRequested = true;
         }
-        m_redrawRequested = true;
-    }
-    if (m_updateAvailable && !m_updateNoticeDismissed &&
-        ImGui::Button("Dismiss Update Notice", ImVec2(ImGui::GetContentRegionAvail().x, 0.0f))) {
-        m_updateNoticeDismissed = true;
-        m_redrawRequested = true;
     }
     ImGui::End();
 
