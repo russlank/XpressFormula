@@ -36,6 +36,9 @@ const ExamplePattern kExamplePatterns[] = {
     { "Scalar field",   "x^2 + y^2 + z^2 = 16" },
     { "Implicit 3D",    "(x^2+y^2+z^2+21)^2 - 100*(x^2+y^2) = 0" },
     { "Implicit 3D",    "(x^2+y^2+z^2+5)^2 - 36*(x^2+y^2) = 0" },
+    { "Implicit 3D",    "pow(abs(pow(pow(abs(x),4)+pow(abs(y),4),0.25)-1.0),4)+pow(abs(z),4)=pow(0.35,4)" },
+    { "Implicit 3D",    "max(pow(pow(abs(x/1.25),6)+pow(abs(y/1.00),6)+pow(abs(z/0.82),6),1.0/6)-1,1-sqrt(pow(abs(y)/(0.28+0.17*pow(abs(x/1.25),4)),2)+pow(abs(z)/(0.24+0.15*pow(abs(x/1.25),4)),2)))=0" },
+    { "Implicit 3D",    "max(pow(pow(abs(x/1.18),8)+pow(abs(y/1.02),8)+pow(abs(z/0.88),8),1.0/8)-1,-min(sqrt(y^2+z^2)-(0.22+0.20*pow(abs(x/1.18),4)),min(sqrt(x^2+z^2)-(0.22+0.20*pow(abs(y/1.02),4)),sqrt(x^2+y^2)-(0.22+0.20*pow(abs(z/0.88),4)))))=0" },
     { "Scalar field",   "sin(x) + cos(y) + z = 0" },
 };
 
