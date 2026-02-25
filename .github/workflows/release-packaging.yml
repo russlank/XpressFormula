@@ -25,6 +25,9 @@ jobs:
       # Signing is optional and intentionally disabled by default so the pipeline keeps working
       # before a code-signing certificate is configured.
       ENABLE_CODESIGN: "false"
+      # GitHub Actions does not allow direct secrets.* references inside step `if:` expressions.
+      # Compute a boolean once in job env and reference that in the conditional step below.
+      HAS_CODESIGN_SECRETS: ${{ secrets.WINDOWS_CODESIGN_PFX_BASE64 != '' && secrets.WINDOWS_CODESIGN_PFX_PASSWORD != '' }}
       # Override via GitHub variable WINDOWS_CODESIGN_TIMESTAMP_URL if your CA requires another URL.
       CODE_SIGN_TIMESTAMP_URL: "http://timestamp.digicert.com"
 
@@ -56,7 +59,7 @@ jobs:
       # When you later enable signing, no pipeline logic changes are required; just add secrets
       # (and optionally the WINDOWS_CODESIGN_TIMESTAMP_URL variable).
       - name: Prepare Optional Code Signing
-        if: ${{ secrets.WINDOWS_CODESIGN_PFX_BASE64 != '' && secrets.WINDOWS_CODESIGN_PFX_PASSWORD != '' }}
+        if: env.HAS_CODESIGN_SECRETS == 'true'
         shell: pwsh
         env:
           TIMESTAMP_URL_OVERRIDE: ${{ vars.WINDOWS_CODESIGN_TIMESTAMP_URL }}
