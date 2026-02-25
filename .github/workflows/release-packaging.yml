@@ -14,12 +14,19 @@ jobs:
   package:
     runs-on: windows-2025-vs2026
     env:
+      # Update these toolchain pins when the runner image changes or when a dependency upgrade
+      # is required. Keep WiX major version aligned with packaging/build-packages.ps1 checks.
       DOTNET_VERSION: "9.0.x"
       PYTHON_VERSION: "3.12"
       WIX_VERSION: "6.0.2"
       BUILD_CONFIGURATION: "Release"
       BUILD_PLATFORM: "x64"
       MSVC_PLATFORM_TOOLSET: "v143"
+      # Signing is optional and intentionally disabled by default so the pipeline keeps working
+      # before a code-signing certificate is configured.
+      ENABLE_CODESIGN: "false"
+      # Override via GitHub variable WINDOWS_CODESIGN_TIMESTAMP_URL if your CA requires another URL.
+      CODE_SIGN_TIMESTAMP_URL: "http://timestamp.digicert.com"
 
     steps:
       - name: Checkout
@@ -40,6 +47,59 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+
+      # Optional signing bootstrap. This step only runs when BOTH secrets exist:
+      # - WINDOWS_CODESIGN_PFX_BASE64
+      # - WINDOWS_CODESIGN_PFX_PASSWORD
+      # To keep unsigned behavior, do nothing (leave secrets unset).
+      #
+      # When you later enable signing, no pipeline logic changes are required; just add secrets
+      # (and optionally the WINDOWS_CODESIGN_TIMESTAMP_URL variable).
+      - name: Prepare Optional Code Signing
+        if: ${{ secrets.WINDOWS_CODESIGN_PFX_BASE64 != '' && secrets.WINDOWS_CODESIGN_PFX_PASSWORD != '' }}
+        shell: pwsh
+        env:
+          TIMESTAMP_URL_OVERRIDE: ${{ vars.WINDOWS_CODESIGN_TIMESTAMP_URL }}
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $pfxPath = Join-Path $env:RUNNER_TEMP "xpressformula-codesign.pfx"
+          [System.IO.File]::WriteAllBytes(
+            $pfxPath,
+            [Convert]::FromBase64String("${{ secrets.WINDOWS_CODESIGN_PFX_BASE64 }}")
+          )
+
+          $signtoolCmd = Get-Command signtool.exe -ErrorAction SilentlyContinue
+          $signtoolPath = $null
+          if ($signtoolCmd) {
+            $signtoolPath = $signtoolCmd.Source
+          } else {
+            $candidate = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin" -Recurse -Filter signtool.exe -ErrorAction SilentlyContinue |
+              Where-Object { $_.FullName -match "\\x64\\signtool\.exe$" } |
+              Sort-Object FullName -Descending |
+              Select-Object -First 1
+            if ($candidate) {
+              $signtoolPath = $candidate.FullName
+            }
+          }
+
+          if (-not $signtoolPath) {
+            throw "signtool.exe not found on runner."
+          }
+
+          $timestampUrl = $env:CODE_SIGN_TIMESTAMP_URL
+          if (-not [string]::IsNullOrWhiteSpace($env:TIMESTAMP_URL_OVERRIDE)) {
+            $timestampUrl = $env:TIMESTAMP_URL_OVERRIDE
+          }
+
+          "ENABLE_CODESIGN=true" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "CODE_SIGN_PFX=$pfxPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "CODE_SIGN_PWD=${{ secrets.WINDOWS_CODESIGN_PFX_PASSWORD }}" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "SIGNTOOL_EXE=$signtoolPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "CODE_SIGN_TIMESTAMP_URL=$timestampUrl" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+          Write-Host "Optional Authenticode signing enabled."
+          Write-Host "Using SignTool: $signtoolPath"
 
       - name: Show MSBuild Version
         shell: pwsh
@@ -118,21 +178,71 @@ jobs:
             /p:IntDir="$env:GITHUB_WORKSPACE\build\obj\" `
             /p:OutDir="$env:GITHUB_WORKSPACE\build\bin\"
 
+      # Packaging script supports both unsigned and signed modes.
+      # IMPORTANT signing-order constraint (handled in packaging/build-packages.ps1):
+      #   sign app EXE -> build MSI -> sign MSI -> build bundle -> sign bundle
+      # Do not move MSI signing after bundle creation.
       - name: Build MSI and Setup EXE Packages
         shell: pwsh
         run: |
-          .\packaging\build-packages.ps1 `
-            -AppExePath "$env:GITHUB_WORKSPACE\build\bin\XpressFormula.exe" `
-            -Version "${{ steps.version.outputs.app_version }}" `
-            -RequiredWixVersion "$env:WIX_VERSION" `
-            -OutputDir "artifacts\release"
+          if ($env:ENABLE_CODESIGN -eq "true") {
+            Write-Host "Packaging with optional Authenticode signing enabled."
+            .\packaging\build-packages.ps1 `
+              -AppExePath "$env:GITHUB_WORKSPACE\build\bin\XpressFormula.exe" `
+              -Version "${{ steps.version.outputs.app_version }}" `
+              -RequiredWixVersion "$env:WIX_VERSION" `
+              -OutputDir "artifacts\release" `
+              -SignArtifacts `
+              -SignToolPath "$env:SIGNTOOL_EXE" `
+              -CodeSignPfxPath "$env:CODE_SIGN_PFX" `
+              -CodeSignPfxPassword "$env:CODE_SIGN_PWD" `
+              -TimestampUrl "$env:CODE_SIGN_TIMESTAMP_URL"
+          }
+          else {
+            .\packaging\build-packages.ps1 `
+              -AppExePath "$env:GITHUB_WORKSPACE\build\bin\XpressFormula.exe" `
+              -Version "${{ steps.version.outputs.app_version }}" `
+              -RequiredWixVersion "$env:WIX_VERSION" `
+              -OutputDir "artifacts\release"
+          }
 
+      # Verification is optional and only meaningful in signed mode.
+      # Keep this step after packaging and before upload/publish so failures block releases.
+      - name: Verify Authenticode Signatures (Optional)
+        shell: pwsh
+        run: |
+          if ($env:ENABLE_CODESIGN -ne "true") {
+            Write-Host "Skipping signature verification (no signing certificate configured)."
+            return
+          }
+
+          $ErrorActionPreference = "Stop"
+          $targets = @(
+            "$env:GITHUB_WORKSPACE\build\bin\XpressFormula.exe",
+            "$env:GITHUB_WORKSPACE\artifacts\release\*.exe",
+            "$env:GITHUB_WORKSPACE\artifacts\release\*.msi"
+          )
+
+          foreach ($pattern in $targets) {
+            Get-ChildItem $pattern -ErrorAction SilentlyContinue | ForEach-Object {
+              $sig = Get-AuthenticodeSignature $_.FullName
+              $subject = if ($sig.SignerCertificate) { $sig.SignerCertificate.Subject } else { "<none>" }
+              Write-Host "$($_.Name): $($sig.Status) / $subject"
+              if ($sig.Status -ne "Valid") {
+                throw "Invalid signature on '$($_.FullName)': $($sig.Status)"
+              }
+            }
+          }
+
+      # Upload is unchanged for signed/unsigned mode. Artifact filenames remain stable.
       - name: Upload Packaging Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: xpressformula-packages-${{ steps.version.outputs.app_version }}
           path: artifacts/release/*
 
+      # Tag pushes publish to GitHub Releases. workflow_dispatch builds artifacts only unless the
+      # run is manually attached/published through another process.
       - name: Publish GitHub Release Assets
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2

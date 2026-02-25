@@ -12,6 +12,7 @@
 - Expression language: [`expression-language.md`](expression-language.md)
 - Testing: [`testing.md`](testing.md)
 - Release and packaging: [`release-packaging.md`](release-packaging.md)
+- Windows code signing: [`code-signing.md`](code-signing.md)
 - Vendor dependencies: [`project-vendors.md`](project-vendors.md)
 
 Recommended reading order for new contributors:
@@ -27,6 +28,7 @@ Recommended reading order for new contributors:
 9. [`expression-language.md`](expression-language.md)
 10. [`testing.md`](testing.md)
 11. [`release-packaging.md`](release-packaging.md)
+12. [`code-signing.md`](code-signing.md)
 
 ## License
 

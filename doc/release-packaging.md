@@ -3,6 +3,10 @@
 
 This guide explains how to version, package, and publish XpressFormula releases.
 
+If you are publishing public Windows releases, also read the Windows signing guide:
+
+- [`code-signing.md`](code-signing.md)
+
 ## Version Source of Truth
 
 Version values are defined in:
@@ -25,6 +29,8 @@ Packaging produces three files:
 1. Portable executable: `XpressFormula-<version>-x64.exe`
 2. MSI installer: `XpressFormula-<version>-x64.msi`
 3. Setup bootstrapper: `XpressFormula-<version>-x64-setup.exe`
+
+For best Defender/SmartScreen results, sign all three artifacts. See [`code-signing.md`](code-signing.md) for the required signing order and CI snippets.
 
 ## CI Toolchain Pins
 
@@ -147,9 +153,12 @@ Trigger modes:
 Pipeline actions:
 
 1. Builds `Release|x64` app binary with explicit platform toolset.
-2. Builds MSI and setup EXE using WiX.
-3. Uploads artifacts.
-4. For tag pushes, publishes assets to the GitHub release.
+2. (Recommended) Signs the app EXE.
+3. Builds MSI and setup EXE using WiX.
+4. (Recommended) Signs the MSI before building/publishing the bundle, and signs the final setup EXE.
+5. Verifies signatures (recommended).
+6. Uploads artifacts.
+7. For tag pushes, publishes assets to the GitHub release.
 
 ## Creating a New Release
 

@@ -72,6 +72,7 @@ Common path:
 - Expression language reference: [`doc/expression-language.md`](doc/expression-language.md)
 - Testing guide: [`doc/testing.md`](doc/testing.md)
 - Release and packaging guide: [`doc/release-packaging.md`](doc/release-packaging.md)
+- Windows code signing guide (Defender/SmartScreen mitigation): [`doc/code-signing.md`](doc/code-signing.md)
 - Vendor dependencies: [`doc/project-vendors.md`](doc/project-vendors.md)
 
 ## Third-Party Dependencies

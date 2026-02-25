@@ -34,5 +34,8 @@
     "**/x86/**": true,
     "**/Debug/**": true,
     "**/Release/**": true
+  },
+  "yaml.schemas": {
+    "https://json.schemastore.org/github-workflow.json": ".github/workflows/*"
   }
 }
