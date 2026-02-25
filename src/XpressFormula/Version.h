@@ -6,11 +6,11 @@
 // We keep the numeric pieces separate so they can be reused by both resource metadata and UI text.
 #define XF_VERSION_MAJOR 1
 #define XF_VERSION_MINOR 3
-#define XF_VERSION_PATCH 2
+#define XF_VERSION_PATCH 3
 #define XF_VERSION_BUILD 0
 
 // Windows VERSIONINFO resources expect a comma-separated numeric tuple, not a quoted string.
-// Example expansion: 1, 3, 2, 0
+// Example expansion: 1, 3, 3, 0
 #define XF_VERSION_FILEVERSION XF_VERSION_MAJOR, XF_VERSION_MINOR, XF_VERSION_PATCH, XF_VERSION_BUILD
 
 // String helpers are used to derive the display version text from the numeric macros above so the
@@ -19,7 +19,7 @@
 #define XF_STRINGIZE(x) XF_STRINGIZE_IMPL(x)
 
 // Human-readable semantic version used in the UI, logs, and default build metadata.
-// Example expansion: "1.3.2"
+// Example expansion: "1.3.3"
 #define XF_VERSION_STRING \
     XF_STRINGIZE(XF_VERSION_MAJOR) "." XF_STRINGIZE(XF_VERSION_MINOR) "." XF_STRINGIZE(XF_VERSION_PATCH)
 

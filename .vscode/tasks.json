@@ -175,6 +175,19 @@
       "problemMatcher": []
     },
     {
+      "label": "Run XpressFormula (x64 Release)",
+      "type": "process",
+      "command": "${workspaceFolder}\\src\\x64\\Release\\XpressFormula.exe",
+      "options": {
+        "cwd": "${workspaceFolder}\\src\\XpressFormula"
+      },
+      "dependsOn": [
+        "Build XpressFormula (x64 Release)"
+      ],
+      "dependsOrder": "sequence",
+      "problemMatcher": []
+    },
+    {
       "label": "Run Tests (x64 Debug)",
       "type": "process",
       "command": "${workspaceFolder}\\src\\x64\\Debug\\XpressFormula.Tests.exe",
