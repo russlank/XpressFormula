@@ -110,8 +110,14 @@ double Evaluator::evaluateFunction(const std::string& name,
     }
 
     // Three or more arguments — no built-in function supports them.
-    // Attempt single-arg dispatch so e.g. sin(x, y, z) degrades gracefully to sin(x).
+    // Preserve the most specific supported arity when possible:
+    // - known 2-arg functions ignore extras after the first two args
+    // - known 1-arg functions ignore extras after the first arg
     if (args.size() > 2) {
+        if (name == "atan2" || name == "pow" || name == "min" ||
+            name == "max" || name == "mod" || name == "log") {
+            return evaluateFunction(name, { args[0], args[1] });
+        }
         return evaluateFunction(name, { args[0] });
     }
 

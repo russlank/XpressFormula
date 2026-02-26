@@ -75,6 +75,7 @@ void PlotPanel::render(std::vector<FormulaEntry>& formulas,
     const XYRenderMode effectiveRenderMode =
         settings.resolveXYRenderMode(has2DFormula, hasSurface);
     const bool is3DMode = (effectiveRenderMode == XYRenderMode::Surface3D);
+    const bool use3DGridPlaneInterleave = is3DMode && showGrid;
 
     // Apply auto-rotation BEFORE any 3D drawing so the grid, axes, and surfaces
     // all use the same azimuth for this frame (avoids a 1-frame visual tear).
@@ -85,20 +86,9 @@ void PlotPanel::render(std::vector<FormulaEntry>& formulas,
         }
     }
 
-    // Grid, axes, labels
-    if (is3DMode) {
-        Plotting::PlotRenderer::Surface3DOptions reference3D;
-        reference3D.azimuthDeg = settings.azimuthDeg;
-        reference3D.elevationDeg = settings.elevationDeg;
-        reference3D.zScale = settings.zScale;
-
-        if (showGrid) {
-            Plotting::PlotRenderer::drawGrid3D(dl, vt, reference3D);
-        }
-        if (showCoordinates) {
-            Plotting::PlotRenderer::drawAxes3D(dl, vt, reference3D);
-        }
-    } else {
+    // 2D grid/axes/labels are drawn up-front. In 3D mode the projected grid can be interleaved
+    // between below-plane and above-plane geometry later to preserve XY-plane depth ordering.
+    if (!is3DMode) {
         if (showGrid) {
             Plotting::PlotRenderer::drawGrid(dl, vt);
         }
@@ -154,46 +144,84 @@ void PlotPanel::render(std::vector<FormulaEntry>& formulas,
         options.wireThickness = interactionWireThickness;
         options.showEnvelope = showEnvelope;
         options.envelopeThickness = settings.envelopeThickness;
-        options.showDimensionArrows = settings.showDimensionArrows && showCoordinates;
+        // Dimension gizmo is an alternative to coordinate overlays in 3D mode, so keep them
+        // mutually exclusive to avoid redundant on-screen guidance.
+        options.showDimensionArrows = settings.showDimensionArrows && !showCoordinates;
         return options;
     };
 
-    // Draw each formula
-    for (auto& f : formulas) {
-        if (!f.visible || !f.isValid()) continue;
-        switch (f.renderKind) {
-            case FormulaRenderKind::Curve2D:
-                if (!is3DMode) {
-                    Plotting::PlotRenderer::drawCurve2D(dl, vt, f.ast, f.color);
-                }
-                break;
-            case FormulaRenderKind::Surface3D:
-                if (is3DMode) {
-                    auto options = make3DOptions();
-                    Plotting::PlotRenderer::drawSurface3D(dl, vt, f.ast, f.color, options);
-                } else {
-                    Plotting::PlotRenderer::drawHeatmap(
-                        dl, vt, f.ast, f.color, settings.heatmapOpacity);
-                }
-                break;
-            case FormulaRenderKind::Implicit2D:
-                if (!is3DMode) {
-                    Plotting::PlotRenderer::drawImplicitContour2D(dl, vt, f.ast, f.color, 2.0f);
-                }
-                break;
-            case FormulaRenderKind::ScalarField3D:
-                if (f.isEquation && is3DMode) {
-                    auto options = make3DOptions();
-                    options.implicitZCenter = f.zSlice;
-                    Plotting::PlotRenderer::drawImplicitSurface3D(dl, vt, f.ast, f.color, options);
-                } else if (!is3DMode) {
-                    Plotting::PlotRenderer::drawCrossSection(
-                        dl, vt, f.ast, f.zSlice, f.color, settings.heatmapOpacity);
-                }
-                break;
-            default:
-                break;
+    auto drawFormulas = [&](Plotting::PlotRenderer::SurfacePlanePass3D planePass,
+                            bool enable3DOverlays) {
+        for (auto& f : formulas) {
+            if (!f.visible || !f.isValid()) continue;
+            switch (f.renderKind) {
+                case FormulaRenderKind::Curve2D:
+                    if (!is3DMode) {
+                        Plotting::PlotRenderer::drawCurve2D(dl, vt, f.ast, f.color);
+                    }
+                    break;
+                case FormulaRenderKind::Surface3D:
+                    if (is3DMode) {
+                        auto options = make3DOptions();
+                        options.planePass = planePass;
+                        if (!enable3DOverlays) {
+                            options.showEnvelope = false;
+                            options.showDimensionArrows = false;
+                        }
+                        Plotting::PlotRenderer::drawSurface3D(dl, vt, f.ast, f.color, options);
+                    } else {
+                        Plotting::PlotRenderer::drawHeatmap(
+                            dl, vt, f.ast, f.color, settings.heatmapOpacity);
+                    }
+                    break;
+                case FormulaRenderKind::Implicit2D:
+                    if (!is3DMode) {
+                        Plotting::PlotRenderer::drawImplicitContour2D(dl, vt, f.ast, f.color, 2.0f);
+                    }
+                    break;
+                case FormulaRenderKind::ScalarField3D:
+                    if (f.isEquation && is3DMode) {
+                        auto options = make3DOptions();
+                        options.implicitZCenter = f.zSlice;
+                        options.planePass = planePass;
+                        if (!enable3DOverlays) {
+                            options.showEnvelope = false;
+                            options.showDimensionArrows = false;
+                        }
+                        Plotting::PlotRenderer::drawImplicitSurface3D(dl, vt, f.ast, f.color, options);
+                    } else if (!is3DMode) {
+                        Plotting::PlotRenderer::drawCrossSection(
+                            dl, vt, f.ast, f.zSlice, f.color, settings.heatmapOpacity);
+                    }
+                    break;
+                default:
+                    break;
+            }
         }
+    };
+
+    if (is3DMode) {
+        Plotting::PlotRenderer::Surface3DOptions reference3D;
+        reference3D.azimuthDeg = settings.azimuthDeg;
+        reference3D.elevationDeg = settings.elevationDeg;
+        reference3D.zScale = settings.zScale;
+
+        if (use3DGridPlaneInterleave) {
+            drawFormulas(Plotting::PlotRenderer::SurfacePlanePass3D::BelowGridPlane, false);
+            Plotting::PlotRenderer::drawGrid3D(dl, vt, reference3D);
+            drawFormulas(Plotting::PlotRenderer::SurfacePlanePass3D::AboveGridPlane, true);
+        } else {
+            drawFormulas(Plotting::PlotRenderer::SurfacePlanePass3D::All, true);
+            if (showGrid) {
+                Plotting::PlotRenderer::drawGrid3D(dl, vt, reference3D);
+            }
+        }
+
+        if (showCoordinates) {
+            Plotting::PlotRenderer::drawAxes3D(dl, vt, reference3D);
+        }
+    } else {
+        drawFormulas(Plotting::PlotRenderer::SurfacePlanePass3D::All, true);
     }
 
     // Border

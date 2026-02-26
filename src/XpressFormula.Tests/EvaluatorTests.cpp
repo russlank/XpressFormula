@@ -356,6 +356,13 @@ TEST_CASE(Eval_SingleArgFuncWithThreeArgs) {
     assertClose(5.0, result); // abs(-5) = 5, y and z ignored
 }
 
+TEST_CASE(Eval_TwoArgFuncWithExtraArgs) {
+    auto r = Parser::parse("log(10, 100, 999)");
+    Assert::IsTrue(r.success());
+    double result = Evaluator::evaluate(r.ast, {});
+    assertClose(2.0, result); // extras ignored, preserve 2-arg log(base, value)
+}
+
 TEST_CASE(Eval_EmptyArgFunction) {
     // sin() with no args → NaN (args.empty() returns NaN)
     auto r = Parser::parse("sin()");
