@@ -76,6 +76,15 @@ void PlotPanel::render(std::vector<FormulaEntry>& formulas,
         settings.resolveXYRenderMode(has2DFormula, hasSurface);
     const bool is3DMode = (effectiveRenderMode == XYRenderMode::Surface3D);
 
+    // Apply auto-rotation BEFORE any 3D drawing so the grid, axes, and surfaces
+    // all use the same azimuth for this frame (avoids a 1-frame visual tear).
+    if (hasSurface && is3DMode && settings.autoRotate) {
+        settings.azimuthDeg += ImGui::GetIO().DeltaTime * settings.autoRotateSpeedDegPerSec;
+        if (settings.azimuthDeg > 180.0f) {
+            settings.azimuthDeg -= 360.0f;
+        }
+    }
+
     // Grid, axes, labels
     if (is3DMode) {
         Plotting::PlotRenderer::Surface3DOptions reference3D;
@@ -96,13 +105,6 @@ void PlotPanel::render(std::vector<FormulaEntry>& formulas,
         if (showCoordinates) {
             Plotting::PlotRenderer::drawAxes(dl, vt);
             Plotting::PlotRenderer::drawAxisLabels(dl, vt);
-        }
-    }
-
-    if (hasSurface && is3DMode && settings.autoRotate) {
-        settings.azimuthDeg += ImGui::GetIO().DeltaTime * settings.autoRotateSpeedDegPerSec;
-        if (settings.azimuthDeg > 180.0f) {
-            settings.azimuthDeg -= 360.0f;
         }
     }
 
@@ -139,6 +141,23 @@ void PlotPanel::render(std::vector<FormulaEntry>& formulas,
 
     const float interactionWireThickness = useInteractive3DThrottle ? 0.0f : effectiveWireThickness;
 
+    // Helper to build Surface3DOptions from the current settings (avoids duplicating
+    // the same field list for Surface3D and ScalarField3D render kinds).
+    auto make3DOptions = [&]() {
+        Plotting::PlotRenderer::Surface3DOptions options;
+        options.azimuthDeg = settings.azimuthDeg;
+        options.elevationDeg = settings.elevationDeg;
+        options.zScale = settings.zScale;
+        options.resolution = interactiveSurfaceResolution;
+        options.implicitResolution = interactiveImplicitResolution;
+        options.opacity = settings.surfaceOpacity;
+        options.wireThickness = interactionWireThickness;
+        options.showEnvelope = showEnvelope;
+        options.envelopeThickness = settings.envelopeThickness;
+        options.showDimensionArrows = settings.showDimensionArrows && showCoordinates;
+        return options;
+    };
+
     // Draw each formula
     for (auto& f : formulas) {
         if (!f.visible || !f.isValid()) continue;
@@ -150,17 +169,7 @@ void PlotPanel::render(std::vector<FormulaEntry>& formulas,
                 break;
             case FormulaRenderKind::Surface3D:
                 if (is3DMode) {
-                    Plotting::PlotRenderer::Surface3DOptions options;
-                    options.azimuthDeg = settings.azimuthDeg;
-                    options.elevationDeg = settings.elevationDeg;
-                    options.zScale = settings.zScale;
-                    options.resolution = interactiveSurfaceResolution;
-                    options.implicitResolution = interactiveImplicitResolution;
-                    options.opacity = settings.surfaceOpacity;
-                    options.wireThickness = interactionWireThickness;
-                    options.showEnvelope = showEnvelope;
-                    options.envelopeThickness = settings.envelopeThickness;
-                    options.showDimensionArrows = settings.showDimensionArrows && showCoordinates;
+                    auto options = make3DOptions();
                     Plotting::PlotRenderer::drawSurface3D(dl, vt, f.ast, f.color, options);
                 } else {
                     Plotting::PlotRenderer::drawHeatmap(
@@ -174,17 +183,7 @@ void PlotPanel::render(std::vector<FormulaEntry>& formulas,
                 break;
             case FormulaRenderKind::ScalarField3D:
                 if (f.isEquation && is3DMode) {
-                    Plotting::PlotRenderer::Surface3DOptions options;
-                    options.azimuthDeg = settings.azimuthDeg;
-                    options.elevationDeg = settings.elevationDeg;
-                    options.zScale = settings.zScale;
-                    options.resolution = interactiveSurfaceResolution;
-                    options.implicitResolution = interactiveImplicitResolution;
-                    options.opacity = settings.surfaceOpacity;
-                    options.wireThickness = interactionWireThickness;
-                    options.showEnvelope = showEnvelope;
-                    options.envelopeThickness = settings.envelopeThickness;
-                    options.showDimensionArrows = settings.showDimensionArrows && showCoordinates;
+                    auto options = make3DOptions();
                     options.implicitZCenter = f.zSlice;
                     Plotting::PlotRenderer::drawImplicitSurface3D(dl, vt, f.ast, f.color, options);
                 } else if (!is3DMode) {

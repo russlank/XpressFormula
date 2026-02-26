@@ -2,6 +2,7 @@
 #pragma once
 
 #include "FormulaEntry.h"
+#include <string>
 #include <vector>
 
 namespace XpressFormula::UI {
@@ -22,6 +23,10 @@ private:
     bool m_focusEditorInput = false;
     int  m_editorFormulaIndex = -1;
     char m_editorBuffer[2048] = {};
+
+    // Cached live-validation preview so we don't parse every frame.
+    FormulaEntry m_editorPreview;
+    std::string  m_editorPreviousText;
 };
 
 } // namespace XpressFormula::UI

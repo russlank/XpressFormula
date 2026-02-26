@@ -14,10 +14,10 @@ namespace XpressFormula::Plotting {
 
 unsigned int PlotRenderer::colorU32(const float c[4]) {
     return IM_COL32(
-        static_cast<int>(c[0] * 255),
-        static_cast<int>(c[1] * 255),
-        static_cast<int>(c[2] * 255),
-        static_cast<int>(c[3] * 255));
+        std::clamp(static_cast<int>(c[0] * 255), 0, 255),
+        std::clamp(static_cast<int>(c[1] * 255), 0, 255),
+        std::clamp(static_cast<int>(c[2] * 255), 0, 255),
+        std::clamp(static_cast<int>(c[3] * 255), 0, 255));
 }
 
 unsigned int PlotRenderer::heatColor(double value, double lo, double hi,
@@ -1570,12 +1570,15 @@ void PlotRenderer::drawImplicitContour2D(ImDrawList* dl, const Core::ViewTransfo
         }
     }
 
+    // Interpolate along a cell edge to find the zero-crossing between two sample values.
+    // Returns true (and fills 'out' with the screen-space point) when the edge crosses zero.
     auto interpolate = [&](double x0, double y0, double v0,
                            double x1, double y1, double v1,
                            Core::Vec2& out) -> bool {
         if (!std::isfinite(v0) || !std::isfinite(v1)) {
             return false;
         }
+        // Both values on the same side of zero — no crossing on this edge.
         if ((v0 > 0.0 && v1 > 0.0) || (v0 < 0.0 && v1 < 0.0)) {
             return false;
         }
@@ -1584,6 +1587,10 @@ void PlotRenderer::drawImplicitContour2D(ImDrawList* dl, const Core::ViewTransfo
         const double denom = v0 - v1;
         if (std::abs(denom) > 1e-12) {
             t = std::clamp(v0 / denom, 0.0, 1.0);
+        } else if (v0 == 0.0 && v1 == 0.0) {
+            // Both endpoints lie exactly on the contour — use the midpoint so the
+            // edge still contributes a visible line segment.
+            t = 0.5;
         }
 
         const double wx = x0 + (x1 - x0) * t;

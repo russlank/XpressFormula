@@ -64,9 +64,28 @@ inline void collectVariables(const Core::ASTNodePtr& node, std::set<std::string>
 }
 
 inline bool containsVariable(const Core::ASTNodePtr& node, const std::string& name) {
-    std::set<std::string> vars;
-    collectVariables(node, vars);
-    return vars.count(name) > 0;
+    if (!node) {
+        return false;
+    }
+    switch (node->type()) {
+        case Core::NodeType::Variable:
+            return static_cast<Core::VariableNode*>(node.get())->name == name;
+        case Core::NodeType::BinaryOp: {
+            const auto* binary = static_cast<Core::BinaryOpNode*>(node.get());
+            return containsVariable(binary->left, name) || containsVariable(binary->right, name);
+        }
+        case Core::NodeType::UnaryOp:
+            return containsVariable(static_cast<Core::UnaryOpNode*>(node.get())->operand, name);
+        case Core::NodeType::FunctionCall: {
+            const auto* fn = static_cast<Core::FunctionCallNode*>(node.get());
+            for (const auto& arg : fn->arguments) {
+                if (containsVariable(arg, name)) return true;
+            }
+            return false;
+        }
+        default:
+            return false;
+    }
 }
 
 inline bool isVariableNode(const Core::ASTNodePtr& node, const char* name) {

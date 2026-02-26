@@ -2,6 +2,7 @@
 // ControlPanel.cpp - Sidebar view/render/export controls implementation.
 #include "ControlPanel.h"
 #include "imgui.h"
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 
@@ -17,9 +18,9 @@ ControlPanelActions ControlPanel::render(Core::ViewTransform& vt, PlotSettings& 
     ImGui::Separator();
 
     // --- Zoom all ---
-    float zoomAllLog = static_cast<float>(std::log(vt.scaleX) / std::log(2.0));
+    float zoomAllLog = static_cast<float>(std::log(std::max(vt.scaleX, 1e-6)) / std::log(2.0));
     if (ImGui::SliderFloat("Zoom##all", &zoomAllLog, -3.0f, 14.0f, "2^%.1f")) {
-        double newScale = std::pow(2.0, static_cast<double>(zoomAllLog));
+        double newScale = std::clamp(std::pow(2.0, static_cast<double>(zoomAllLog)), 0.1, 100000.0);
         vt.scaleX = newScale;
         vt.scaleY = newScale;
     }

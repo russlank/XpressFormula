@@ -101,9 +101,14 @@ function Get-ReplacementTargetFiles {
     )
 
     $vendorImguiRoot = Join-Path $templateRoot "src\vendor\imgui"
+    $vendorImguiExists = Test-Path $vendorImguiRoot
+    if ($vendorImguiExists) {
+        # Append trailing separator so "src\vendor\imguiExtra" is not falsely skipped.
+        $vendorImguiRoot = $vendorImguiRoot.TrimEnd([System.IO.Path]::DirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar
+    }
 
     foreach ($file in Get-ChildItem -Path $templateRoot -Recurse -File -Force) {
-        if ($vendorImguiRoot -and (Test-Path $vendorImguiRoot)) {
+        if ($vendorImguiExists) {
             if ($file.FullName.StartsWith($vendorImguiRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
                 continue
             }
@@ -145,13 +150,17 @@ function Ensure-TemplateGitIgnoreOverrides {
     }
 
     $text = [System.IO.File]::ReadAllText($gitignorePath)
-    $text = [System.Text.RegularExpressions.Regex]::Replace($text, '(?m)^!\.ai/template-solution/\r?\n', '')
-    $text = [System.Text.RegularExpressions.Regex]::Replace($text, '(?m)^!\.ai/template-solution/\*\*\r?\n', '')
+    # Use (?:\r?\n|$) so lines at the very end of the file (no trailing newline) are also removed.
+    $text = [System.Text.RegularExpressions.Regex]::Replace($text, '(?m)^!\.ai/template-solution/(?:\r?\n|$)', '')
+    $text = [System.Text.RegularExpressions.Regex]::Replace($text, '(?m)^!\.ai/template-solution/\*\*(?:\r?\n|$)', '')
 
     if ($text -match "Template keeps \.ai developer guidance") {
         [System.IO.File]::WriteAllText($gitignorePath, $text)
         return
     }
+
+    # Normalise trailing whitespace so the appended block always starts on its own line.
+    $text = $text.TrimEnd("`r", "`n") + [System.Environment]::NewLine
 
     $append = @"
 
@@ -423,10 +432,14 @@ function Get-TextFiles {
     )
 
     $vendorImguiRoot = Join-Path $Root "src\vendor\imgui"
+    $vendorImguiExists = Test-Path $vendorImguiRoot
+    if ($vendorImguiExists) {
+        $vendorImguiRoot = $vendorImguiRoot.TrimEnd([System.IO.Path]::DirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar
+    }
 
     Get-ChildItem -Path $Root -Recurse -File -Force | Where-Object {
         $path = $_.FullName
-        if ((Test-Path $vendorImguiRoot) -and $path.StartsWith($vendorImguiRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+        if ($vendorImguiExists -and $path.StartsWith($vendorImguiRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
             return $false
         }
 
@@ -484,11 +497,11 @@ if ([string]::IsNullOrWhiteSpace($publisherKey)) {
 }
 
 $map = @(
+    @{ From = "your-org/$templateBaseName"; To = "$GitHubOwner/$RepositoryName" },
     @{ From = "$templateBaseName.Tests"; To = "$AppName.Tests" },
     @{ From = $templateBaseName; To = $AppName },
     @{ From = $templateBaseName.ToLowerInvariant(); To = $AppName.ToLowerInvariant() },
     @{ From = $templateBaseName.ToUpperInvariant(); To = $AppName.ToUpperInvariant() },
-    @{ From = "your-org/$templateBaseName"; To = "$GitHubOwner/$RepositoryName" },
     @{ From = "your-org"; To = $GitHubOwner },
     @{ From = "Your Name or Organization"; To = $CompanyName },
     @{ From = "YourCompany"; To = $publisherKey }
@@ -516,8 +529,14 @@ Rename-PathIfExists `
     -OldPath (Join-Path $repoRoot "src\$templateBaseName\$templateBaseName.vcxproj") `
     -NewPath (Join-Path $repoRoot "src\$templateBaseName\$AppName.vcxproj")
 Rename-PathIfExists `
+    -OldPath (Join-Path $repoRoot "src\$templateBaseName\$templateBaseName.vcxproj.user") `
+    -NewPath (Join-Path $repoRoot "src\$templateBaseName\$AppName.vcxproj.user")
+Rename-PathIfExists `
     -OldPath (Join-Path $repoRoot "src\$templateBaseTestName\$templateBaseTestName.vcxproj") `
     -NewPath (Join-Path $repoRoot "src\$templateBaseTestName\$AppName.Tests.vcxproj")
+Rename-PathIfExists `
+    -OldPath (Join-Path $repoRoot "src\$templateBaseTestName\$templateBaseTestName.vcxproj.user") `
+    -NewPath (Join-Path $repoRoot "src\$templateBaseTestName\$AppName.Tests.vcxproj.user")
 Rename-PathIfExists `
     -OldPath (Join-Path $repoRoot "src\$templateBaseName") `
     -NewPath (Join-Path $repoRoot "src\$AppName")
@@ -613,7 +632,7 @@ The scripts update `src/vendor/vendor-lock.json` so the pinned source/ref/commit
     {
       "name": "imgui",
       "repo": "https://github.com/ocornut/imgui",
-      "ref": "main",
+      "ref": "master",
       "commit": "replace-after-refresh",
       "path": "src/vendor/imgui",
       "license": "MIT",
@@ -646,17 +665,29 @@ try {
 
     $git = (Get-Command git -ErrorAction Stop).Source
     Write-Host "Cloning $RepoUrl ($Ref)..."
-    & $git clone $RepoUrl $clonePath
+    # Try shallow clone first (fast for branches/tags); fall back to full clone for raw commit SHAs.
+    & $git clone --depth 1 --branch $Ref $RepoUrl $clonePath 2>$null
     if ($LASTEXITCODE -ne 0) {
-        throw "git clone failed."
+        if (Test-Path $clonePath) { Remove-Item -Recurse -Force $clonePath }
+        & $git clone $RepoUrl $clonePath
+        if ($LASTEXITCODE -ne 0) {
+            throw "git clone failed."
+        }
+
+        Push-Location $clonePath
+        try {
+            & $git checkout $Ref
+            if ($LASTEXITCODE -ne 0) {
+                throw "git checkout $Ref failed."
+            }
+        }
+        finally {
+            Pop-Location
+        }
     }
 
     Push-Location $clonePath
     try {
-        & $git checkout $Ref
-        if ($LASTEXITCODE -ne 0) {
-            throw "git checkout $Ref failed."
-        }
         $commit = (& $git rev-parse HEAD).Trim()
         if (-not $commit) {
             throw "Failed to resolve commit hash."
@@ -771,6 +802,54 @@ Review and update project-specific rules after initializing the template.
 "@
     Write-TemplateFile -RelativePath ".ai\README.md" -Content $content
 }
+function Remove-BuildArtifactsFromTemplate {
+    # Build output directories that may exist on the local filesystem but should never
+    # appear in the template.  These are normally .gitignored so they would not be in
+    # a clean clone, but Copy-DirectoryRelative copies whatever is on disk.
+
+    $projectDirs = @(
+        (Join-Path $templateRoot "src\XpressFormula"),
+        (Join-Path $templateRoot "src\XpressFormula.Tests")
+    )
+
+    $dirNamesToRemove = @("x64", "Debug", "Release")
+
+    foreach ($projDir in $projectDirs) {
+        if (-not (Test-Path $projDir)) { continue }
+
+        # Remove well-known build output subdirectories.
+        foreach ($dirName in $dirNamesToRemove) {
+            $target = Join-Path $projDir $dirName
+            if (Test-Path $target) {
+                Remove-Item -LiteralPath $target -Recurse -Force
+            }
+        }
+
+        # Remove the nested "XpressFormula\XpressFormula" or "XpressFormula.Tests\XpressFo.*"
+        # intermediate output directories that MSBuild/VS sometimes creates.
+        foreach ($child in Get-ChildItem -Path $projDir -Directory -Force -ErrorAction SilentlyContinue) {
+            $name = $child.Name
+            if ($name -match '^XpressFo\.' -or $name -eq 'XpressFormula') {
+                $sub = Join-Path $child.FullName "x64"
+                $sub2 = Join-Path $child.FullName "bin"
+                if ((Test-Path $sub) -or (Test-Path $sub2)) {
+                    Remove-Item -LiteralPath $child.FullName -Recurse -Force
+                }
+            }
+        }
+    }
+
+    # Remove stray user/binary artifacts anywhere under the template source tree.
+    $artifactPatterns = @("*.aps", "*.vcxproj.user", "vc*.pdb")
+    foreach ($projDir in $projectDirs) {
+        if (-not (Test-Path $projDir)) { continue }
+        foreach ($pattern in $artifactPatterns) {
+            foreach ($file in Get-ChildItem -Path $projDir -Filter $pattern -Recurse -File -Force -ErrorAction SilentlyContinue) {
+                Remove-Item -LiteralPath $file.FullName -Force
+            }
+        }
+    }
+}
 
 Write-Host "Generating template in $templateRoot"
 Reset-Directory -Path $templateRoot
@@ -795,6 +874,9 @@ Copy-DirectoryRelative -SourceRelativePath "src\vendor"
 Copy-DirectoryRelative -SourceRelativePath "src\XpressFormula"
 Copy-DirectoryRelative -SourceRelativePath "src\XpressFormula.Tests"
 Copy-FileRelative -SourceRelativePath "src\XpressFormula.slnx"
+
+# Remove build artifacts that are gitignored but present on disk.
+Remove-BuildArtifactsFromTemplate
 
 # AI guidance/rules/skills (exclude local environment snapshot + active todo)
 Copy-DirectoryRelative -SourceRelativePath ".ai\developer-guide"
@@ -825,6 +907,7 @@ $replacements = @(
     @{ From = "XpressFormula.Tests"; To = $templateTestName },
     @{ From = "XpressFormula"; To = $templateAppName },
     @{ From = "xpressformula"; To = $templateAppName.ToLowerInvariant() },
+    @{ From = "XPRESSFORMULA"; To = $templateAppName.ToUpperInvariant() },
     @{ From = "XF_"; To = "APP_" },
     @{ From = "XfBuild"; To = "AppBuild" },
     @{ From = "Mathematical Plotter"; To = "ImGui Desktop App" }

@@ -102,6 +102,17 @@ double Evaluator::evaluateFunction(const std::string& name,
         // Optional 2-arg log form: log(base, value).
         if (name == "log")
             return (a > 0.0 && b > 0.0 && a != 1.0) ? std::log(b) / std::log(a) : NaN;
+
+        // Known single-argument function called with 2 args — evaluate with the first arg and
+        // silently ignore the extras. This mirrors common calculator UX where sin(x, extra) = sin(x).
+        // Fall through to re-dispatch as single-arg below.
+        return evaluateFunction(name, { args[0] });
+    }
+
+    // Three or more arguments — no built-in function supports them.
+    // Attempt single-arg dispatch so e.g. sin(x, y, z) degrades gracefully to sin(x).
+    if (args.size() > 2) {
+        return evaluateFunction(name, { args[0] });
     }
 
     return NaN;
