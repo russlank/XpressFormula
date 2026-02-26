@@ -37,6 +37,14 @@ public:
     /// Draw tick labels along the axes.
     static void drawAxisLabels(ImDrawList* dl, const Core::ViewTransform& vt);
 
+    /// Draw the XY reference grid projected with the current 3D camera.
+    static void drawGrid3D(ImDrawList* dl, const Core::ViewTransform& vt,
+                           const Surface3DOptions& options);
+
+    /// Draw projected X/Y/Z axes for 3D mode (no tick labels).
+    static void drawAxes3D(ImDrawList* dl, const Core::ViewTransform& vt,
+                           const Surface3DOptions& options);
+
     /// Plot a 2D curve f(x).
     static void drawCurve2D(ImDrawList* dl, const Core::ViewTransform& vt,
                             const Core::ASTNodePtr& ast,

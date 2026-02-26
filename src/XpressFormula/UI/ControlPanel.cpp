@@ -8,6 +8,7 @@
 namespace XpressFormula::UI {
 
 ControlPanelActions ControlPanel::render(Core::ViewTransform& vt, PlotSettings& settings,
+                                         bool has2DFormula,
                                          bool hasSurfaceFormula,
                                          const std::string& exportStatus) {
     ControlPanelActions actions;
@@ -82,12 +83,36 @@ ControlPanelActions ControlPanel::render(Core::ViewTransform& vt, PlotSettings& 
     ImGui::Separator();
     ImGui::TextUnformatted("2D / 3D Formula Rendering");
 
-    int renderMode = (settings.xyRenderMode == XYRenderMode::Surface3D) ? 0 : 1;
-    if (ImGui::RadioButton("3D Surfaces / Implicit (z=f(x,y), F(x,y,z)=0)", renderMode == 0)) {
-        settings.xyRenderMode = XYRenderMode::Surface3D;
+    int renderPreference = static_cast<int>(settings.xyRenderModePreference);
+    if (ImGui::RadioButton("Auto (2D for mixed content; 3D when only 3D formulas are visible)",
+                           renderPreference == static_cast<int>(XYRenderModePreference::Auto))) {
+        settings.xyRenderModePreference = XYRenderModePreference::Auto;
     }
-    if (ImGui::RadioButton("2D Heatmap", renderMode == 1)) {
-        settings.xyRenderMode = XYRenderMode::Heatmap2D;
+    if (ImGui::RadioButton("Force 3D Surfaces / Implicit", renderPreference == static_cast<int>(XYRenderModePreference::Force3D))) {
+        settings.xyRenderModePreference = XYRenderModePreference::Force3D;
+    }
+    if (ImGui::RadioButton("Force 2D Heatmap / Cross-Section", renderPreference == static_cast<int>(XYRenderModePreference::Force2D))) {
+        settings.xyRenderModePreference = XYRenderModePreference::Force2D;
+    }
+
+    const XYRenderMode effectiveRenderMode =
+        settings.resolveXYRenderMode(has2DFormula, hasSurfaceFormula);
+    ImGui::TextDisabled("Effective mode: %s",
+                        (effectiveRenderMode == XYRenderMode::Surface3D)
+                            ? "3D"
+                            : "2D");
+    if (settings.xyRenderModePreference == XYRenderModePreference::Auto) {
+        if (hasSurfaceFormula && has2DFormula) {
+            ImGui::TextWrapped("Auto is using 2D because both 2D and 3D formulas are visible.");
+        } else if (hasSurfaceFormula) {
+            ImGui::TextWrapped("Auto is using 3D because only 3D-capable formulas are visible.");
+        } else {
+            ImGui::TextWrapped("Auto is using 2D (no visible 3D-capable formulas).");
+        }
+    } else if (settings.xyRenderModePreference == XYRenderModePreference::Force3D) {
+        ImGui::TextWrapped("Force 3D hides 2D-only curves/contours while 3D mode is active.");
+    } else {
+        ImGui::TextWrapped("Force 2D shows heatmaps/cross-sections for 3D formulas.");
     }
 
     ImGui::Spacing();
@@ -101,7 +126,7 @@ ControlPanelActions ControlPanel::render(Core::ViewTransform& vt, PlotSettings& 
         ImGui::Checkbox("Show Coordinates", &settings.showCoordinates);
         ImGui::Checkbox("Show Wires", &settings.showWires);
 
-        if (settings.xyRenderMode == XYRenderMode::Surface3D) {
+        if (effectiveRenderMode == XYRenderMode::Surface3D) {
             ImGui::Separator();
             ImGui::TextDisabled("3D Display");
             ImGui::BeginDisabled(!settings.showWires);
@@ -121,11 +146,11 @@ ControlPanelActions ControlPanel::render(Core::ViewTransform& vt, PlotSettings& 
                                    2.0f, 90.0f, "%.1f deg/s");
             }
         } else {
-            ImGui::TextDisabled("3D display overlays are available in 3D Surfaces mode.");
+            ImGui::TextDisabled("3D display overlays are available when the effective mode is 3D.");
         }
     }
 
-    if (settings.xyRenderMode == XYRenderMode::Surface3D) {
+    if (effectiveRenderMode == XYRenderMode::Surface3D) {
         ImGui::Spacing();
         ImGui::Separator();
         ImGui::TextUnformatted("3D Camera");

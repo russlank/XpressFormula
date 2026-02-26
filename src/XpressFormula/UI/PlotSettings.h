@@ -8,12 +8,35 @@ enum class XYRenderMode {
     Heatmap2D
 };
 
+enum class XYRenderModePreference {
+    Auto,
+    Force3D,
+    Force2D
+};
+
 struct PlotSettings {
-    XYRenderMode xyRenderMode = XYRenderMode::Surface3D;
+    XYRenderModePreference xyRenderModePreference = XYRenderModePreference::Auto;
     bool optimizeRendering = true;
     bool showGrid = true;
     bool showCoordinates = true;
     bool showWires = true;
+
+    [[nodiscard]] XYRenderMode resolveXYRenderMode(bool hasVisible2DFormula,
+                                                   bool hasVisible3DFormula) const {
+        switch (xyRenderModePreference) {
+            case XYRenderModePreference::Force3D:
+                return XYRenderMode::Surface3D;
+            case XYRenderModePreference::Force2D:
+                return XYRenderMode::Heatmap2D;
+            case XYRenderModePreference::Auto:
+            default:
+                // Auto mode keeps 2D and 3D mutually exclusive:
+                // mixed visible content defaults to 2D, while purely-3D content activates 3D.
+                return (hasVisible3DFormula && !hasVisible2DFormula)
+                    ? XYRenderMode::Surface3D
+                    : XYRenderMode::Heatmap2D;
+        }
+    }
 
     // 3D camera controls for z=f(x,y).
     //float azimuthDeg = 40.0f;

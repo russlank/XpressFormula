@@ -86,9 +86,6 @@ test_*.dat
 legacy-code/
 old-code/
 
-.ai/**/*
-**/*/.ai/**/*
-
 .env
 .env.local
 requirements.txt
@@ -97,3 +94,8 @@ requirements.txt
 /build/**/*
 /artifacts/**/*
 /src/XpressFormula/imgui.ini
+
+.ai/**/*
+**/*/.ai/**/*
+# !.ai/template-solution/
+# !.ai/template-solution/**

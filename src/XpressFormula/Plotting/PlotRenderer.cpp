@@ -101,6 +101,63 @@ void PlotRenderer::drawGrid(ImDrawList* dl, const Core::ViewTransform& vt) {
     }
 }
 
+void PlotRenderer::drawGrid3D(ImDrawList* dl, const Core::ViewTransform& vt,
+                              const Surface3DOptions& options) {
+    const ImU32 colMinor = IM_COL32(60, 60, 60, 180);
+    const ImU32 colMajor = IM_COL32(95, 95, 95, 210);
+    const double gx = vt.gridSpacingX();
+    const double gy = vt.gridSpacingY();
+    const double xMin = vt.worldXMin();
+    const double xMax = vt.worldXMax();
+    const double yMin = vt.worldYMin();
+    const double yMax = vt.worldYMax();
+
+    const double azimuth = static_cast<double>(options.azimuthDeg) * 3.14159265358979323846 / 180.0;
+    const double elevation = static_cast<double>(options.elevationDeg) * 3.14159265358979323846 / 180.0;
+    const double cosA = std::cos(azimuth);
+    const double sinA = std::sin(azimuth);
+    const double cosE = std::cos(elevation);
+    const double sinE = std::sin(elevation);
+    const double scale = std::max(1e-6, std::min(vt.scaleX, vt.scaleY));
+    const Core::Vec2 origin = vt.worldToScreen(0.0, 0.0);
+
+    auto projectPoint = [&](double wx, double wy, double wz) -> Core::Vec2 {
+        const double zWorld = wz * options.zScale;
+        const double xYaw = cosA * wx - sinA * wy;
+        const double yYaw = sinA * wx + cosA * wy;
+        const double xProj = xYaw;
+        const double yProj = cosE * yYaw - sinE * zWorld;
+        return Core::Vec2(
+            origin.x + static_cast<float>(xProj * scale),
+            origin.y - static_cast<float>(yProj * scale));
+    };
+
+    ImVec2 clipMin(vt.screenOriginX, vt.screenOriginY);
+    ImVec2 clipMax(vt.screenOriginX + vt.screenWidth,
+                   vt.screenOriginY + vt.screenHeight);
+    dl->PushClipRect(clipMin, clipMax, true);
+
+    const double xStart = std::floor(xMin / gx) * gx;
+    for (double wx = xStart; wx <= xMax; wx += gx) {
+        const bool major = (std::fmod(std::abs(wx), gx * 5.0) < gx * 0.1);
+        const Core::Vec2 a = projectPoint(wx, yMin, 0.0);
+        const Core::Vec2 b = projectPoint(wx, yMax, 0.0);
+        dl->AddLine(ImVec2(a.x, a.y), ImVec2(b.x, b.y),
+                    major ? colMajor : colMinor, major ? 1.0f : 0.5f);
+    }
+
+    const double yStart = std::floor(yMin / gy) * gy;
+    for (double wy = yStart; wy <= yMax; wy += gy) {
+        const bool major = (std::fmod(std::abs(wy), gy * 5.0) < gy * 0.1);
+        const Core::Vec2 a = projectPoint(xMin, wy, 0.0);
+        const Core::Vec2 b = projectPoint(xMax, wy, 0.0);
+        dl->AddLine(ImVec2(a.x, a.y), ImVec2(b.x, b.y),
+                    major ? colMajor : colMinor, major ? 1.0f : 0.5f);
+    }
+
+    dl->PopClipRect();
+}
+
 // ---- axes -------------------------------------------------------------------
 
 void PlotRenderer::drawAxes(ImDrawList* dl, const Core::ViewTransform& vt) {
@@ -128,6 +185,84 @@ void PlotRenderer::drawAxes(ImDrawList* dl, const Core::ViewTransform& vt) {
         ImVec2(yTop.x, yTop.y),
         ImVec2(yTop.x - arrowSz * 0.5f, yTop.y + arrowSz),
         ImVec2(yTop.x + arrowSz * 0.5f, yTop.y + arrowSz), colAxis);
+}
+
+void PlotRenderer::drawAxes3D(ImDrawList* dl, const Core::ViewTransform& vt,
+                              const Surface3DOptions& options) {
+    const double xMin = vt.worldXMin();
+    const double xMax = vt.worldXMax();
+    const double yMin = vt.worldYMin();
+    const double yMax = vt.worldYMax();
+    const double xSpan = std::max(1e-6, xMax - xMin);
+    const double ySpan = std::max(1e-6, yMax - yMin);
+    const double zSpan = std::max(xSpan, ySpan) * 0.35;
+
+    const double azimuth = static_cast<double>(options.azimuthDeg) * 3.14159265358979323846 / 180.0;
+    const double elevation = static_cast<double>(options.elevationDeg) * 3.14159265358979323846 / 180.0;
+    const double cosA = std::cos(azimuth);
+    const double sinA = std::sin(azimuth);
+    const double cosE = std::cos(elevation);
+    const double sinE = std::sin(elevation);
+    const double scale = std::max(1e-6, std::min(vt.scaleX, vt.scaleY));
+    const Core::Vec2 originScreen = vt.worldToScreen(0.0, 0.0);
+
+    auto projectPoint = [&](double wx, double wy, double wz) -> Core::Vec2 {
+        const double zWorld = wz * options.zScale;
+        const double xYaw = cosA * wx - sinA * wy;
+        const double yYaw = sinA * wx + cosA * wy;
+        const double xProj = xYaw;
+        const double yProj = cosE * yYaw - sinE * zWorld;
+        return Core::Vec2(
+            originScreen.x + static_cast<float>(xProj * scale),
+            originScreen.y - static_cast<float>(yProj * scale));
+    };
+
+    auto drawArrow = [&](const Core::Vec2& from, const Core::Vec2& to, ImU32 col, float thickness) {
+        const float dx = to.x - from.x;
+        const float dy = to.y - from.y;
+        const float len = std::sqrt(dx * dx + dy * dy);
+        if (len < 1.0f) {
+            return;
+        }
+        const float ux = dx / len;
+        const float uy = dy / len;
+        const float px = -uy;
+        const float py = ux;
+        const float headLength = std::clamp(len * 0.10f, 7.0f, 16.0f);
+        const float headWidth = headLength * 0.45f;
+        const ImVec2 tip(to.x, to.y);
+        const ImVec2 base(to.x - ux * headLength, to.y - uy * headLength);
+
+        dl->AddLine(ImVec2(from.x, from.y), base, col, thickness);
+        dl->AddTriangleFilled(
+            tip,
+            ImVec2(base.x + px * headWidth, base.y + py * headWidth),
+            ImVec2(base.x - px * headWidth, base.y - py * headWidth),
+            col);
+    };
+
+    ImVec2 clipMin(vt.screenOriginX, vt.screenOriginY);
+    ImVec2 clipMax(vt.screenOriginX + vt.screenWidth,
+                   vt.screenOriginY + vt.screenHeight);
+    dl->PushClipRect(clipMin, clipMax, true);
+
+    const Core::Vec2 xNeg = projectPoint(xMin, 0.0, 0.0);
+    const Core::Vec2 xPos = projectPoint(xMax, 0.0, 0.0);
+    const Core::Vec2 yNeg = projectPoint(0.0, yMin, 0.0);
+    const Core::Vec2 yPos = projectPoint(0.0, yMax, 0.0);
+    const Core::Vec2 zPos = projectPoint(0.0, 0.0, zSpan);
+
+    const ImU32 colX = IM_COL32(240, 95, 95, 235);
+    const ImU32 colY = IM_COL32(95, 225, 120, 235);
+    const ImU32 colZ = IM_COL32(110, 165, 250, 235);
+
+    dl->AddLine(ImVec2(xNeg.x, xNeg.y), ImVec2(xPos.x, xPos.y), colX, 1.5f);
+    dl->AddLine(ImVec2(yNeg.x, yNeg.y), ImVec2(yPos.x, yPos.y), colY, 1.5f);
+    drawArrow(originScreen, xPos, colX, 2.0f);
+    drawArrow(originScreen, yPos, colY, 2.0f);
+    drawArrow(originScreen, zPos, colZ, 2.0f);
+
+    dl->PopClipRect();
 }
 
 // ---- tick labels ------------------------------------------------------------

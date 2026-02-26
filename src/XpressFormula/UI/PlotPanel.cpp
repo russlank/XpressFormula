@@ -41,33 +41,71 @@ void PlotPanel::render(std::vector<FormulaEntry>& formulas,
     dl->AddRectFilled(pos, ImVec2(pos.x + size.x, pos.y + size.y),
                       ImGui::ColorConvertFloat4ToU32(ImVec4(bg[0], bg[1], bg[2], bg[3])));
 
-    // Grid, axes, labels
-    if (showGrid) {
-        Plotting::PlotRenderer::drawGrid(dl, vt);
-    }
-    if (showCoordinates) {
-        Plotting::PlotRenderer::drawAxes(dl, vt);
-        Plotting::PlotRenderer::drawAxisLabels(dl, vt);
-    }
-
     bool hasSurface = false;
+    bool has2DFormula = false;
     for (const auto& formula : formulas) {
-        if (formula.visible && formula.isValid() &&
-            (formula.renderKind == FormulaRenderKind::Surface3D ||
-             (formula.renderKind == FormulaRenderKind::ScalarField3D && formula.isEquation))) {
+        if (!formula.visible || !formula.isValid()) {
+            continue;
+        }
+
+        if (formula.renderKind == FormulaRenderKind::Surface3D ||
+            (formula.renderKind == FormulaRenderKind::ScalarField3D && formula.isEquation)) {
             hasSurface = true;
+        }
+
+        switch (formula.renderKind) {
+            case FormulaRenderKind::Curve2D:
+            case FormulaRenderKind::Implicit2D:
+                has2DFormula = true;
+                break;
+            case FormulaRenderKind::ScalarField3D:
+                if (!formula.isEquation) {
+                    has2DFormula = true;
+                }
+                break;
+            default:
+                break;
+        }
+
+        if (hasSurface && has2DFormula) {
             break;
         }
     }
 
-    if (hasSurface && settings.xyRenderMode == XYRenderMode::Surface3D && settings.autoRotate) {
+    const XYRenderMode effectiveRenderMode =
+        settings.resolveXYRenderMode(has2DFormula, hasSurface);
+    const bool is3DMode = (effectiveRenderMode == XYRenderMode::Surface3D);
+
+    // Grid, axes, labels
+    if (is3DMode) {
+        Plotting::PlotRenderer::Surface3DOptions reference3D;
+        reference3D.azimuthDeg = settings.azimuthDeg;
+        reference3D.elevationDeg = settings.elevationDeg;
+        reference3D.zScale = settings.zScale;
+
+        if (showGrid) {
+            Plotting::PlotRenderer::drawGrid3D(dl, vt, reference3D);
+        }
+        if (showCoordinates) {
+            Plotting::PlotRenderer::drawAxes3D(dl, vt, reference3D);
+        }
+    } else {
+        if (showGrid) {
+            Plotting::PlotRenderer::drawGrid(dl, vt);
+        }
+        if (showCoordinates) {
+            Plotting::PlotRenderer::drawAxes(dl, vt);
+            Plotting::PlotRenderer::drawAxisLabels(dl, vt);
+        }
+    }
+
+    if (hasSurface && is3DMode && settings.autoRotate) {
         settings.azimuthDeg += ImGui::GetIO().DeltaTime * settings.autoRotateSpeedDegPerSec;
         if (settings.azimuthDeg > 180.0f) {
             settings.azimuthDeg -= 360.0f;
         }
     }
 
-    const bool is3DMode = (settings.xyRenderMode == XYRenderMode::Surface3D);
     const bool isDraggingLeft = isActive && ImGui::IsMouseDragging(ImGuiMouseButton_Left);
     const bool isZoomingView = isHovered && (ImGui::GetIO().MouseWheel != 0.0f);
     const bool useInteractive3DThrottle =
@@ -106,10 +144,12 @@ void PlotPanel::render(std::vector<FormulaEntry>& formulas,
         if (!f.visible || !f.isValid()) continue;
         switch (f.renderKind) {
             case FormulaRenderKind::Curve2D:
-                Plotting::PlotRenderer::drawCurve2D(dl, vt, f.ast, f.color);
+                if (!is3DMode) {
+                    Plotting::PlotRenderer::drawCurve2D(dl, vt, f.ast, f.color);
+                }
                 break;
             case FormulaRenderKind::Surface3D:
-                if (settings.xyRenderMode == XYRenderMode::Surface3D) {
+                if (is3DMode) {
                     Plotting::PlotRenderer::Surface3DOptions options;
                     options.azimuthDeg = settings.azimuthDeg;
                     options.elevationDeg = settings.elevationDeg;
@@ -128,10 +168,12 @@ void PlotPanel::render(std::vector<FormulaEntry>& formulas,
                 }
                 break;
             case FormulaRenderKind::Implicit2D:
-                Plotting::PlotRenderer::drawImplicitContour2D(dl, vt, f.ast, f.color, 2.0f);
+                if (!is3DMode) {
+                    Plotting::PlotRenderer::drawImplicitContour2D(dl, vt, f.ast, f.color, 2.0f);
+                }
                 break;
             case FormulaRenderKind::ScalarField3D:
-                if (f.isEquation && settings.xyRenderMode == XYRenderMode::Surface3D) {
+                if (f.isEquation && is3DMode) {
                     Plotting::PlotRenderer::Surface3DOptions options;
                     options.azimuthDeg = settings.azimuthDeg;
                     options.elevationDeg = settings.elevationDeg;
@@ -145,7 +187,7 @@ void PlotPanel::render(std::vector<FormulaEntry>& formulas,
                     options.showDimensionArrows = settings.showDimensionArrows && showCoordinates;
                     options.implicitZCenter = f.zSlice;
                     Plotting::PlotRenderer::drawImplicitSurface3D(dl, vt, f.ast, f.color, options);
-                } else {
+                } else if (!is3DMode) {
                     Plotting::PlotRenderer::drawCrossSection(
                         dl, vt, f.ast, f.zSlice, f.color, settings.heatmapOpacity);
                 }
@@ -198,14 +240,21 @@ void PlotPanel::render(std::vector<FormulaEntry>& formulas,
         }
     }
 
-    // Tooltip showing world coordinates under cursor
+    // Tooltip showing 2D world coordinates or 3D view-plane coordinates (plus world domain coords).
     if (isHovered) {
         ImVec2 mousePos = ImGui::GetIO().MousePos;
         double wx, wy;
         vt.screenToWorld(mousePos.x, mousePos.y, wx, wy);
-        if (hasSurface && settings.xyRenderMode == XYRenderMode::Surface3D) {
-            ImGui::SetTooltip("x = %.4g\ny = %.4g\n3D camera: az %.1f, el %.1f",
-                              wx, wy, settings.azimuthDeg, settings.elevationDeg);
+        if (is3DMode) {
+            const double projectionScale = (vt.scaleX < vt.scaleY) ? vt.scaleX : vt.scaleY;
+            const double safeProjectionScale = (projectionScale > 1e-9) ? projectionScale : 1e-9;
+            const Core::Vec2 originScreen = vt.worldToScreen(0.0, 0.0);
+            const double viewU = (mousePos.x - originScreen.x) / safeProjectionScale;
+            const double viewV = (originScreen.y - mousePos.y) / safeProjectionScale;
+
+            ImGui::SetTooltip(
+                "view u = %.4g\nview v = %.4g\nworld x = %.4g\nworld y = %.4g\n3D camera: az %.1f, el %.1f",
+                viewU, viewV, wx, wy, settings.azimuthDeg, settings.elevationDeg);
         } else {
             ImGui::SetTooltip("x = %.4g\ny = %.4g", wx, wy);
         }
