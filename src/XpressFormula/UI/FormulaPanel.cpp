@@ -93,6 +93,9 @@ void FormulaPanel::openEditor(const FormulaEntry& formula, int formulaIndex) {
     loadEditorText(m_editorBuffer, sizeof(m_editorBuffer), formula.inputBuffer);
     m_openEditorPopupNextFrame = true;
     m_focusEditorInput = true;
+    // Reset the cached preview so it re-parses on the first frame.
+    m_editorPreviousText.clear();
+    m_editorPreview = FormulaEntry{};
 }
 
 void FormulaPanel::renderEditorDialog(std::vector<FormulaEntry>& formulas) {
@@ -140,9 +143,17 @@ void FormulaPanel::renderEditorDialog(std::vector<FormulaEntry>& formulas) {
                                   ImVec2(-1.0f, editorHeight));
 
         const size_t editorLength = strnlen_s(m_editorBuffer, sizeof(m_editorBuffer));
-        FormulaEntry editorPreview;
-        strncpy_s(editorPreview.inputBuffer, sizeof(editorPreview.inputBuffer), m_editorBuffer, _TRUNCATE);
-        editorPreview.parse();
+
+        // Only re-parse when the editor text actually changes (avoids a full tokenize+parse+AST
+        // allocation every frame while the editor is open).
+        std::string currentEditorText(m_editorBuffer, editorLength);
+        if (currentEditorText != m_editorPreviousText) {
+            m_editorPreviousText = currentEditorText;
+            m_editorPreview = FormulaEntry{};
+            strncpy_s(m_editorPreview.inputBuffer, sizeof(m_editorPreview.inputBuffer), m_editorBuffer, _TRUNCATE);
+            m_editorPreview.parse();
+        }
+        const FormulaEntry& editorPreview = m_editorPreview;
 
         ImGui::TextDisabled("Editor buffer: %zu / %zu", editorLength, sizeof(m_editorBuffer) - 1);
         if (editorLength >= sizeof(formula.inputBuffer)) {
@@ -212,7 +223,7 @@ void FormulaPanel::renderEditorDialog(std::vector<FormulaEntry>& formulas) {
         ImGui::TextUnformatted("Example patterns");
         ImGui::TextDisabled("Click row or Load");
         ImGui::Separator();
-        for (int i = 0; i < static_cast<int>(sizeof(kExamplePatterns) / sizeof(kExamplePatterns[0])); ++i) {
+        for (int i = 0; i < static_cast<int>(kExamplePatterns.size()); ++i) {
             const ExamplePattern& example = kExamplePatterns[i];
             ImGui::PushID(i);
             if (ImGui::SmallButton("Load")) {

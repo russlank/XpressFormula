@@ -10,6 +10,12 @@ namespace XpressFormula::Plotting {
 
 class PlotRenderer {
 public:
+    enum class SurfacePlanePass3D {
+        All,
+        BelowGridPlane,
+        AboveGridPlane
+    };
+
     struct Surface3DOptions {
         float azimuthDeg = 40.0f;
         float elevationDeg = 30.0f;
@@ -26,6 +32,10 @@ public:
         // Center of the implicit z sampling window. The sampled z range is derived from the
         // current x/y view span around this center (so panning/zooming the view changes mesh).
         float implicitZCenter = 0.0f;
+        // Optional render pass split relative to the XY grid plane (z = gridPlaneZ).
+        // Used to render: geometry below plane -> grid -> geometry above plane.
+        SurfacePlanePass3D planePass = SurfacePlanePass3D::All;
+        double gridPlaneZ = 0.0;
     };
 
     /// Draw grid lines (major and minor).
@@ -36,6 +46,14 @@ public:
 
     /// Draw tick labels along the axes.
     static void drawAxisLabels(ImDrawList* dl, const Core::ViewTransform& vt);
+
+    /// Draw the XY reference grid projected with the current 3D camera.
+    static void drawGrid3D(ImDrawList* dl, const Core::ViewTransform& vt,
+                           const Surface3DOptions& options);
+
+    /// Draw projected X/Y/Z axes for 3D mode (no tick labels).
+    static void drawAxes3D(ImDrawList* dl, const Core::ViewTransform& vt,
+                           const Surface3DOptions& options);
 
     /// Plot a 2D curve f(x).
     static void drawCurve2D(ImDrawList* dl, const Core::ViewTransform& vt,
