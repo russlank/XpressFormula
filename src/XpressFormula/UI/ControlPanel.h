@@ -16,6 +16,7 @@ struct ControlPanelActions {
 class ControlPanel {
 public:
     ControlPanelActions render(Core::ViewTransform& vt, PlotSettings& settings,
+                               bool has2DFormula,
                                bool hasSurfaceFormula,
                                const std::string& exportStatus);
 

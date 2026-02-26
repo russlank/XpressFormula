@@ -65,12 +65,18 @@ Token Tokenizer::readNumber() {
     }
 
     // Scientific notation: 1e5, 2.3e-4
+    // Only consume the 'e'/'E' (and optional sign) if at least one digit follows,
+    // so that inputs like "1e" or "1e-" remain valid number tokens (the trailing
+    // letter will be tokenized separately, producing a clear parse error later).
     if (m_pos < m_input.size() && (m_input[m_pos] == 'e' || m_input[m_pos] == 'E')) {
-        m_pos++;
-        if (m_pos < m_input.size() && (m_input[m_pos] == '+' || m_input[m_pos] == '-'))
-            m_pos++;
-        while (m_pos < m_input.size() && std::isdigit(static_cast<unsigned char>(m_input[m_pos])))
-            m_pos++;
+        size_t peek = m_pos + 1;
+        if (peek < m_input.size() && (m_input[peek] == '+' || m_input[peek] == '-'))
+            peek++;
+        if (peek < m_input.size() && std::isdigit(static_cast<unsigned char>(m_input[peek]))) {
+            m_pos = peek;
+            while (m_pos < m_input.size() && std::isdigit(static_cast<unsigned char>(m_input[m_pos])))
+                m_pos++;
+        }
     }
 
     return Token(TokenType::Number, m_input.substr(start, m_pos - start), start);

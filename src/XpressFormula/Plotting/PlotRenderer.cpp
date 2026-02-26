@@ -14,10 +14,10 @@ namespace XpressFormula::Plotting {
 
 unsigned int PlotRenderer::colorU32(const float c[4]) {
     return IM_COL32(
-        static_cast<int>(c[0] * 255),
-        static_cast<int>(c[1] * 255),
-        static_cast<int>(c[2] * 255),
-        static_cast<int>(c[3] * 255));
+        std::clamp(static_cast<int>(c[0] * 255), 0, 255),
+        std::clamp(static_cast<int>(c[1] * 255), 0, 255),
+        std::clamp(static_cast<int>(c[2] * 255), 0, 255),
+        std::clamp(static_cast<int>(c[3] * 255), 0, 255));
 }
 
 unsigned int PlotRenderer::heatColor(double value, double lo, double hi,
@@ -72,6 +72,118 @@ void PlotRenderer::formatLabel(char* buf, size_t len, double v) {
     }
 }
 
+namespace {
+
+void drawViewportDimensionArrows3D(ImDrawList* dl,
+                                   const XpressFormula::Core::ViewTransform& vt,
+                                   const XpressFormula::Plotting::PlotRenderer::Surface3DOptions& options) {
+    const double azimuth = static_cast<double>(options.azimuthDeg) * 3.14159265358979323846 / 180.0;
+    const double elevation = static_cast<double>(options.elevationDeg) * 3.14159265358979323846 / 180.0;
+    const double cosA = std::cos(azimuth);
+    const double sinA = std::sin(azimuth);
+    const double cosE = std::cos(elevation);
+    const double sinE = std::sin(elevation);
+
+    auto projectDirection = [&](double wx, double wy, double wz, ImVec2& outDir) -> bool {
+        const double zWorld = wz * options.zScale;
+        const double xYaw = cosA * wx - sinA * wy;
+        const double yYaw = sinA * wx + cosA * wy;
+        const double xProj = xYaw;
+        const double yProj = cosE * yYaw - sinE * zWorld;
+        const float dx = static_cast<float>(xProj);
+        const float dy = static_cast<float>(-yProj); // screen Y grows downward
+        const float len = std::sqrt(dx * dx + dy * dy);
+        if (len < 1e-4f) {
+            outDir = ImVec2(0.0f, 0.0f);
+            return false;
+        }
+        outDir = ImVec2(dx / len, dy / len);
+        return true;
+    };
+
+    auto drawArrow = [&](const ImVec2& from, const ImVec2& to,
+                         const char* label, ImU32 arrowColor) {
+        const float dxs = to.x - from.x;
+        const float dys = to.y - from.y;
+        const float length = std::sqrt(dxs * dxs + dys * dys);
+        if (length < 1.0f) {
+            return;
+        }
+
+        const float ux = dxs / length;
+        const float uy = dys / length;
+        const float px = -uy;
+        const float py = ux;
+        const float headLength = std::clamp(length * 0.22f, 8.0f, 14.0f);
+        const float headWidth = headLength * 0.55f;
+        const float thickness = 2.2f;
+
+        const ImVec2 shaftEnd(to.x - ux * headLength, to.y - uy * headLength);
+        dl->AddLine(from, shaftEnd, arrowColor, thickness);
+        dl->AddTriangleFilled(
+            to,
+            ImVec2(to.x - ux * headLength + px * headWidth,
+                   to.y - uy * headLength + py * headWidth),
+            ImVec2(to.x - ux * headLength - px * headWidth,
+                   to.y - uy * headLength - py * headWidth),
+            arrowColor);
+        dl->AddText(ImVec2(to.x + px * 4.0f, to.y + py * 4.0f), arrowColor, label);
+    };
+
+    ImVec2 dirX, dirY, dirZ;
+    const bool okX = projectDirection(1.0, 0.0, 0.0, dirX);
+    const bool okY = projectDirection(0.0, 1.0, 0.0, dirY);
+    const bool okZ = projectDirection(0.0, 0.0, 1.0, dirZ);
+    if (!okX && !okY && !okZ) {
+        return;
+    }
+    if (!okZ) {
+        dirZ = ImVec2(0.0f, -1.0f);
+    }
+
+    const float axisLen = 44.0f;
+    ImVec2 tipX = ImVec2(dirX.x * axisLen, dirX.y * axisLen);
+    ImVec2 tipY = ImVec2(dirY.x * axisLen, dirY.y * axisLen);
+    ImVec2 tipZ = ImVec2(dirZ.x * axisLen, dirZ.y * axisLen);
+
+    float minDx = std::min({ 0.0f, tipX.x, tipY.x, tipZ.x });
+    float maxDx = std::max({ 0.0f, tipX.x, tipY.x, tipZ.x });
+    float minDy = std::min({ 0.0f, tipX.y, tipY.y, tipZ.y });
+    float maxDy = std::max({ 0.0f, tipX.y, tipY.y, tipZ.y });
+
+    ImVec2 origin(
+        vt.screenOriginX + 22.0f - minDx,
+        vt.screenOriginY + vt.screenHeight - 22.0f - maxDy);
+
+    const float xMaxAllowed = vt.screenOriginX + vt.screenWidth - 26.0f;
+    const float yMinAllowed = vt.screenOriginY + 26.0f;
+    if (origin.x + maxDx > xMaxAllowed) {
+        origin.x -= (origin.x + maxDx - xMaxAllowed);
+    }
+    if (origin.y + minDy < yMinAllowed) {
+        origin.y += (yMinAllowed - (origin.y + minDy));
+    }
+
+    ImVec2 clipMin(vt.screenOriginX, vt.screenOriginY);
+    ImVec2 clipMax(vt.screenOriginX + vt.screenWidth,
+                   vt.screenOriginY + vt.screenHeight);
+    dl->PushClipRect(clipMin, clipMax, true);
+
+    const ImU32 back = IM_COL32(18, 20, 24, 120);
+    dl->AddCircleFilled(origin, 11.0f, back, 18);
+
+    const ImU32 colorX = IM_COL32(240, 95, 95, 245);
+    const ImU32 colorY = IM_COL32(95, 225, 120, 245);
+    const ImU32 colorZ = IM_COL32(110, 165, 250, 245);
+    if (okX) drawArrow(origin, ImVec2(origin.x + tipX.x, origin.y + tipX.y), "X", colorX);
+    if (okY) drawArrow(origin, ImVec2(origin.x + tipY.x, origin.y + tipY.y), "Y", colorY);
+    drawArrow(origin, ImVec2(origin.x + tipZ.x, origin.y + tipZ.y), "Z", colorZ);
+
+    dl->PopClipRect();
+}
+
+} // namespace
+
 // ---- grid -------------------------------------------------------------------
 
 void PlotRenderer::drawGrid(ImDrawList* dl, const Core::ViewTransform& vt) {
@@ -101,6 +213,94 @@ void PlotRenderer::drawGrid(ImDrawList* dl, const Core::ViewTransform& vt) {
     }
 }
 
+void PlotRenderer::drawGrid3D(ImDrawList* dl, const Core::ViewTransform& vt,
+                              const Surface3DOptions& options) {
+    const ImU32 colPlaneFill = IM_COL32(110, 120, 132, 52);
+    const ImU32 colMinor = IM_COL32(72, 76, 82, 190);
+    const ImU32 colMajor = IM_COL32(112, 118, 126, 220);
+    const ImU32 colFrame = IM_COL32(180, 188, 200, 235);
+    const double gx = vt.gridSpacingX();
+    const double gy = vt.gridSpacingY();
+    const double xMin = vt.worldXMin();
+    const double xMax = vt.worldXMax();
+    const double yMin = vt.worldYMin();
+    const double yMax = vt.worldYMax();
+
+    const double azimuth = static_cast<double>(options.azimuthDeg) * 3.14159265358979323846 / 180.0;
+    const double elevation = static_cast<double>(options.elevationDeg) * 3.14159265358979323846 / 180.0;
+    const double cosA = std::cos(azimuth);
+    const double sinA = std::sin(azimuth);
+    const double cosE = std::cos(elevation);
+    const double sinE = std::sin(elevation);
+    const double scale = std::max(1e-6, std::min(vt.scaleX, vt.scaleY));
+    const Core::Vec2 origin = vt.worldToScreen(0.0, 0.0);
+
+    auto projectPoint = [&](double wx, double wy, double wz) -> Core::Vec2 {
+        const double zWorld = wz * options.zScale;
+        const double xYaw = cosA * wx - sinA * wy;
+        const double yYaw = sinA * wx + cosA * wy;
+        const double xProj = xYaw;
+        const double yProj = cosE * yYaw - sinE * zWorld;
+        return Core::Vec2(
+            origin.x + static_cast<float>(xProj * scale),
+            origin.y - static_cast<float>(yProj * scale));
+    };
+
+    ImVec2 clipMin(vt.screenOriginX, vt.screenOriginY);
+    ImVec2 clipMax(vt.screenOriginX + vt.screenWidth,
+                   vt.screenOriginY + vt.screenHeight);
+    dl->PushClipRect(clipMin, clipMax, true);
+
+    // Project the XY plane frame (z = 0) and draw a subtle translucent fill so the grid plane
+    // is visually legible even when surfaces don't cross it.
+    const Core::Vec2 p00 = projectPoint(xMin, yMin, 0.0);
+    const Core::Vec2 p10 = projectPoint(xMax, yMin, 0.0);
+    const Core::Vec2 p11 = projectPoint(xMax, yMax, 0.0);
+    const Core::Vec2 p01 = projectPoint(xMin, yMax, 0.0);
+
+    dl->AddQuadFilled(
+        ImVec2(p00.x, p00.y), ImVec2(p10.x, p10.y),
+        ImVec2(p11.x, p11.y), ImVec2(p01.x, p01.y),
+        colPlaneFill);
+
+    // Draw grid lines strictly inside the frame. Using ceil() avoids extra off-plane lines that
+    // can appear beyond the projected frame when xMin/yMin are not aligned to grid spacing.
+    const double xEps = std::max(1e-9, std::abs(gx) * 1e-6);
+    const double yEps = std::max(1e-9, std::abs(gy) * 1e-6);
+    const double xStart = std::ceil((xMin - xEps) / gx) * gx;
+    for (double wx = xStart; wx <= xMax + xEps; wx += gx) {
+        if (wx <= xMin + xEps || wx >= xMax - xEps) {
+            continue; // frame edges are drawn separately with a thicker outline
+        }
+        const bool major = (std::fmod(std::abs(wx), gx * 5.0) < gx * 0.1);
+        const Core::Vec2 a = projectPoint(wx, yMin, 0.0);
+        const Core::Vec2 b = projectPoint(wx, yMax, 0.0);
+        dl->AddLine(ImVec2(a.x, a.y), ImVec2(b.x, b.y),
+                    major ? colMajor : colMinor, major ? 1.0f : 0.5f);
+    }
+
+    const double yStart = std::ceil((yMin - yEps) / gy) * gy;
+    for (double wy = yStart; wy <= yMax + yEps; wy += gy) {
+        if (wy <= yMin + yEps || wy >= yMax - yEps) {
+            continue; // frame edges are drawn separately with a thicker outline
+        }
+        const bool major = (std::fmod(std::abs(wy), gy * 5.0) < gy * 0.1);
+        const Core::Vec2 a = projectPoint(xMin, wy, 0.0);
+        const Core::Vec2 b = projectPoint(xMax, wy, 0.0);
+        dl->AddLine(ImVec2(a.x, a.y), ImVec2(b.x, b.y),
+                    major ? colMajor : colMinor, major ? 1.0f : 0.5f);
+    }
+
+    // Thicker projected frame around the grid plane.
+    const float frameThickness = 2.25f;
+    dl->AddLine(ImVec2(p00.x, p00.y), ImVec2(p10.x, p10.y), colFrame, frameThickness);
+    dl->AddLine(ImVec2(p10.x, p10.y), ImVec2(p11.x, p11.y), colFrame, frameThickness);
+    dl->AddLine(ImVec2(p11.x, p11.y), ImVec2(p01.x, p01.y), colFrame, frameThickness);
+    dl->AddLine(ImVec2(p01.x, p01.y), ImVec2(p00.x, p00.y), colFrame, frameThickness);
+
+    dl->PopClipRect();
+}
+
 // ---- axes -------------------------------------------------------------------
 
 void PlotRenderer::drawAxes(ImDrawList* dl, const Core::ViewTransform& vt) {
@@ -128,6 +328,84 @@ void PlotRenderer::drawAxes(ImDrawList* dl, const Core::ViewTransform& vt) {
         ImVec2(yTop.x, yTop.y),
         ImVec2(yTop.x - arrowSz * 0.5f, yTop.y + arrowSz),
         ImVec2(yTop.x + arrowSz * 0.5f, yTop.y + arrowSz), colAxis);
+}
+
+void PlotRenderer::drawAxes3D(ImDrawList* dl, const Core::ViewTransform& vt,
+                              const Surface3DOptions& options) {
+    const double xMin = vt.worldXMin();
+    const double xMax = vt.worldXMax();
+    const double yMin = vt.worldYMin();
+    const double yMax = vt.worldYMax();
+    const double xSpan = std::max(1e-6, xMax - xMin);
+    const double ySpan = std::max(1e-6, yMax - yMin);
+    const double zSpan = std::max(xSpan, ySpan) * 0.35;
+
+    const double azimuth = static_cast<double>(options.azimuthDeg) * 3.14159265358979323846 / 180.0;
+    const double elevation = static_cast<double>(options.elevationDeg) * 3.14159265358979323846 / 180.0;
+    const double cosA = std::cos(azimuth);
+    const double sinA = std::sin(azimuth);
+    const double cosE = std::cos(elevation);
+    const double sinE = std::sin(elevation);
+    const double scale = std::max(1e-6, std::min(vt.scaleX, vt.scaleY));
+    const Core::Vec2 originScreen = vt.worldToScreen(0.0, 0.0);
+
+    auto projectPoint = [&](double wx, double wy, double wz) -> Core::Vec2 {
+        const double zWorld = wz * options.zScale;
+        const double xYaw = cosA * wx - sinA * wy;
+        const double yYaw = sinA * wx + cosA * wy;
+        const double xProj = xYaw;
+        const double yProj = cosE * yYaw - sinE * zWorld;
+        return Core::Vec2(
+            originScreen.x + static_cast<float>(xProj * scale),
+            originScreen.y - static_cast<float>(yProj * scale));
+    };
+
+    auto drawArrow = [&](const Core::Vec2& from, const Core::Vec2& to, ImU32 col, float thickness) {
+        const float dx = to.x - from.x;
+        const float dy = to.y - from.y;
+        const float len = std::sqrt(dx * dx + dy * dy);
+        if (len < 1.0f) {
+            return;
+        }
+        const float ux = dx / len;
+        const float uy = dy / len;
+        const float px = -uy;
+        const float py = ux;
+        const float headLength = std::clamp(len * 0.10f, 7.0f, 16.0f);
+        const float headWidth = headLength * 0.45f;
+        const ImVec2 tip(to.x, to.y);
+        const ImVec2 base(to.x - ux * headLength, to.y - uy * headLength);
+
+        dl->AddLine(ImVec2(from.x, from.y), base, col, thickness);
+        dl->AddTriangleFilled(
+            tip,
+            ImVec2(base.x + px * headWidth, base.y + py * headWidth),
+            ImVec2(base.x - px * headWidth, base.y - py * headWidth),
+            col);
+    };
+
+    ImVec2 clipMin(vt.screenOriginX, vt.screenOriginY);
+    ImVec2 clipMax(vt.screenOriginX + vt.screenWidth,
+                   vt.screenOriginY + vt.screenHeight);
+    dl->PushClipRect(clipMin, clipMax, true);
+
+    const Core::Vec2 xNeg = projectPoint(xMin, 0.0, 0.0);
+    const Core::Vec2 xPos = projectPoint(xMax, 0.0, 0.0);
+    const Core::Vec2 yNeg = projectPoint(0.0, yMin, 0.0);
+    const Core::Vec2 yPos = projectPoint(0.0, yMax, 0.0);
+    const Core::Vec2 zPos = projectPoint(0.0, 0.0, zSpan);
+
+    const ImU32 colX = IM_COL32(240, 95, 95, 235);
+    const ImU32 colY = IM_COL32(95, 225, 120, 235);
+    const ImU32 colZ = IM_COL32(110, 165, 250, 235);
+
+    dl->AddLine(ImVec2(xNeg.x, xNeg.y), ImVec2(xPos.x, xPos.y), colX, 1.5f);
+    dl->AddLine(ImVec2(yNeg.x, yNeg.y), ImVec2(yPos.x, yPos.y), colY, 1.5f);
+    drawArrow(originScreen, xPos, colX, 2.0f);
+    drawArrow(originScreen, yPos, colY, 2.0f);
+    drawArrow(originScreen, zPos, colZ, 2.0f);
+
+    dl->PopClipRect();
 }
 
 // ---- tick labels ------------------------------------------------------------
@@ -396,6 +674,12 @@ void PlotRenderer::drawSurface3D(ImDrawList* dl, const Core::ViewTransform& vt,
         double depth;
         double value;
     };
+    struct ClipVertex {
+        float x;
+        float y;
+        double depth;
+        double value;
+    };
 
     const int resolution = std::clamp(options.resolution, 12, 96);
     const int nx = resolution;
@@ -501,15 +785,14 @@ void PlotRenderer::drawSurface3D(ImDrawList* dl, const Core::ViewTransform& vt,
         s.valid = true;
     }
 
+    const bool usePlaneSplitPass = (options.planePass != SurfacePlanePass3D::All);
+    const double planeZ = options.gridPlaneZ;
     std::vector<Face> faces;
-    faces.reserve(static_cast<size_t>(nx * ny * 2));
+    faces.reserve(static_cast<size_t>(nx * ny * (usePlaneSplitPass ? 4 : 2)));
 
-    auto pushFace = [&](const ScreenVertex& a,
-                        const ScreenVertex& b,
-                        const ScreenVertex& c) {
-        if (!a.valid || !b.valid || !c.valid) {
-            return;
-        }
+    auto pushFaceRaw = [&](const ClipVertex& a,
+                           const ClipVertex& b,
+                           const ClipVertex& c) {
         faces.push_back({
             ImVec2(a.x, a.y),
             ImVec2(b.x, b.y),
@@ -517,6 +800,78 @@ void PlotRenderer::drawSurface3D(ImDrawList* dl, const Core::ViewTransform& vt,
             (a.depth + b.depth + c.depth) / 3.0,
             (a.value + b.value + c.value) / 3.0
         });
+    };
+
+    auto clipIntersect = [&](const ClipVertex& a, const ClipVertex& b) -> ClipVertex {
+        const double denom = (b.value - a.value);
+        double t = 0.0;
+        if (std::abs(denom) > 1e-12) {
+            t = (planeZ - a.value) / denom;
+        }
+        t = std::clamp(t, 0.0, 1.0);
+        return ClipVertex{
+            a.x + static_cast<float>((b.x - a.x) * t),
+            a.y + static_cast<float>((b.y - a.y) * t),
+            a.depth + (b.depth - a.depth) * t,
+            a.value + (b.value - a.value) * t
+        };
+    };
+
+    auto pushFace = [&](const ScreenVertex& a,
+                        const ScreenVertex& b,
+                        const ScreenVertex& c) {
+        if (!a.valid || !b.valid || !c.valid) {
+            return;
+        }
+
+        if (!usePlaneSplitPass) {
+            pushFaceRaw(
+                ClipVertex{ a.x, a.y, a.depth, a.value },
+                ClipVertex{ b.x, b.y, b.depth, b.value },
+                ClipVertex{ c.x, c.y, c.depth, c.value });
+            return;
+        }
+
+        const auto isInside = [&](const ClipVertex& v) {
+            if (options.planePass == SurfacePlanePass3D::BelowGridPlane) {
+                return v.value <= planeZ;
+            }
+            return v.value >= planeZ;
+        };
+
+        ClipVertex input[4] = {
+            { a.x, a.y, a.depth, a.value },
+            { b.x, b.y, b.depth, b.value },
+            { c.x, c.y, c.depth, c.value },
+            {}
+        };
+        int inputCount = 3;
+        ClipVertex output[8] = {};
+        int outputCount = 0;
+
+        for (int i = 0; i < inputCount; ++i) {
+            const ClipVertex& curr = input[i];
+            const ClipVertex& prev = input[(i + inputCount - 1) % inputCount];
+            const bool currInside = isInside(curr);
+            const bool prevInside = isInside(prev);
+
+            if (currInside) {
+                if (!prevInside) {
+                    output[outputCount++] = clipIntersect(prev, curr);
+                }
+                output[outputCount++] = curr;
+            } else if (prevInside) {
+                output[outputCount++] = clipIntersect(prev, curr);
+            }
+        }
+
+        if (outputCount < 3) {
+            return;
+        }
+
+        for (int i = 1; i + 1 < outputCount; ++i) {
+            pushFaceRaw(output[0], output[i], output[i + 1]);
+        }
     };
 
     for (int iy = 0; iy < ny; ++iy) {
@@ -571,7 +926,7 @@ void PlotRenderer::drawSurface3D(ImDrawList* dl, const Core::ViewTransform& vt,
         }
     }
 
-    if (options.showEnvelope || options.showDimensionArrows) {
+    if (options.showEnvelope) {
         struct EnvelopePoint {
             ImVec2 screen;
             double depth;
@@ -651,49 +1006,12 @@ void PlotRenderer::drawSurface3D(ImDrawList* dl, const Core::ViewTransform& vt,
             }
         }
 
-        if (options.showDimensionArrows) {
-            auto drawArrow = [&](const ImVec2& from, const ImVec2& to,
-                                 const char* label, ImU32 color) {
-                const float dx = to.x - from.x;
-                const float dy = to.y - from.y;
-                const float length = std::sqrt(dx * dx + dy * dy);
-                if (length < 1.0f) {
-                    return;
-                }
-
-                const float ux = dx / length;
-                const float uy = dy / length;
-                const float px = -uy;
-                const float py = ux;
-                const float headLength = std::clamp(length * 0.12f, 8.0f, 18.0f);
-                const float headWidth = headLength * 0.5f;
-                const float thickness = std::clamp(options.envelopeThickness * 1.2f, 0.8f, 4.0f);
-
-                const ImVec2 shaftEnd(to.x - ux * headLength, to.y - uy * headLength);
-                dl->AddLine(from, shaftEnd, color, thickness);
-                dl->AddTriangleFilled(
-                    to,
-                    ImVec2(to.x - ux * headLength + px * headWidth,
-                           to.y - uy * headLength + py * headWidth),
-                    ImVec2(to.x - ux * headLength - px * headWidth,
-                           to.y - uy * headLength - py * headWidth),
-                    color);
-
-                dl->AddText(ImVec2(to.x + px * 4.0f, to.y + py * 4.0f), color, label);
-            };
-
-            const ImU32 colorX = IM_COL32(240, 95, 95, 245);
-            const ImU32 colorY = IM_COL32(95, 225, 120, 245);
-            const ImU32 colorZ = IM_COL32(110, 165, 250, 245);
-            const ImVec2 origin = corners[0].screen; // (xMin, yMin, zMin)
-
-            drawArrow(origin, corners[1].screen, "X", colorX); // +X direction
-            drawArrow(origin, corners[3].screen, "Y", colorY); // +Y direction
-            drawArrow(origin, corners[4].screen, "Z", colorZ); // +Z direction
-        }
     }
 
     dl->PopClipRect();
+    if (options.showDimensionArrows) {
+        drawViewportDimensionArrows3D(dl, vt, options);
+    }
 }
 
 // ---- implicit 3D surface F(x,y,z)=0 ----------------------------------------
@@ -734,6 +1052,12 @@ void PlotRenderer::drawImplicitSurface3D(ImDrawList* dl, const Core::ViewTransfo
         double depth;
         double zAvg;
         float shade;
+    };
+    struct ClipProjectedVertex {
+        double xProj;
+        double yProj;
+        double depth;
+        double wz;
     };
     // Stored in world coordinates so we can reuse the extracted mesh across camera changes
     // (azimuth/elevation/zScale/opacity/wireframe) and only re-project when needed.
@@ -1223,20 +1547,98 @@ void PlotRenderer::drawImplicitSurface3D(ImDrawList* dl, const Core::ViewTransfo
     const float sxCenter = vt.worldToScreen(0.0, 0.0).x;
     const float syCenter = vt.worldToScreen(0.0, 0.0).y;
 
+    const bool usePlaneSplitPass = (options.planePass != SurfacePlanePass3D::All);
+    const double planeZ = options.gridPlaneZ;
     std::vector<ScreenFace> screenFaces;
-    screenFaces.reserve(projectedFaces.size());
-    for (const ProjectedFace& f : projectedFaces) {
+    screenFaces.reserve(projectedFaces.size() * (usePlaneSplitPass ? 2u : 1u));
+
+    auto pushScreenFaceRaw = [&](const ClipProjectedVertex& a,
+                                 const ClipProjectedVertex& b,
+                                 const ClipProjectedVertex& c,
+                                 float shade) {
         screenFaces.push_back({
-            ImVec2(sxCenter + static_cast<float>(f.v0.xProj * scale),
-                   syCenter - static_cast<float>(f.v0.yProj * scale)),
-            ImVec2(sxCenter + static_cast<float>(f.v1.xProj * scale),
-                   syCenter - static_cast<float>(f.v1.yProj * scale)),
-            ImVec2(sxCenter + static_cast<float>(f.v2.xProj * scale),
-                   syCenter - static_cast<float>(f.v2.yProj * scale)),
-            f.depth,
-            f.zAvg,
-            f.shade
+            ImVec2(sxCenter + static_cast<float>(a.xProj * scale),
+                   syCenter - static_cast<float>(a.yProj * scale)),
+            ImVec2(sxCenter + static_cast<float>(b.xProj * scale),
+                   syCenter - static_cast<float>(b.yProj * scale)),
+            ImVec2(sxCenter + static_cast<float>(c.xProj * scale),
+                   syCenter - static_cast<float>(c.yProj * scale)),
+            (a.depth + b.depth + c.depth) / 3.0,
+            (a.wz + b.wz + c.wz) / 3.0,
+            shade
         });
+    };
+
+    auto clipIntersect = [&](const ClipProjectedVertex& a,
+                             const ClipProjectedVertex& b) -> ClipProjectedVertex {
+        const double denom = (b.wz - a.wz);
+        double t = 0.0;
+        if (std::abs(denom) > 1e-12) {
+            t = (planeZ - a.wz) / denom;
+        }
+        t = std::clamp(t, 0.0, 1.0);
+        return ClipProjectedVertex{
+            a.xProj + (b.xProj - a.xProj) * t,
+            a.yProj + (b.yProj - a.yProj) * t,
+            a.depth + (b.depth - a.depth) * t,
+            a.wz + (b.wz - a.wz) * t
+        };
+    };
+
+    auto pushProjectedFace = [&](const ProjectedFace& f) {
+        if (!usePlaneSplitPass) {
+            pushScreenFaceRaw(
+                ClipProjectedVertex{ f.v0.xProj, f.v0.yProj, f.v0.depth, f.v0.wz },
+                ClipProjectedVertex{ f.v1.xProj, f.v1.yProj, f.v1.depth, f.v1.wz },
+                ClipProjectedVertex{ f.v2.xProj, f.v2.yProj, f.v2.depth, f.v2.wz },
+                f.shade);
+            return;
+        }
+
+        const auto isInside = [&](const ClipProjectedVertex& v) {
+            if (options.planePass == SurfacePlanePass3D::BelowGridPlane) {
+                return v.wz <= planeZ;
+            }
+            return v.wz >= planeZ;
+        };
+
+        ClipProjectedVertex input[4] = {
+            { f.v0.xProj, f.v0.yProj, f.v0.depth, f.v0.wz },
+            { f.v1.xProj, f.v1.yProj, f.v1.depth, f.v1.wz },
+            { f.v2.xProj, f.v2.yProj, f.v2.depth, f.v2.wz },
+            {}
+        };
+        int inputCount = 3;
+        ClipProjectedVertex output[8] = {};
+        int outputCount = 0;
+
+        for (int i = 0; i < inputCount; ++i) {
+            const ClipProjectedVertex& curr = input[i];
+            const ClipProjectedVertex& prev = input[(i + inputCount - 1) % inputCount];
+            const bool currInside = isInside(curr);
+            const bool prevInside = isInside(prev);
+
+            if (currInside) {
+                if (!prevInside) {
+                    output[outputCount++] = clipIntersect(prev, curr);
+                }
+                output[outputCount++] = curr;
+            } else if (prevInside) {
+                output[outputCount++] = clipIntersect(prev, curr);
+            }
+        }
+
+        if (outputCount < 3) {
+            return;
+        }
+
+        for (int i = 1; i + 1 < outputCount; ++i) {
+            pushScreenFaceRaw(output[0], output[i], output[i + 1], f.shade);
+        }
+    };
+
+    for (const ProjectedFace& f : projectedFaces) {
+        pushProjectedFace(f);
     }
 
     // ImGui draw lists have no depth buffer, so we painter-sort triangles back-to-front.
@@ -1292,7 +1694,7 @@ void PlotRenderer::drawImplicitSurface3D(ImDrawList* dl, const Core::ViewTransfo
         }
     }
 
-    if (options.showEnvelope || options.showDimensionArrows) {
+    if (options.showEnvelope) {
         // Envelope/arrows are drawn from extracted surface bounds (not full sample box) to give
         // a tighter visual wrapper around the actual shape.
         if (!(surfXMin < surfXMax)) { surfXMin = xMin; surfXMax = xMax; }
@@ -1359,47 +1761,12 @@ void PlotRenderer::drawImplicitSurface3D(ImDrawList* dl, const Core::ViewTransfo
             }
         }
 
-        if (options.showDimensionArrows) {
-            auto drawArrow = [&](const ImVec2& from, const ImVec2& to,
-                                 const char* label, ImU32 arrowColor) {
-                const float dxs = to.x - from.x;
-                const float dys = to.y - from.y;
-                const float length = std::sqrt(dxs * dxs + dys * dys);
-                if (length < 1.0f) {
-                    return;
-                }
-
-                const float ux = dxs / length;
-                const float uy = dys / length;
-                const float px = -uy;
-                const float py = ux;
-                const float headLength = std::clamp(length * 0.12f, 8.0f, 18.0f);
-                const float headWidth = headLength * 0.5f;
-                const float thickness = std::clamp(options.envelopeThickness * 1.2f, 0.8f, 4.0f);
-
-                const ImVec2 shaftEnd(to.x - ux * headLength, to.y - uy * headLength);
-                dl->AddLine(from, shaftEnd, arrowColor, thickness);
-                dl->AddTriangleFilled(
-                    to,
-                    ImVec2(to.x - ux * headLength + px * headWidth,
-                           to.y - uy * headLength + py * headWidth),
-                    ImVec2(to.x - ux * headLength - px * headWidth,
-                           to.y - uy * headLength - py * headWidth),
-                    arrowColor);
-                dl->AddText(ImVec2(to.x + px * 4.0f, to.y + py * 4.0f), arrowColor, label);
-            };
-
-            const ImU32 colorX = IM_COL32(240, 95, 95, 245);
-            const ImU32 colorY = IM_COL32(95, 225, 120, 245);
-            const ImU32 colorZ = IM_COL32(110, 165, 250, 245);
-            const ImVec2 origin = corners[0].screen;
-            drawArrow(origin, corners[1].screen, "X", colorX);
-            drawArrow(origin, corners[3].screen, "Y", colorY);
-            drawArrow(origin, corners[4].screen, "Z", colorZ);
-        }
     }
 
     dl->PopClipRect();
+    if (options.showDimensionArrows) {
+        drawViewportDimensionArrows3D(dl, vt, options);
+    }
 }
 
 // ---- implicit contour F(x,y)=0 ---------------------------------------------
@@ -1435,12 +1802,15 @@ void PlotRenderer::drawImplicitContour2D(ImDrawList* dl, const Core::ViewTransfo
         }
     }
 
+    // Interpolate along a cell edge to find the zero-crossing between two sample values.
+    // Returns true (and fills 'out' with the screen-space point) when the edge crosses zero.
     auto interpolate = [&](double x0, double y0, double v0,
                            double x1, double y1, double v1,
                            Core::Vec2& out) -> bool {
         if (!std::isfinite(v0) || !std::isfinite(v1)) {
             return false;
         }
+        // Both values on the same side of zero — no crossing on this edge.
         if ((v0 > 0.0 && v1 > 0.0) || (v0 < 0.0 && v1 < 0.0)) {
             return false;
         }
@@ -1449,6 +1819,10 @@ void PlotRenderer::drawImplicitContour2D(ImDrawList* dl, const Core::ViewTransfo
         const double denom = v0 - v1;
         if (std::abs(denom) > 1e-12) {
             t = std::clamp(v0 / denom, 0.0, 1.0);
+        } else if (v0 == 0.0 && v1 == 0.0) {
+            // Both endpoints lie exactly on the contour — use the midpoint so the
+            // edge still contributes a visible line segment.
+            t = 0.5;
         }
 
         const double wx = x0 + (x1 - x0) * t;

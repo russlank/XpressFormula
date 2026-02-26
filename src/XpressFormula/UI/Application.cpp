@@ -353,7 +353,42 @@ int Application::run() {
             continue;
         }
 
-        const bool continuousRender = m_plotSettings.autoRotate;
+        bool hasSurfaceFormula = false;
+        bool has2DFormula = false;
+        for (const FormulaEntry& formula : m_formulas) {
+            if (!formula.visible || !formula.isValid()) {
+                continue;
+            }
+
+            if (formula.uses3DSurface()) {
+                hasSurfaceFormula = true;
+            }
+
+            switch (formula.renderKind) {
+                case FormulaRenderKind::Curve2D:
+                case FormulaRenderKind::Implicit2D:
+                    has2DFormula = true;
+                    break;
+                case FormulaRenderKind::ScalarField3D:
+                    if (!formula.isEquation) {
+                        has2DFormula = true;
+                    }
+                    break;
+                default:
+                    break;
+            }
+
+            if (hasSurfaceFormula && has2DFormula) {
+                break;
+            }
+        }
+
+        const XYRenderMode effectiveRenderMode =
+            m_plotSettings.resolveXYRenderMode(has2DFormula, hasSurfaceFormula);
+        const bool continuousRender =
+            m_plotSettings.autoRotate &&
+            hasSurfaceFormula &&
+            effectiveRenderMode == XYRenderMode::Surface3D;
         const bool optimizeRendering = m_plotSettings.optimizeRendering;
         if (optimizeRendering && !m_redrawRequested && !continuousRender) {
             // Event-driven idle mode: avoid presenting frames when nothing changes.
@@ -380,7 +415,7 @@ int Application::run() {
 
         renderFrame();
         // Auto-rotate requires continuous redraws; otherwise render on demand when optimization is enabled.
-        m_redrawRequested = optimizeRendering ? m_plotSettings.autoRotate : true;
+        m_redrawRequested = optimizeRendering ? continuousRender : true;
     }
     return static_cast<int>(msg.wParam);
 }
@@ -427,16 +462,38 @@ void Application::renderFrame() {
                  ImGuiWindowFlags_NoMove     | ImGuiWindowFlags_NoCollapse);
     m_formulaPanel.render(m_formulas);
     bool hasSurfaceFormula = false;
+    bool has2DFormula = false;
     for (const FormulaEntry& formula : m_formulas) {
-        if (formula.visible && formula.isValid() && formula.uses3DSurface()) {
+        if (!formula.visible || !formula.isValid()) {
+            continue;
+        }
+
+        if (formula.uses3DSurface()) {
             hasSurfaceFormula = true;
+        }
+
+        switch (formula.renderKind) {
+            case FormulaRenderKind::Curve2D:
+            case FormulaRenderKind::Implicit2D:
+                has2DFormula = true;
+                break;
+            case FormulaRenderKind::ScalarField3D:
+                if (!formula.isEquation) {
+                    has2DFormula = true;
+                }
+                break;
+            default:
+                break;
+        }
+
+        if (hasSurfaceFormula && has2DFormula) {
             break;
         }
     }
     ImGui::Spacing();
     ImGui::Spacing();
     ControlPanelActions actions = m_controlPanel.render(
-        m_viewTransform, m_plotSettings, hasSurfaceFormula, m_exportStatus);
+        m_viewTransform, m_plotSettings, has2DFormula, hasSurfaceFormula, m_exportStatus);
     m_exportDialogOpenRequested = m_exportDialogOpenRequested || actions.requestOpenExportDialog;
 
     ImGui::Spacing();
