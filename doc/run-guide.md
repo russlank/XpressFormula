@@ -136,9 +136,14 @@ After launch:
    - `x^2+y^2+z^2=16` for an implicit 3D surface (`F(x,y,z)=0`)
    - `(x^2+y^2+z^2+21)^2 - 100*(x^2+y^2) = 0` for a torus-like implicit 3D surface
 3. In the **View Controls** section:
-   - Choose **3D Surfaces / Implicit** or **2D Heatmap** for `x,y` and implicit `F(x,y,z)=0` formulas.
+   - In **2D / 3D Formula Rendering**, choose one of:
+     - **Auto**: mixed visible 2D+3D formulas render in 2D; only visible 3D-capable formulas render in 3D.
+     - **Force 3D Surfaces / Implicit**: always render 3D-capable formulas as 3D surfaces/meshes.
+     - **Force 2D Heatmap / Cross-Section**: render `z=f(x,y)` and implicit `F(x,y,z)=0` in 2D representations.
    - Open the **Display** accordion to toggle **Show Grid**, **Show Coordinates**, **Show Wires**, and 3D display helpers such as **Show Envelope Box**, **Show XYZ Dimension Arrows**, and **Auto Rotate**.
    - Tune azimuth, elevation, z-scale, surface density, implicit surface quality, and opacity in the **3D Camera** section.
+   - In 3D mode, **Show Grid** draws a projected XY plane with translucent fill and thick frame. Surface rendering is split around `z=0` so the plane is visually interleaved between below-plane and above-plane geometry.
+   - The **XYZ Dimension Arrows** gizmo is shown near the lower-left of the plot viewport only when coordinates are hidden (mutually exclusive with **Show Coordinates**).
    - Keep **Optimize Rendering** enabled for lower idle GPU usage and smoother 3D dragging/zooming (temporary interaction-time quality reduction for heavy implicit meshes).
    - For implicit 3D equations, keep the formula `z slice / center` near the shape center (often `0`) and make sure the visible `X/Y` range contains the shape (for example, a sphere `x^2+y^2+z^2=16` needs roughly `[-4,4]` in both `X` and `Y`).
 4. Use mouse drag to pan and mouse wheel to zoom domain coordinates.

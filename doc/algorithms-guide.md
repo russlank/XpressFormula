@@ -316,6 +316,29 @@ Basic idea:
 
 This produces a familiar mesh surface.
 
+#### Grid-Plane Interleaving Path (`Show Grid` in 3D)
+
+Recent rendering changes treat the projected 3D grid as a real visual plane at `z=0`.
+To keep draw order intuitive, explicit surface rendering supports three plane-pass modes:
+
+- `All` (single pass, no clipping)
+- `BelowGridPlane` (`z <= 0`)
+- `AboveGridPlane` (`z >= 0`)
+
+When 3D grid is visible, the draw sequence is:
+
+1. draw explicit triangles clipped to `BelowGridPlane`
+2. draw projected grid plane (translucent fill + frame + interior lines)
+3. draw explicit triangles clipped to `AboveGridPlane`
+
+Triangle clipping uses a polygon clip step against plane `z=0` (Sutherland-Hodgman style),
+then triangulates the clipped polygon fan.
+
+Cost model for this path:
+
+- mesh sampling/extraction cost is unchanged
+- extra cost is linear in triangle count for clipping + second draw pass
+
 ### 2. `F(x,y,z)=0` Implicit 3D Surface (Current Approach)
 
 Examples:
@@ -390,6 +413,28 @@ What does not invalidate the mesh cache:
 
 This means camera rotation can remain interactive without rebuilding the 3D scalar field each frame.
 
+#### Grid-Plane Interleaving for Implicit Meshes
+
+The same `All / BelowGridPlane / AboveGridPlane` path is applied for implicit rendering,
+but importantly it happens **after** mesh extraction:
+
+- world-space mesh cache is reused as before
+- camera projection is computed as before
+- projected faces are clipped against `z=0` only for split passes
+
+This avoids introducing a second extraction cache or remeshing just to support grid-plane ordering.
+
+#### Why We Do Not Build Two Mesh Variants
+
+A possible approach is maintaining two persistent meshes ("with grid split" and "without split").
+Current implementation intentionally does **not** do that because:
+
+- extraction cost dominates and is already cached in world space
+- split behavior is display-state dependent (grid visible + 3D mode), not math-state dependent
+- clipping projected/world faces per frame is cheaper than duplicating mesh storage and invalidation paths
+
+In short: one extracted mesh, multiple lightweight render passes.
+
 ## Part 6: Projection and Drawing (How 3D Becomes 2D)
 
 The renderer uses a lightweight camera model:
@@ -415,6 +460,12 @@ Important alignment detail (recent fix):
 - The renderer does **not** auto-center the mesh to the viewport every frame.
 - This avoids the visual "swimming" effect where the 3D shape drifts relative to the 2D coordinates while panning/dragging.
 
+3D grid plane details:
+
+- The XY plane is projected with the same camera model used by surface triangles.
+- Plane visuals include: low-opacity fill, thick projected frame, interior major/minor lines.
+- Interior lines are generated to span frame edge-to-edge while keeping frame edges as separate thicker lines.
+
 Shading:
 
 - A simple directional light is used
@@ -436,6 +487,12 @@ Main cost drivers for implicit 3D:
 - how much of the domain is visible
 - wireframe enabled (extra line drawing)
 - number of triangles after meshing
+
+Additional path-dependent cost:
+
+- when 3D grid is visible, 3D surfaces use split passes around `z=0`
+- this adds clipping + an extra draw pass for above/below-plane geometry
+- implicit extraction cost (`O(N^3)`) is still governed by mesh cache invalidation, not by grid-plane interleaving
 
 Interaction optimization currently used (when **Optimize Rendering** is enabled):
 
