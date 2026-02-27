@@ -35,6 +35,7 @@ public:
         bool showCoordinates = true;
         bool showWires = true;
         bool showEnvelope = true;
+        bool showAxisTriad = true;
         std::array<float, 4> backgroundColor = { 0.098f, 0.098f, 0.118f, 1.0f };
     };
 

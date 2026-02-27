@@ -34,6 +34,7 @@ void PlotPanel::render(std::vector<FormulaEntry>& formulas,
     const bool showCoordinates = useOverrides ? overrides->showCoordinates : settings.showCoordinates;
     const bool showWires = useOverrides ? overrides->showWires : settings.showWires;
     const bool showEnvelope = useOverrides ? overrides->showEnvelope : settings.showSurfaceEnvelope;
+    const bool showAxisTriad = useOverrides ? overrides->showAxisTriad : settings.showAxisTriad;
     const float effectiveWireThickness =
         (showWires && settings.wireThickness > 0.01f) ? settings.wireThickness : 0.0f;
     const std::array<float, 4> bg = useOverrides ? overrides->backgroundColor
@@ -144,9 +145,9 @@ void PlotPanel::render(std::vector<FormulaEntry>& formulas,
         options.wireThickness = interactionWireThickness;
         options.showEnvelope = showEnvelope;
         options.envelopeThickness = settings.envelopeThickness;
-        // Dimension gizmo is an alternative to coordinate overlays in 3D mode, so keep them
+        // Axis triad is an alternative to coordinate overlays in 3D mode, so keep them
         // mutually exclusive to avoid redundant on-screen guidance.
-        options.showDimensionArrows = settings.showDimensionArrows && !showCoordinates;
+        options.showAxisTriad = showAxisTriad && !showCoordinates;
         return options;
     };
 
@@ -166,7 +167,7 @@ void PlotPanel::render(std::vector<FormulaEntry>& formulas,
                         options.planePass = planePass;
                         if (!enable3DOverlays) {
                             options.showEnvelope = false;
-                            options.showDimensionArrows = false;
+                            options.showAxisTriad = false;
                         }
                         Plotting::PlotRenderer::drawSurface3D(dl, vt, f.ast, f.color, options);
                     } else {
@@ -186,7 +187,7 @@ void PlotPanel::render(std::vector<FormulaEntry>& formulas,
                         options.planePass = planePass;
                         if (!enable3DOverlays) {
                             options.showEnvelope = false;
-                            options.showDimensionArrows = false;
+                            options.showAxisTriad = false;
                         }
                         Plotting::PlotRenderer::drawImplicitSurface3D(dl, vt, f.ast, f.color, options);
                     } else if (!is3DMode) {

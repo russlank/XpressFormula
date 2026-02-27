@@ -140,7 +140,10 @@ ControlPanelActions ControlPanel::render(Core::ViewTransform& vt, PlotSettings& 
                                    0.5f, 3.0f, "%.2f");
             }
 
-            ImGui::Checkbox("Show XYZ Dimension Arrows", &settings.showDimensionArrows);
+            ImGui::Checkbox("Show Axis Triad (X/Y/Z)", &settings.showAxisTriad);
+            if (settings.showCoordinates && settings.showAxisTriad) {
+                ImGui::TextDisabled("Axis triad is hidden while coordinates are enabled.");
+            }
             ImGui::Checkbox("Auto Rotate", &settings.autoRotate);
             if (settings.autoRotate) {
                 ImGui::SliderFloat("Rotate Speed", &settings.autoRotateSpeedDegPerSec,

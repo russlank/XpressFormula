@@ -74,9 +74,9 @@ void PlotRenderer::formatLabel(char* buf, size_t len, double v) {
 
 namespace {
 
-void drawViewportDimensionArrows3D(ImDrawList* dl,
-                                   const XpressFormula::Core::ViewTransform& vt,
-                                   const XpressFormula::Plotting::PlotRenderer::Surface3DOptions& options) {
+void drawViewportAxisTriad3D(ImDrawList* dl,
+                             const XpressFormula::Core::ViewTransform& vt,
+                             const XpressFormula::Plotting::PlotRenderer::Surface3DOptions& options) {
     const double azimuth = static_cast<double>(options.azimuthDeg) * 3.14159265358979323846 / 180.0;
     const double elevation = static_cast<double>(options.elevationDeg) * 3.14159265358979323846 / 180.0;
     const double cosA = std::cos(azimuth);
@@ -1009,8 +1009,8 @@ void PlotRenderer::drawSurface3D(ImDrawList* dl, const Core::ViewTransform& vt,
     }
 
     dl->PopClipRect();
-    if (options.showDimensionArrows) {
-        drawViewportDimensionArrows3D(dl, vt, options);
+    if (options.showAxisTriad) {
+        drawViewportAxisTriad3D(dl, vt, options);
     }
 }
 
@@ -1154,14 +1154,14 @@ void PlotRenderer::drawImplicitSurface3D(ImDrawList* dl, const Core::ViewTransfo
     const double cosE = std::cos(elevation);
     const double sinE = std::sin(elevation);
 
-    // Shared 3D->2D projection used for mesh triangles and the optional envelope/arrows.
+    // Shared 3D->2D projection used for mesh triangles and the optional envelope/axis-triad overlay.
     // The projection is world-origin anchored (no per-frame centering by sampled-box center)
     // so implicit meshes remain aligned with the 2D grid/axes during panning and zooming.
     auto projectPoint = [&](double wx, double wy, double wz,
                             double& outXProj, double& outYProj, double& outDepth) {
         // This helper projects a world-space point using the current 3D camera but keeps the same
         // world origin reference as the 2D axes/grid. It is shared by triangles, envelope edges,
-        // and XYZ dimension arrows so those overlays remain aligned.
+        // and the axis triad so those overlays remain aligned.
         const double x = wx;
         const double y = wy;
         const double zWorld = wz * options.zScale;
@@ -1695,7 +1695,7 @@ void PlotRenderer::drawImplicitSurface3D(ImDrawList* dl, const Core::ViewTransfo
     }
 
     if (options.showEnvelope) {
-        // Envelope/arrows are drawn from extracted surface bounds (not full sample box) to give
+        // Envelope/axis-triad overlays are drawn from extracted surface bounds (not full sample box) to give
         // a tighter visual wrapper around the actual shape.
         if (!(surfXMin < surfXMax)) { surfXMin = xMin; surfXMax = xMax; }
         if (!(surfYMin < surfYMax)) { surfYMin = yMin; surfYMax = yMax; }
@@ -1764,8 +1764,8 @@ void PlotRenderer::drawImplicitSurface3D(ImDrawList* dl, const Core::ViewTransfo
     }
 
     dl->PopClipRect();
-    if (options.showDimensionArrows) {
-        drawViewportDimensionArrows3D(dl, vt, options);
+    if (options.showAxisTriad) {
+        drawViewportAxisTriad3D(dl, vt, options);
     }
 }
 

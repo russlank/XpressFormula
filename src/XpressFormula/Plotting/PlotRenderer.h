@@ -28,7 +28,7 @@ public:
         float wireThickness = 1.0f;
         bool  showEnvelope = true;
         float envelopeThickness = 1.25f;
-        bool  showDimensionArrows = true;
+        bool  showAxisTriad = true;
         // Center of the implicit z sampling window. The sampled z range is derived from the
         // current x/y view span around this center (so panning/zooming the view changes mesh).
         float implicitZCenter = 0.0f;
