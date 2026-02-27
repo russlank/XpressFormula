@@ -488,6 +488,27 @@ It depends on:
 - `drawImplicitSurface3D`:
   - surface-nets style extraction from sampled `F(x,y,z)=0`
   - cached world mesh + re-projection
+  - optional split render passes around `z=0` (`All` / `BelowGridPlane` / `AboveGridPlane`)
+  - plane clipping stage used only for split passes (no second mesh extraction)
+
+### Mesh extraction vs split render passes (3D grid feature)
+
+Recent 3D grid work separates heavy mesh calculation from lightweight display ordering:
+
+1. **Mesh calculation**:
+   - explicit `z=f(x,y)`: sample x/y and build triangles
+   - implicit `F(x,y,z)=0`: sample scalar field + surface-nets extraction
+2. **Projection/shading**:
+   - apply azimuth/elevation/z-scale and compute depth
+3. **Optional grid-plane split** (only when 3D grid is shown):
+   - clip triangles/faces to `z<=0` pass
+   - draw projected grid plane
+   - clip triangles/faces to `z>=0` pass
+
+Important implementation detail:
+
+- split passes are controlled through `Surface3DOptions` (`planePass`, `gridPlaneZ`)
+- implicit world-mesh cache is reused exactly as before; split rendering does not create a second cached mesh variant
 
 ### Why PlotRenderer is not in `Core`
 
@@ -622,6 +643,7 @@ In both cases, the math API path is:
 4. sample scalar field
 5. extract surface mesh
 6. project and render
+7. if 3D grid is visible: split render around `z=0` and interleave plane draw
 
 ## 13. Important Numerical and Design Limitations
 

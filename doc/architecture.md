@@ -58,10 +58,16 @@ Formula mode is inferred from variable presence and equation shape:
 Render mapping:
 
 - `y=f(x)` -> curve line sampling across screen width
-- `z=f(x,y)` -> 3D surface (or optional 2D heat map)
+- `z=f(x,y)` -> 3D surface (or 2D heat map depending on effective mode)
 - `F(x,y)=0` -> marching-squares contour rendering
 - `f(x,y,z)` -> heat map cross-section at selected `z`
-- `F(x,y,z)=0` -> implicit 3D surface mesh in 3D mode, or scalar cross-section in 2D heat-map mode
+- `F(x,y,z)=0` -> implicit 3D surface mesh in effective 3D mode, or scalar cross-section in effective 2D mode
+
+Effective mode policy:
+
+- `Auto`: if both 2D and 3D formulas are visible, rendering resolves to 2D.
+- `Auto`: if only 3D-capable formulas are visible, rendering resolves to 3D.
+- `Force3D` / `Force2D`: user override of auto behavior.
 
 ## Current 3D Implicit Surface Notes
 
@@ -70,6 +76,33 @@ Render mapping:
 - The implicit sampling domain is derived from the current visible `x/y` range and the formula `z slice / center`, so shapes can appear clipped if the view box does not fully contain them.
 - 3D projection is anchored to the same world origin as the 2D grid/axes (`ViewTransform`) to avoid visual drift/"swimming" while the user pans/zooms.
 - With **Optimize Rendering** enabled, `PlotPanel` temporarily reduces 3D mesh density and suppresses wireframe lines while dragging/zooming to improve responsiveness, then restores full quality when interaction stops.
+
+## 3D Grid Plane and Render Paths
+
+The projected 3D grid is treated as a plane at `z = 0` with:
+
+- translucent plane fill
+- major/minor grid lines drawn edge-to-edge inside a thick projected frame
+- optional projected axes overlay
+
+When **Show Grid** is enabled in effective 3D mode, `PlotPanel` uses a split render sequence:
+
+1. draw 3D formulas clipped to the below-plane pass (`z <= 0`)
+2. draw projected grid plane
+3. draw 3D formulas clipped to the above-plane pass (`z >= 0`)
+
+This split is performed in renderer space:
+
+- explicit `z=f(x,y)` triangles are clipped against plane `z=0`
+- implicit `F(x,y,z)=0` projected faces are clipped against plane `z=0`
+- implicit mesh extraction/cache itself is unchanged (no extra scalar-field remesh just for grid draw order)
+
+When **Show Grid** is disabled, 3D formulas use the single-pass path (`All`) without plane clipping.
+
+Dimension-arrow behavior:
+
+- 3D dimension gizmo is mutually exclusive with coordinate overlays
+- shown near the lower-left of the plot viewport when enabled
 
 ## Error Handling
 

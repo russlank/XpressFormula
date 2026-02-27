@@ -262,6 +262,8 @@ Important fields:
 - `showEnvelope`, `envelopeThickness`
 - `showDimensionArrows`
 - `implicitZCenter`
+- `planePass` (`All`, `BelowGridPlane`, `AboveGridPlane`)
+- `gridPlaneZ` (currently `0.0` for XY grid plane interleave)
 
 ### `drawCurve2D(...)`
 
@@ -298,6 +300,7 @@ Important fields:
   - evaluate z
   - project vertices
   - build triangles
+  - optional plane clipping pass (for `BelowGridPlane` / `AboveGridPlane`)
   - depth-sort
   - draw fill + optional wireframe
 
@@ -313,9 +316,25 @@ Important fields:
 - Current implementation:
   - surface-nets style extraction
   - cached world-space mesh
+  - optional projected-face clipping pass for grid-plane interleave
   - per-frame projection and painter sorting
 - Used for:
   - implicit 3D equations (sphere, torus, etc.)
+
+### `drawGrid3D(...)` / `drawAxes3D(...)`
+
+- `drawGrid3D(...)` draws projected XY plane visuals in 3D mode:
+  - translucent plane fill
+  - major/minor interior lines
+  - thicker projected frame
+- `drawAxes3D(...)` draws projected XYZ axes.
+
+In 3D mode with grid visible, `PlotPanel` uses this order:
+
+1. formulas with `planePass=BelowGridPlane`
+2. `drawGrid3D(...)`
+3. formulas with `planePass=AboveGridPlane`
+4. `drawAxes3D(...)` (if coordinates enabled)
 
 ## 6. Where the Math API Is Used in the UI Flow
 

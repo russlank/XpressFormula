@@ -91,7 +91,13 @@ The app chooses a render mode from the parsed variables and equation form:
 Mode-specific behavior for 3-variable formulas:
 
 - `f(x,y,z)` (expression) renders as a cross-section/heat map using the configured `z` slice.
-- `F(x,y,z)=0` (equation) renders as an implicit 3D surface in **3D** mode, and as a scalar cross-section in **2D Heatmap** mode.
+- `F(x,y,z)=0` (equation) renders as an implicit 3D surface in effective **3D** mode, and as a scalar cross-section in effective **2D** mode.
+
+2D/3D effective mode is controlled by the rendering preference:
+
+- **Auto**: mixed visible 2D+3D content resolves to 2D; only-visible 3D content resolves to 3D.
+- **Force 3D**: always use 3D rendering for 3D-capable formulas.
+- **Force 2D**: always use 2D heatmap/cross-section rendering for 3D-capable formulas.
 
 Only variables `x`, `y`, and `z` are supported for plotting.
 
