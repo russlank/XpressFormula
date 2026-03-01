@@ -55,6 +55,8 @@ constexpr const wchar_t* kGitHubLatestReleaseApiHost = L"api.github.com";
 constexpr const wchar_t* kGitHubLatestReleaseApiPath = L"/repos/russlank/XpressFormula/releases/latest";
 constexpr const wchar_t* kGitHubReleasesUrlW = L"https://github.com/russlank/XpressFormula/releases";
 constexpr const char* kGitHubReleasesUrlUtf8 = "https://github.com/russlank/XpressFormula/releases";
+constexpr const wchar_t* kBuyMeACoffeeUrlW = L"https://buymeacoffee.com/russlank";
+constexpr const char* kBuyMeACoffeeUrlUtf8 = "https://buymeacoffee.com/russlank";
 
 std::string readWinHttpResponseBody(HINTERNET requestHandle) {
     std::string response;
@@ -565,6 +567,12 @@ void Application::renderFrame() {
             }
             m_redrawRequested = true;
         }
+        if (ImGui::Button("Buy Me a Coffee", ImVec2(ImGui::GetContentRegionAvail().x, 0.0f))) {
+            if (!openUrlInBrowser(kBuyMeACoffeeUrlW)) {
+                m_updateStatus = "Could not open browser. Visit: " + std::string(kBuyMeACoffeeUrlUtf8);
+            }
+            m_redrawRequested = true;
+        }
         if (m_updateAvailable && !m_updateNoticeDismissed &&
             ImGui::Button("Dismiss Update Notice", ImVec2(ImGui::GetContentRegionAvail().x, 0.0f))) {
             m_updateNoticeDismissed = true;
@@ -590,6 +598,7 @@ void Application::renderFrame() {
         exportOverrides.showCoordinates = m_pendingExportSettings.showCoordinates;
         exportOverrides.showWires = m_pendingExportSettings.showWires;
         exportOverrides.showEnvelope = m_pendingExportSettings.showEnvelope;
+        exportOverrides.showAxisTriad = m_pendingExportSettings.showAxisTriad;
         exportOverrides.backgroundColor = m_pendingExportSettings.backgroundColor;
     }
     m_plotPanel.render(m_formulas, m_viewTransform, m_plotSettings,
@@ -716,6 +725,7 @@ void Application::renderExportDialog(float sidebarWidth, float viewportHeight) {
         m_exportDialogSettings.showCoordinates = m_plotSettings.showCoordinates;
         m_exportDialogSettings.showWires = m_plotSettings.showWires;
         m_exportDialogSettings.showEnvelope = m_plotSettings.showSurfaceEnvelope;
+        m_exportDialogSettings.showAxisTriad = m_plotSettings.showAxisTriad;
         m_exportPreviewDirty = false;
         m_exportPreviewStatus = "Preview may be out of date. Click Refresh Preview.";
     }
@@ -816,6 +826,10 @@ void Application::renderExportDialog(float sidebarWidth, float viewportHeight) {
         previewChanged = ImGui::Checkbox("Coordinates (axes + labels)", &m_exportDialogSettings.showCoordinates) || previewChanged;
         previewChanged = ImGui::Checkbox("Wires / Wireframe", &m_exportDialogSettings.showWires) || previewChanged;
         previewChanged = ImGui::Checkbox("Envelope Box (3D)", &m_exportDialogSettings.showEnvelope) || previewChanged;
+        previewChanged = ImGui::Checkbox("Axis Triad (X/Y/Z, 3D)", &m_exportDialogSettings.showAxisTriad) || previewChanged;
+        if (m_exportDialogSettings.showCoordinates && m_exportDialogSettings.showAxisTriad) {
+            ImGui::TextDisabled("Axis triad is hidden while coordinates are enabled.");
+        }
         ImGui::TextWrapped("Wires affect 3D surfaces/implicit meshes. 2D curves are always drawn.");
 
         ImGui::Spacing();
@@ -1520,6 +1534,7 @@ bool Application::renderPlotPixelsOffscreen(const Application::ExportDialogSetti
         exportOverrides.showCoordinates = settings.showCoordinates;
         exportOverrides.showWires = settings.showWires;
         exportOverrides.showEnvelope = settings.showEnvelope;
+        exportOverrides.showAxisTriad = settings.showAxisTriad;
         exportOverrides.backgroundColor = settings.backgroundColor;
 
         m_plotPanel.render(m_formulas, exportView, exportSettings, &exportOverrides);
