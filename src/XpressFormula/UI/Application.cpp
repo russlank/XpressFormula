@@ -55,6 +55,8 @@ constexpr const wchar_t* kGitHubLatestReleaseApiHost = L"api.github.com";
 constexpr const wchar_t* kGitHubLatestReleaseApiPath = L"/repos/russlank/XpressFormula/releases/latest";
 constexpr const wchar_t* kGitHubReleasesUrlW = L"https://github.com/russlank/XpressFormula/releases";
 constexpr const char* kGitHubReleasesUrlUtf8 = "https://github.com/russlank/XpressFormula/releases";
+constexpr const wchar_t* kBuyMeACoffeeUrlW = L"https://buymeacoffee.com/russlank";
+constexpr const char* kBuyMeACoffeeUrlUtf8 = "https://buymeacoffee.com/russlank";
 
 std::string readWinHttpResponseBody(HINTERNET requestHandle) {
     std::string response;
@@ -562,6 +564,12 @@ void Application::renderFrame() {
                 m_updateStatus = "Could not open browser. Visit: " + std::string(kGitHubReleasesUrlUtf8);
             } else if (m_updateAvailable) {
                 m_updateNoticeDismissed = true;
+            }
+            m_redrawRequested = true;
+        }
+        if (ImGui::Button("Buy Me a Coffee", ImVec2(ImGui::GetContentRegionAvail().x, 0.0f))) {
+            if (!openUrlInBrowser(kBuyMeACoffeeUrlW)) {
+                m_updateStatus = "Could not open browser. Visit: " + std::string(kBuyMeACoffeeUrlUtf8);
             }
             m_redrawRequested = true;
         }
