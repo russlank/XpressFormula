@@ -6,6 +6,7 @@
 [![Release Packaging](https://img.shields.io/github/actions/workflow/status/russlank/XpressFormula/release-packaging.yml?branch=main&label=release%20packaging)](https://github.com/russlank/XpressFormula/actions/workflows/release-packaging.yml)
 [![License](https://img.shields.io/github/license/russlank/XpressFormula)](LICENSE)
 [![Documentation](https://img.shields.io/badge/docs-index-blue)](doc/index.md)
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-%23FFDD00.svg?&style=flat&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/russlank)
 
 XpressFormula is a Windows desktop proof-of-concept for entering and plotting mathematical expressions with an ImGui-based UI.
 
