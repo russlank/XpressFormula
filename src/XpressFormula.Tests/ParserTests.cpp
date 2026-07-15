@@ -303,10 +303,17 @@ TEST_CASE(Parse_FunctionRegistryMetadataIsValid) {
         Assert::IsTrue(info.signature != nullptr && info.signature[0] != '\0');
         Assert::IsTrue(info.description != nullptr && info.description[0] != '\0');
         Assert::IsTrue(info.category != nullptr && info.category[0] != '\0');
+        Assert::IsTrue(info.detailedDescription != nullptr && info.detailedDescription[0] != '\0');
+        Assert::IsTrue(info.equivalentFormula != nullptr && info.equivalentFormula[0] != '\0');
+        Assert::IsTrue(info.example != nullptr && info.example[0] != '\0');
         Assert::IsTrue(info.minArity >= 0);
         Assert::IsTrue(info.maxArity >= info.minArity);
         Assert::IsTrue(names.insert(info.name).second,
             (std::wstring(L"Duplicate function name: ") + widenParserText(info.name)).c_str());
+
+        auto parsed = Parser::parse(info.example);
+        Assert::IsTrue(parsed.success(),
+            (std::wstring(L"Function example failed to parse: ") + widenParserText(info.name)).c_str());
     }
 }
 

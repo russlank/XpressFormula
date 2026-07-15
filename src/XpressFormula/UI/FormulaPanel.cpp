@@ -13,12 +13,46 @@ namespace XpressFormula::UI {
 namespace {
 
 constexpr const char* kFormulaEditorPopupId = "Formula Editor";
+constexpr const char* kFunctionHelpPopupId = "Function Details";
+constexpr const char* kExampleHelpPopupId = "Example Details";
 
 void loadEditorText(char* dest, size_t destSize, const char* value) {
     if (!dest || destSize == 0) {
         return;
     }
     strncpy_s(dest, destSize, value ? value : "", _TRUNCATE);
+}
+
+void showWrappedTooltip(const char* first, const char* second = nullptr, const char* third = nullptr) {
+    ImGui::BeginTooltip();
+    ImGui::PushTextWrapPos(ImGui::GetFontSize() * 45.0f);
+    if (first && first[0] != '\0') {
+        ImGui::TextUnformatted(first);
+    }
+    if (second && second[0] != '\0') {
+        ImGui::Spacing();
+        ImGui::TextWrapped("%s", second);
+    }
+    if (third && third[0] != '\0') {
+        ImGui::Spacing();
+        ImGui::TextUnformatted(third);
+    }
+    ImGui::PopTextWrapPos();
+    ImGui::EndTooltip();
+}
+
+void wrappedBlock(const char* id, const char* text, float height) {
+    ImGui::BeginChild(id, ImVec2(0.0f, height), true);
+    ImGui::PushTextWrapPos(ImGui::GetContentRegionAvail().x);
+    ImGui::TextUnformatted(text ? text : "");
+    ImGui::PopTextWrapPos();
+    ImGui::EndChild();
+}
+
+bool canCopyEquivalent(const Core::FunctionInfo& fn) {
+    return fn.equivalentFormula != nullptr &&
+           fn.equivalentFormula[0] != '\0' &&
+           std::string_view(fn.equivalentFormula).find("not expressible") == std::string_view::npos;
 }
 
 } // namespace
@@ -33,13 +67,147 @@ void FormulaPanel::openEditor(const FormulaEntry& formula, int formulaIndex) {
     m_editorPreview = FormulaEntry{};
 }
 
+void FormulaPanel::loadEditorFormula(const char* expression) {
+    loadEditorText(m_editorBuffer, sizeof(m_editorBuffer), expression);
+    m_focusEditorInput = true;
+    m_editorPreviousText.clear();
+    m_editorPreview = FormulaEntry{};
+}
+
+void FormulaPanel::renderFunctionHelpDialog() {
+    if (m_openFunctionHelpPopupNextFrame) {
+        ImGui::OpenPopup(kFunctionHelpPopupId);
+        m_openFunctionHelpPopupNextFrame = false;
+    }
+
+    ImGui::SetNextWindowSize(ImVec2(640.0f, 520.0f), ImGuiCond_Appearing);
+    ImGui::SetNextWindowSizeConstraints(ImVec2(520.0f, 420.0f), ImVec2(900.0f, 760.0f));
+    if (ImGui::BeginPopupModal(kFunctionHelpPopupId, nullptr, ImGuiWindowFlags_NoSavedSettings)) {
+        const Core::FunctionInfo* fn = m_selectedFunctionHelp;
+        if (fn == nullptr) {
+            ImGui::TextWrapped("No function is selected.");
+            if (ImGui::Button("Close", ImVec2(120.0f, 0.0f))) {
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
+            return;
+        }
+
+        ImGui::Text("Function: %s", fn->name);
+        ImGui::SameLine();
+        ImGui::TextDisabled("[%s]", fn->category);
+        ImGui::Separator();
+
+        ImGui::TextUnformatted("Signature");
+        wrappedBlock("FunctionSignatureBlock", fn->signature, ImGui::GetTextLineHeightWithSpacing() * 2.0f);
+        ImGui::TextUnformatted("Description");
+        ImGui::TextWrapped("%s", fn->detailedDescription);
+        ImGui::Spacing();
+
+        ImGui::TextUnformatted("Equivalent formula / note");
+        wrappedBlock("FunctionEquivalentBlock", fn->equivalentFormula,
+                     ImGui::GetTextLineHeightWithSpacing() * 3.0f);
+        ImGui::TextUnformatted("Example");
+        wrappedBlock("FunctionExampleBlock", fn->example,
+                     ImGui::GetTextLineHeightWithSpacing() * 4.0f);
+
+        ImGui::Separator();
+        const bool copyEquivalent = canCopyEquivalent(*fn);
+        if (!copyEquivalent) {
+            ImGui::BeginDisabled();
+        }
+        if (ImGui::Button("Copy equivalent")) {
+            ImGui::SetClipboardText(fn->equivalentFormula);
+        }
+        if (!copyEquivalent) {
+            ImGui::EndDisabled();
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+                showWrappedTooltip("This entry is an explanatory note rather than a reusable formula.");
+            }
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Copy example")) {
+            ImGui::SetClipboardText(fn->example);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Load example")) {
+            loadEditorFormula(fn->example);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Close", ImVec2(120.0f, 0.0f))) {
+            ImGui::CloseCurrentPopup();
+        }
+
+        ImGui::EndPopup();
+    }
+}
+
+void FormulaPanel::renderExampleHelpDialog() {
+    if (m_openExampleHelpPopupNextFrame) {
+        ImGui::OpenPopup(kExampleHelpPopupId);
+        m_openExampleHelpPopupNextFrame = false;
+    }
+
+    ImGui::SetNextWindowSize(ImVec2(680.0f, 420.0f), ImGuiCond_Appearing);
+    ImGui::SetNextWindowSizeConstraints(ImVec2(520.0f, 360.0f), ImVec2(900.0f, 700.0f));
+    if (ImGui::BeginPopupModal(kExampleHelpPopupId, nullptr, ImGuiWindowFlags_NoSavedSettings)) {
+        const auto examples = examplePatterns();
+        const bool validIndex = m_selectedExampleHelpIndex >= 0 &&
+            m_selectedExampleHelpIndex < static_cast<int>(examples.size());
+
+        if (!validIndex) {
+            ImGui::TextWrapped("No example is selected.");
+            if (ImGui::Button("Close", ImVec2(120.0f, 0.0f))) {
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
+            return;
+        }
+
+        const ExamplePattern& example = examples[m_selectedExampleHelpIndex];
+        ImGui::Text("Example: %s", example.label);
+        ImGui::Separator();
+        ImGui::TextUnformatted("Description");
+        ImGui::TextWrapped("%s", example.description);
+        ImGui::Spacing();
+        ImGui::TextUnformatted("Formula");
+        wrappedBlock("ExampleFormulaBlock", example.expression,
+                     ImGui::GetTextLineHeightWithSpacing() * 7.0f);
+
+        ImGui::Separator();
+        if (ImGui::Button("Load", ImVec2(120.0f, 0.0f))) {
+            loadEditorFormula(example.expression);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Copy formula")) {
+            ImGui::SetClipboardText(example.expression);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Close", ImVec2(120.0f, 0.0f))) {
+            ImGui::CloseCurrentPopup();
+        }
+
+        ImGui::EndPopup();
+    }
+}
+
 void FormulaPanel::renderEditorDialog(std::vector<FormulaEntry>& formulas) {
     if (m_openEditorPopupNextFrame) {
         ImGui::OpenPopup(kFormulaEditorPopupId);
         m_openEditorPopupNextFrame = false;
     }
 
-    ImGui::SetNextWindowSize(ImVec2(920.0f, 610.0f), ImGuiCond_Appearing);
+    const ImGuiViewport* viewport = ImGui::GetMainViewport();
+    const ImVec2 workSize = viewport ? viewport->WorkSize : ImVec2(920.0f, 650.0f);
+    const float maxWidth = std::max(360.0f, workSize.x * 0.98f);
+    const float maxHeight = std::max(360.0f, workSize.y * 0.98f);
+    const float minWidth = std::min(860.0f, maxWidth);
+    const float minHeight = std::min(620.0f, maxHeight);
+    const float width = std::clamp(workSize.x * 0.84f, minWidth, maxWidth);
+    const float height = std::clamp(workSize.y * 0.84f, minHeight, maxHeight);
+
+    ImGui::SetNextWindowSize(ImVec2(width, height), ImGuiCond_Appearing);
+    ImGui::SetNextWindowSizeConstraints(ImVec2(minWidth, minHeight), ImVec2(maxWidth, maxHeight));
     if (ImGui::BeginPopupModal(kFormulaEditorPopupId, nullptr,
                                ImGuiWindowFlags_NoSavedSettings)) {
         if (m_editorFormulaIndex < 0 || m_editorFormulaIndex >= static_cast<int>(formulas.size())) {
@@ -137,54 +305,120 @@ void FormulaPanel::renderEditorDialog(std::vector<FormulaEntry>& formulas) {
         ImGui::Dummy(ImVec2(0.0f, 4.0f));
         ImGui::Separator();
         ImGui::TextUnformatted("Reference");
-        ImGui::TextDisabled("Functions and examples are shown side by side to keep the dialog compact.");
+        ImGui::TextDisabled("Browse functions and examples, then copy or load formulas into the editor.");
 
-        const ImGuiStyle& style = ImGui::GetStyle();
-        const float refsHeight = 175.0f;
-        const float totalWidth = ImGui::GetContentRegionAvail().x;
-        const float leftWidth = std::max(220.0f, (totalWidth - style.ItemSpacing.x) * 0.45f);
+        const float lineHeight = ImGui::GetTextLineHeightWithSpacing();
+        const float referenceHeight = std::max(lineHeight * 10.0f,
+                                               ImGui::GetContentRegionAvail().y - lineHeight * 1.5f);
 
-        ImGui::BeginChild("FormulaEditorFunctions", ImVec2(leftWidth, refsHeight), true);
-        ImGui::TextUnformatted("Supported functions");
-        ImGui::Separator();
-        std::string_view currentCategory;
-        for (const Core::FunctionInfo& fn : Core::functionRegistry()) {
-            const std::string_view category(fn.category);
-            if (currentCategory != category) {
-                if (!currentCategory.empty()) {
-                    ImGui::Dummy(ImVec2(0.0f, 3.0f));
+        if (ImGui::BeginTabBar("FormulaEditorReferenceTabs")) {
+            if (ImGui::BeginTabItem("Functions")) {
+                ImGui::BeginChild("FormulaEditorFunctionsTab", ImVec2(0.0f, referenceHeight), true);
+                const ImGuiTableFlags flags = ImGuiTableFlags_BordersInnerV |
+                    ImGuiTableFlags_RowBg |
+                    ImGuiTableFlags_Resizable |
+                    ImGuiTableFlags_SizingStretchProp;
+
+                if (ImGui::BeginTable("FormulaEditorFunctionTable", 4, flags)) {
+                    ImGui::TableSetupColumn("Category", ImGuiTableColumnFlags_WidthFixed, 145.0f);
+                    ImGui::TableSetupColumn("Function", ImGuiTableColumnFlags_WidthFixed, 220.0f);
+                    ImGui::TableSetupColumn("Description", ImGuiTableColumnFlags_WidthStretch);
+                    ImGui::TableSetupColumn("Actions", ImGuiTableColumnFlags_WidthFixed, 95.0f);
+                    ImGui::TableHeadersRow();
+
+                    for (const Core::FunctionInfo& fn : Core::functionRegistry()) {
+                        ImGui::PushID(fn.name);
+                        ImGui::TableNextRow();
+
+                        ImGui::TableSetColumnIndex(0);
+                        ImGui::TextDisabled("%s", fn.category);
+
+                        ImGui::TableSetColumnIndex(1);
+                        ImGui::TextUnformatted(fn.signature);
+                        if (ImGui::IsItemHovered()) {
+                            showWrappedTooltip(fn.signature, fn.detailedDescription, fn.example);
+                        }
+
+                        ImGui::TableSetColumnIndex(2);
+                        ImGui::TextWrapped("%s", fn.description);
+                        if (ImGui::IsItemHovered()) {
+                            showWrappedTooltip(fn.description, fn.detailedDescription);
+                        }
+
+                        ImGui::TableSetColumnIndex(3);
+                        if (ImGui::SmallButton("Details")) {
+                            m_selectedFunctionHelp = &fn;
+                            m_openFunctionHelpPopupNextFrame = true;
+                        }
+                        if (ImGui::IsItemHovered()) {
+                            showWrappedTooltip("Open detailed function help.");
+                        }
+
+                        ImGui::PopID();
+                    }
+                    ImGui::EndTable();
                 }
-                currentCategory = category;
-                ImGui::TextDisabled("%s", fn.category);
+                ImGui::EndChild();
+                ImGui::EndTabItem();
             }
-            ImGui::BulletText("%s - %s", fn.signature, fn.description);
-        }
-        ImGui::EndChild();
 
-        ImGui::SameLine();
+            if (ImGui::BeginTabItem("Examples")) {
+                ImGui::BeginChild("FormulaEditorExamplesTab", ImVec2(0.0f, referenceHeight), true);
+                const ImGuiTableFlags flags = ImGuiTableFlags_BordersInnerV |
+                    ImGuiTableFlags_RowBg |
+                    ImGuiTableFlags_Resizable |
+                    ImGuiTableFlags_SizingStretchProp;
 
-        ImGui::BeginChild("FormulaEditorExamples", ImVec2(0.0f, refsHeight), true);
-        ImGui::TextUnformatted("Example patterns");
-        ImGui::TextDisabled("Click row or Load");
-        ImGui::Separator();
-        const auto examples = examplePatterns();
-        for (int i = 0; i < static_cast<int>(examples.size()); ++i) {
-            const ExamplePattern& example = examples[i];
-            ImGui::PushID(i);
-            if (ImGui::SmallButton("Load")) {
-                loadEditorText(m_editorBuffer, sizeof(m_editorBuffer), example.expression);
-                m_focusEditorInput = true;
+                if (ImGui::BeginTable("FormulaEditorExampleTable", 3, flags)) {
+                    ImGui::TableSetupColumn("Label", ImGuiTableColumnFlags_WidthFixed, 220.0f);
+                    ImGui::TableSetupColumn("Description", ImGuiTableColumnFlags_WidthStretch);
+                    ImGui::TableSetupColumn("Actions", ImGuiTableColumnFlags_WidthFixed, 180.0f);
+                    ImGui::TableHeadersRow();
+
+                    const auto examples = examplePatterns();
+                    for (int i = 0; i < static_cast<int>(examples.size()); ++i) {
+                        const ExamplePattern& example = examples[i];
+                        ImGui::PushID(i);
+                        ImGui::TableNextRow();
+
+                        ImGui::TableSetColumnIndex(0);
+                        ImGui::TextUnformatted(example.label);
+                        if (ImGui::IsItemHovered()) {
+                            showWrappedTooltip(example.label, example.description, example.expression);
+                        }
+
+                        ImGui::TableSetColumnIndex(1);
+                        ImGui::TextWrapped("%s", example.description);
+                        if (ImGui::IsItemHovered()) {
+                            showWrappedTooltip(example.description, nullptr, example.expression);
+                        }
+
+                        ImGui::TableSetColumnIndex(2);
+                        if (ImGui::SmallButton("Load")) {
+                            loadEditorFormula(example.expression);
+                        }
+                        ImGui::SameLine();
+                        if (ImGui::SmallButton("Copy")) {
+                            ImGui::SetClipboardText(example.expression);
+                        }
+                        ImGui::SameLine();
+                        if (ImGui::SmallButton("Details")) {
+                            m_selectedExampleHelpIndex = i;
+                            m_openExampleHelpPopupNextFrame = true;
+                        }
+
+                        ImGui::PopID();
+                    }
+                    ImGui::EndTable();
+                }
+                ImGui::EndChild();
+                ImGui::EndTabItem();
             }
-            ImGui::SameLine();
-            ImGui::TextDisabled("[%s]", example.label);
-            ImGui::SameLine();
-            if (ImGui::Selectable(example.expression, false)) {
-                loadEditorText(m_editorBuffer, sizeof(m_editorBuffer), example.expression);
-                m_focusEditorInput = true;
-            }
-            ImGui::PopID();
+            ImGui::EndTabBar();
         }
-        ImGui::EndChild();
+
+        renderFunctionHelpDialog();
+        renderExampleHelpDialog();
 
         ImGui::PopStyleVar(2);
         ImGui::EndPopup();
@@ -193,6 +427,8 @@ void FormulaPanel::renderEditorDialog(std::vector<FormulaEntry>& formulas) {
     if (!ImGui::IsPopupOpen(kFormulaEditorPopupId)) {
         m_editorFormulaIndex = -1;
         m_focusEditorInput = false;
+        m_selectedFunctionHelp = nullptr;
+        m_selectedExampleHelpIndex = -1;
     }
 }
 
@@ -222,6 +458,10 @@ void FormulaPanel::render(std::vector<FormulaEntry>& formulas) {
             if (ImGui::IsItemHovered()) {
                 ImGui::BeginTooltip();
                 ImGui::PushTextWrapPos(ImGui::GetFontSize() * 35.0f);
+                ImGui::TextUnformatted(preset.label);
+                ImGui::Spacing();
+                ImGui::TextWrapped("%s", preset.description);
+                ImGui::Spacing();
                 ImGui::TextUnformatted(preset.expression);
                 ImGui::PopTextWrapPos();
                 ImGui::EndTooltip();

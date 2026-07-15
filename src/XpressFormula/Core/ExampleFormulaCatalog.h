@@ -8,6 +8,7 @@ namespace XpressFormula::Core {
 struct ExampleFormula {
     const char* label;
     const char* expression;
+    const char* description;
     bool includeInPresets = true;
 };
 

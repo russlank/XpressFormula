@@ -302,8 +302,13 @@ TEST_CASE(FormulaEntry_AllBuiltinExamplesParse) {
     for (const ExamplePattern& example : examplePatterns()) {
         Assert::IsTrue(example.label != nullptr && example.label[0] != '\0');
         Assert::IsTrue(example.expression != nullptr && example.expression[0] != '\0');
+        Assert::IsTrue(example.description != nullptr && example.description[0] != '\0');
         Assert::IsTrue(std::strlen(example.expression) < inputBufferSize,
             (std::wstring(L"Example exceeds FormulaEntry input buffer: ") + widen(example.label)).c_str());
+        if (example.includeInPresets) {
+            Assert::IsTrue(std::strlen(example.label) <= 40,
+                (std::wstring(L"Preset label is too long for a compact button: ") + widen(example.label)).c_str());
+        }
         Assert::IsTrue(labels.insert(example.label).second,
             (std::wstring(L"Duplicate example label: ") + widen(example.label)).c_str());
         Assert::IsTrue(expressions.insert(example.expression).second,

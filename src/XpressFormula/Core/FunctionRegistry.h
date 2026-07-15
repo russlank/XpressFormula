@@ -70,6 +70,9 @@ struct FunctionInfo {
     const char* signature;
     const char* description;
     const char* category;
+    const char* detailedDescription;
+    const char* equivalentFormula;
+    const char* example;
     int minArity;
     int maxArity;
 };

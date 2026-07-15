@@ -306,9 +306,12 @@ Built-in function metadata lives in:
 - [`src/XpressFormula/Core/FunctionRegistry.cpp`](../src/XpressFormula/Core/FunctionRegistry.cpp)
 
 The registry stores each function's parser name, UI signature, help text,
-category, function ID, and min/max arity. `Parser` uses the registry to reject
+category, detailed explanation, equivalent formula or explanatory note, loadable
+example, function ID, and min/max arity. `Parser` uses the registry to reject
 unknown function names. `Evaluator::evaluateFunction(name, args)` then looks up
 the same metadata, applies strict arity checks, and dispatches by `FunctionId`.
+The Formula Editor reads the same metadata for its Functions tab and detailed
+function help dialog.
 
 The function set includes:
 
@@ -696,6 +699,8 @@ This is normal and expected in interactive plotting tools.
 5. Update `expression-language.md`
 
 The Formula Editor supported-functions reference is generated from the registry.
+For user-facing functions, include a useful detailed description, equivalent
+formula or note, and a parseable example so the help dialog stays complete.
 
 ### Add a new constant
 

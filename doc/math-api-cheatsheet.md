@@ -144,13 +144,16 @@ Common values:
   - function ID
   - name
   - signature
-  - description
+  - short description
   - category
+  - detailed description
+  - equivalent formula or explanatory note
+  - loadable example
   - minimum and maximum arity
 - Used by:
   - parser known-function validation
   - evaluator strict arity checks and dispatch
-  - formula editor supported-functions reference
+  - formula editor supported-functions reference and details help
 
 ### `Core::Vec2`
 

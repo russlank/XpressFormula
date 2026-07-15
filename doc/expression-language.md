@@ -43,6 +43,12 @@ uses strict arity: too few or too many arguments return `NaN`. The one
 intentional variable-arity function is `log`, which supports `log(a)` and
 `log(base, value)`.
 
+The Formula Editor includes a richer Reference area with separate Functions and
+Examples tabs. Function rows have detailed help with the signature, category,
+long explanation, equivalent formula or explanatory note, and a loadable example.
+The Examples tab shows descriptions first, keeps long formulas wrapped in details
+views, and can load or copy formulas into the editor.
+
 ### Basic
 
 - `sqrt(a)` - square root, `NaN` for negative input
@@ -124,6 +130,9 @@ Negative radii or half-extents return `NaN`. Zero radii/extents are allowed.
 
 Noise is deterministic and uses no global random state or time-based seeding.
 Non-finite noise coordinates return `NaN`.
+In the Formula Editor help, procedural noise functions use explanatory notes
+instead of simple equivalent formulas because their implementations are not
+expressible as short formulas using the basic function set.
 
 ## Domain Rules
 
