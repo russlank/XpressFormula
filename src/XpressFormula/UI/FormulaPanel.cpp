@@ -1,9 +1,9 @@
 // FormulaPanel.cpp - Formula-list panel implementation.
 #include "FormulaPanel.h"
+#include "FormulaExamples.h"
 #include "imgui.h"
 #include <cstring>
 #include <algorithm>
-#include <array>
 #include <cstddef>
 
 namespace XpressFormula::UI {
@@ -11,12 +11,6 @@ namespace XpressFormula::UI {
 namespace {
 
 constexpr const char* kFormulaEditorPopupId = "Formula Editor";
-
-struct ExamplePattern {
-    const char* label;
-    const char* expression;
-    const bool includeInPresets = true;
-};
 
 const char* const kSupportedFunctions[] = {
     "sin(a)", "cos(a)", "tan(a)",
@@ -27,57 +21,6 @@ const char* const kSupportedFunctions[] = {
     "log(a)", "log(base, value)", "log2(a)", "log10(a)", "exp(a)",
     "pow(a, b)", "min(a, b)", "max(a, b)", "mod(a, b)",
 };
-
-// Example patterns to show in the editor reference. We use the same list for both the reference and the presets, 
-// but only a subset are included in the presets to keep that list more concise.
-constexpr auto kExamplePatterns = std::to_array<ExamplePattern>({
-    // {label, expression, includeInPresets}
-    { "2D curve",       "sin(x) * exp(-x*x/12)" },
-    { "2D curve (eq)",  "y = cos(x)" },
-    { "3D surface",     "z = sin(x) * cos(y)" },
-    { "3D surface alt", "sqrt(abs(x*y))" },
-    { "3D surface alt", "sin(sqrt(x^2+y^2))" },
-    { "3D surface alt", "sin(sqrt(x^2+y^2))+sin(1.1*sqrt((x-10)^2+y^2))+sin(1.4*sqrt((x-10)^2+(y-10)^2))+sin(2.1*sqrt((x)^2+(y-10)^2))" },
-    { "Implicit 2D",    "x^2 + y^2 = 100" },
-    { "Implicit 2D",    "pow(x,2)/25 + pow(y,2)/9 = 1" },
-    { "Implicit 2D",    "sin(sqrt(x^2+y^2))+sin(1.1*sqrt((x-10)^2+y^2))+sin(1.4*sqrt((x-10)^2+(y-10)^2))+sin(2.1*sqrt((x)^2+(y-10)^2))=0" },
-    { "Scalar field",   "x^2 + y^2 + z^2 = 16" },
-    { "Implicit 3D",    "(x^2+y^2+z^2+21)^2 - 100*(x^2+y^2) = 0" },
-    { "Implicit 3D",    "(x^2+y^2+z^2+5)^2 - 36*(x^2+y^2) = 0" },
-    { "Implicit 3D",    "pow(abs(pow(pow(abs(x),4)+pow(abs(y),4),0.25)-1.0),4)+pow(abs(z),4)=pow(0.35,4)" },
-    { "Implicit 3D",    "max(pow(pow(abs(x/1.25),6)+pow(abs(y/1.00),6)+pow(abs(z/0.82),6),1.0/6)-1,1-sqrt(pow(abs(y)/(0.28+0.17*pow(abs(x/1.25),4)),2)+pow(abs(z)/(0.24+0.15*pow(abs(x/1.25),4)),2)))=0" },
-    { "Implicit 3D",    "max(pow(pow(abs(x/1.18),8)+pow(abs(y/1.02),8)+pow(abs(z/0.88),8),1.0/8)-1,-min(sqrt(y^2+z^2)-(0.22+0.20*pow(abs(x/1.18),4)),min(sqrt(x^2+z^2)-(0.22+0.20*pow(abs(y/1.02),4)),sqrt(x^2+y^2)-(0.22+0.20*pow(abs(z/0.88),4)))))=0" },
-    { "Scalar field",   "sin(x) + cos(y) + z = 0" },
-});
-
-// constexpr functions to extract the expressions from the example patterns for presets.
-constexpr std::size_t presetCount()
-{
-    std::size_t count = 0;
-
-    for (const auto& p : kExamplePatterns)
-        if (p.includeInPresets)
-            ++count;
-
-    return count;
-}
-
-// Builds array of preset expressions at compile time.
-// Note: we rely on the compiler optimizing this away to avoid static initialization overhead, since the result is a simple array of string literals.
-constexpr auto makePresets()
-{
-    std::array<const char*, presetCount()> result{};
-
-    std::size_t out = 0;
-
-    for (const auto& p : kExamplePatterns)
-    {
-        if (p.includeInPresets)
-            result[out++] = p.expression;
-    }
-
-    return result;
-}
 
 void loadEditorText(char* dest, size_t destSize, const char* value) {
     if (!dest || destSize == 0) {
@@ -257,17 +200,30 @@ void FormulaPanel::render(std::vector<FormulaEntry>& formulas) {
 
     // --- Preset examples ---
     if (ImGui::CollapsingHeader("Presets")) {
-        constexpr auto presets = makePresets();
-        for (const char* p : presets) {
-            if (ImGui::SmallButton(p)) {
+        for (int i = 0; i < static_cast<int>(kExamplePatterns.size()); ++i) {
+            const ExamplePattern& preset = kExamplePatterns[i];
+            if (!preset.includeInPresets) {
+                continue;
+            }
+
+            ImGui::PushID(i);
+            if (ImGui::SmallButton(preset.label)) {
                 FormulaEntry entry;
-                strncpy_s(entry.inputBuffer, sizeof(entry.inputBuffer), p, _TRUNCATE);
+                strncpy_s(entry.inputBuffer, sizeof(entry.inputBuffer), preset.expression, _TRUNCATE);
                 int idx = m_nextColorIndex % kPaletteSize;
                 std::memcpy(entry.color, kDefaultPalette[idx], sizeof(entry.color));
                 m_nextColorIndex++;
                 entry.parse();
                 formulas.push_back(std::move(entry));
             }
+            if (ImGui::IsItemHovered()) {
+                ImGui::BeginTooltip();
+                ImGui::PushTextWrapPos(ImGui::GetFontSize() * 35.0f);
+                ImGui::TextUnformatted(preset.expression);
+                ImGui::PopTextWrapPos();
+                ImGui::EndTooltip();
+            }
+            ImGui::PopID();
         }
     }
 

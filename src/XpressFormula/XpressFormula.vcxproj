@@ -169,6 +169,7 @@
     <ClInclude Include="Core\Evaluator.h" />
     <ClInclude Include="Core\ViewTransform.h" />
     <ClInclude Include="UI\Application.h" />
+    <ClInclude Include="UI\FormulaExamples.h" />
     <ClInclude Include="UI\FormulaEntry.h" />
     <ClInclude Include="UI\FormulaPanel.h" />
     <ClInclude Include="UI\ControlPanel.h" />

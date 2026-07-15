@@ -1,9 +1,12 @@
 // FormulaEntryTests.cpp - Tests for formula parsing and render-mode classification.
 #include "CppUnitTest.h"
 #include "../XpressFormula/UI/FormulaEntry.h"
+#include "../XpressFormula/UI/FormulaExamples.h"
 #include "../XpressFormula/Core/Evaluator.h"
 #include <cstring>
 #include <cmath>
+#include <set>
+#include <string>
 
 using namespace Microsoft::VisualStudio::CppUnitTestFramework;
 using namespace XpressFormula::UI;
@@ -16,6 +19,22 @@ static FormulaEntry parseFormula(const char* text) {
     strncpy_s(entry.inputBuffer, sizeof(entry.inputBuffer), text, _TRUNCATE);
     entry.parse();
     return entry;
+}
+
+static std::wstring widen(const char* text) {
+    if (text == nullptr) {
+        return {};
+    }
+    return std::wstring(text, text + std::strlen(text));
+}
+
+static const ExamplePattern* findExample(const char* label) {
+    for (const ExamplePattern& example : kExamplePatterns) {
+        if (std::strcmp(example.label, label) == 0) {
+            return &example;
+        }
+    }
+    return nullptr;
 }
 
 TEST_CASE(FormulaEntry_ExpressionCurve2D) {
@@ -270,6 +289,59 @@ TEST_CASE(FormulaEntry_EquationSolvedForZ_RightSide) {
     Evaluator::Variables vars = { {"x", 3.0}, {"y", 4.0} };
     double value = Evaluator::evaluate(entry.ast, vars);
     Assert::IsTrue(std::abs(value - 25.0) < 1e-9);
+}
+
+TEST_CASE(FormulaEntry_AllBuiltinExamplesParse) {
+    std::set<std::string> labels;
+    std::set<std::string> expressions;
+    FormulaEntry bufferProbe;
+    const std::size_t inputBufferSize = sizeof(bufferProbe.inputBuffer);
+
+    for (const ExamplePattern& example : kExamplePatterns) {
+        Assert::IsTrue(example.label != nullptr && example.label[0] != '\0');
+        Assert::IsTrue(example.expression != nullptr && example.expression[0] != '\0');
+        Assert::IsTrue(std::strlen(example.expression) < inputBufferSize,
+            (std::wstring(L"Example exceeds FormulaEntry input buffer: ") + widen(example.label)).c_str());
+        Assert::IsTrue(labels.insert(example.label).second,
+            (std::wstring(L"Duplicate example label: ") + widen(example.label)).c_str());
+        Assert::IsTrue(expressions.insert(example.expression).second,
+            (std::wstring(L"Duplicate example expression: ") + widen(example.expression)).c_str());
+
+        FormulaEntry entry = parseFormula(example.expression);
+        Assert::IsTrue(entry.isValid(),
+            (std::wstring(L"Failed to parse built-in example: ") + widen(example.label)).c_str());
+    }
+}
+
+TEST_CASE(FormulaEntry_NewDecorativeExamplesAreImplicit3D) {
+    const char* labels[] = {
+        "Gyroid",
+        "Twisted gyroid",
+        "Schwarz P surface",
+        "Rounded cube with tunnels",
+        "Three-lobed torus",
+        "Heart",
+        "Metaball molecule",
+        "Wavy superellipsoid",
+        "Spiral seed pod",
+        "Symmetric cage",
+    };
+
+    for (const char* label : labels) {
+        const ExamplePattern* example = findExample(label);
+        Assert::IsTrue(example != nullptr,
+            (std::wstring(L"Missing decorative example: ") + widen(label)).c_str());
+
+        FormulaEntry entry = parseFormula(example->expression);
+        Assert::IsTrue(entry.isValid(),
+            (std::wstring(L"Invalid decorative example: ") + widen(label)).c_str());
+        Assert::IsTrue(entry.isEquation,
+            (std::wstring(L"Decorative example is not an equation: ") + widen(label)).c_str());
+        Assert::IsTrue(entry.renderKind == FormulaRenderKind::ScalarField3D,
+            (std::wstring(L"Decorative example is not implicit 3D: ") + widen(label)).c_str());
+        Assert::AreEqual(3, entry.variableCount,
+            (std::wstring(L"Decorative example does not use x, y, and z: ") + widen(label)).c_str());
+    }
 }
 
 } // namespace XpressFormulaTests

@@ -39,6 +39,7 @@
     <ClInclude Include="Core\Evaluator.h"><Filter>Core</Filter></ClInclude>
     <ClInclude Include="Core\ViewTransform.h"><Filter>Core</Filter></ClInclude>
     <ClInclude Include="UI\Application.h"><Filter>UI</Filter></ClInclude>
+    <ClInclude Include="UI\FormulaExamples.h"><Filter>UI</Filter></ClInclude>
     <ClInclude Include="UI\FormulaEntry.h"><Filter>UI</Filter></ClInclude>
     <ClInclude Include="UI\FormulaPanel.h"><Filter>UI</Filter></ClInclude>
     <ClInclude Include="UI\ControlPanel.h"><Filter>UI</Filter></ClInclude>
