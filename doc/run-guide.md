@@ -136,12 +136,13 @@ After launch:
    - `x^2+y^2+z^2=16` for an implicit 3D surface (`F(x,y,z)=0`)
    - `(x^2+y^2+z^2+21)^2 - 100*(x^2+y^2) = 0` for a torus-like implicit 3D surface
 3. In the **View Controls** section:
+   - Drag the vertical splitter between the sidebar and plot to resize the controls area; double-click the splitter to restore the default width.
    - In **2D / 3D Formula Rendering**, choose one of:
      - **Auto**: mixed visible 2D+3D formulas render in 2D; only visible 3D-capable formulas render in 3D.
      - **Force 3D Surfaces / Implicit**: always render 3D-capable formulas as 3D surfaces/meshes.
      - **Force 2D Heatmap / Cross-Section**: render `z=f(x,y)` and implicit `F(x,y,z)=0` in 2D representations.
    - Open the **Display** accordion to toggle **Show Grid**, **Show Coordinates**, **Show Wires**, and 3D display helpers such as **Show Envelope Box**, **Show XYZ Dimension Arrows**, and **Auto Rotate**.
-   - Tune azimuth, elevation, z-scale, surface density, implicit surface quality, and opacity in the **3D Camera** section.
+   - Tune azimuth, elevation, z-scale, surface density, implicit surface quality, and opacity in the aligned **3D Camera** property rows. Each row shows the current value, includes a reset button, and exposes a tooltip for technical controls.
    - In 3D mode, **Show Grid** draws a projected XY plane with translucent fill and thick frame. Surface rendering is split around `z=0` so the plane is visually interleaved between below-plane and above-plane geometry.
    - The **XYZ Dimension Arrows** gizmo is shown near the lower-left of the plot viewport only when coordinates are hidden (mutually exclusive with **Show Coordinates**).
    - Keep **Optimize Rendering** enabled for lower idle GPU usage and smoother 3D dragging/zooming (temporary interaction-time quality reduction for heavy implicit meshes).

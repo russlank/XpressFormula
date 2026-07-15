@@ -94,6 +94,7 @@ requirements.txt
 /build/**/*
 /artifacts/**/*
 /src/XpressFormula/imgui.ini
+/buildtmp_*/**/*
 
 .ai/**/*
 **/*/.ai/**/*

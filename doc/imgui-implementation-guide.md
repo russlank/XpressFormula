@@ -114,9 +114,10 @@ This is the core frame template you can reuse in similar apps.
 
 ## 6. Layout Strategy in This App
 
-The app uses two fixed ImGui windows that fill the OS window:
+The app uses borderless ImGui windows that fill the OS window:
 
 - left sidebar (`##Sidebar`)
+- vertical splitter (`##SidebarSplitter`)
 - right plot area (`##Plot`)
 
 This is done each frame by setting:
@@ -131,10 +132,12 @@ and then creating borderless windows with flags like:
 - `NoMove`
 - `NoCollapse`
 
+The sidebar width is owned by `Application` state and adjusted through the splitter each frame, with min/max constraints so the plot retains usable space.
+
 Why this pattern is useful:
 
 - simple, deterministic layout
-- no docking complexity
+- resizable controls without docking complexity
 - easy to extend for desktop tooling apps
 
 ## 7. State Ownership (Most Important ImGui Rule Here)

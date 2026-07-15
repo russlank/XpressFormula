@@ -22,11 +22,11 @@ XpressFormula is organized into three primary layers:
 - [`src/XpressFormula/Core/UpdateVersionUtils.h`](../src/XpressFormula/Core/UpdateVersionUtils.h)
   - Small header-only utilities for semantic-version parsing/comparison and extracting GitHub release fields from API JSON.
 - [`src/XpressFormula/UI/Application.h`](../src/XpressFormula/UI/Application.h) and [`src/XpressFormula/UI/Application.cpp`](../src/XpressFormula/UI/Application.cpp)
-  - Owns Win32 window, D3D11 resources, ImGui lifecycle, frame loop.
+  - Owns Win32 window, D3D11 resources, ImGui lifecycle, frame loop, and main sidebar/plot layout state.
 - [`src/XpressFormula/UI/FormulaPanel.h`](../src/XpressFormula/UI/FormulaPanel.h) and [`src/XpressFormula/UI/FormulaPanel.cpp`](../src/XpressFormula/UI/FormulaPanel.cpp)
   - Formula list management and per-formula controls.
 - [`src/XpressFormula/UI/ControlPanel.h`](../src/XpressFormula/UI/ControlPanel.h) and [`src/XpressFormula/UI/ControlPanel.cpp`](../src/XpressFormula/UI/ControlPanel.cpp)
-  - Global 2D view controls, display toggles (grid/coordinates/wires), 3D surface camera settings, and export dialog launch action.
+  - Global 2D view controls, display toggles (grid/coordinates/wires), aligned 3D display/camera property rows, and export dialog launch action.
 - [`src/XpressFormula/UI/PlotPanel.h`](../src/XpressFormula/UI/PlotPanel.h) and [`src/XpressFormula/UI/PlotPanel.cpp`](../src/XpressFormula/UI/PlotPanel.cpp)
   - Interactive plotting area, mouse interactions, and export-time plot render overrides (background/grid/coordinates/wires).
 - [`src/XpressFormula/Version.h`](../src/XpressFormula/Version.h)

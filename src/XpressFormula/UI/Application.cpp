@@ -520,12 +520,19 @@ void Application::renderFrame() {
     ImGui_ImplWin32_NewFrame();
     ImGui::NewFrame();
 
-    // We fill the entire OS window with two fixed ImGui windows (sidebar + plot)
+    // We fill the entire OS window with the sidebar, a splitter, and the plot.
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
     float totalW = viewport->WorkSize.x;
     float totalH = viewport->WorkSize.y;
-    float sidebar = kSidebarWidth;
-    if (sidebar > totalW * 0.45f) sidebar = totalW * 0.45f;
+    const float splitterWidth = kSidebarSplitterWidth;
+    const float availableForSidebar = totalW - splitterWidth - kMinPlotWidth;
+    const float dynamicMinSidebar = (std::min)(kMinSidebarWidth, (std::max)(180.0f, totalW * 0.38f));
+    const float maxSidebar = (std::min)(kMaxSidebarWidth,
+        (std::max)(dynamicMinSidebar, availableForSidebar));
+    m_sidebarWidth = std::clamp(m_sidebarWidth, dynamicMinSidebar, maxSidebar);
+    const float sidebar = m_sidebarWidth;
+    const float plotX = viewport->WorkPos.x + sidebar + splitterWidth;
+    const float plotWidth = (std::max)(1.0f, totalW - sidebar - splitterWidth);
 
     // ---- Left sidebar ----
     ImGui::SetNextWindowPos(viewport->WorkPos);
@@ -652,12 +659,49 @@ void Application::renderFrame() {
     }
     ImGui::End();
 
+    // ---- Sidebar splitter ----
+    ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + sidebar, viewport->WorkPos.y));
+    ImGui::SetNextWindowSize(ImVec2(splitterWidth, totalH));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    ImGui::Begin("##SidebarSplitter", nullptr,
+                 ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                 ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse |
+                 ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings |
+                 ImGuiWindowFlags_NoBackground);
+    ImGui::InvisibleButton("##SidebarSplitterHandle", ImVec2(splitterWidth, totalH),
+                           ImGuiButtonFlags_MouseButtonLeft);
+    if (ImGui::IsItemHovered() || ImGui::IsItemActive()) {
+        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+    }
+    if (ImGui::IsItemActive()) {
+        m_sidebarWidth = std::clamp(m_sidebarWidth + ImGui::GetIO().MouseDelta.x,
+                                    dynamicMinSidebar, maxSidebar);
+        m_redrawRequested = true;
+    }
+    if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+        m_sidebarWidth = std::clamp(kDefaultSidebarWidth, dynamicMinSidebar, maxSidebar);
+        m_redrawRequested = true;
+    }
+    {
+        const ImVec2 min = ImGui::GetItemRectMin();
+        const ImVec2 max = ImGui::GetItemRectMax();
+        const bool active = ImGui::IsItemActive();
+        const bool hovered = ImGui::IsItemHovered();
+        ImGui::GetWindowDrawList()->AddLine(
+            ImVec2((min.x + max.x) * 0.5f, min.y + 6.0f),
+            ImVec2((min.x + max.x) * 0.5f, max.y - 6.0f),
+            IM_COL32(120, 120, 128, hovered ? 230 : 150),
+            active ? 2.0f : 1.0f);
+    }
+    ImGui::End();
+    ImGui::PopStyleVar(2);
+
     renderExportDialog(sidebar, totalH);
 
     // ---- Plot area ----
-    ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + sidebar,
-                                   viewport->WorkPos.y));
-    ImGui::SetNextWindowSize(ImVec2(totalW - sidebar, totalH));
+    ImGui::SetNextWindowPos(ImVec2(plotX, viewport->WorkPos.y));
+    ImGui::SetNextWindowSize(ImVec2(plotWidth, totalH));
     ImGui::Begin("##Plot", nullptr,
                  ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
                  ImGuiWindowFlags_NoMove     | ImGuiWindowFlags_NoCollapse |

@@ -144,6 +144,7 @@ private:
     std::vector<FormulaEntry> m_formulas;
     Core::ViewTransform       m_viewTransform;
     PlotSettings              m_plotSettings;
+    float                     m_sidebarWidth = 360.0f;
     bool                      m_exportDialogOpen = false;
     bool                      m_exportDialogOpenRequested = false;
     bool                      m_exportDialogPopupOpenNextFrame = false;
@@ -187,7 +188,11 @@ private:
     ControlPanel  m_controlPanel;
     PlotPanel     m_plotPanel;
 
-    static constexpr float kSidebarWidth = 380.0f;
+    static constexpr float kDefaultSidebarWidth = 360.0f;
+    static constexpr float kMinSidebarWidth = 280.0f;
+    static constexpr float kMaxSidebarWidth = 600.0f;
+    static constexpr float kSidebarSplitterWidth = 8.0f;
+    static constexpr float kMinPlotWidth = 360.0f;
 };
 
 } // namespace XpressFormula::UI
