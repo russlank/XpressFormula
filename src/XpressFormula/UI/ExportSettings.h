@@ -45,6 +45,19 @@ enum class ExportSupersampling {
     X4 = 4
 };
 
+enum class ExportAspectMode {
+    PreserveMathematicalScale,
+    PreserveVisibleBounds,
+    CropToFill,
+    StretchToOutput
+};
+
+enum class ExportPreviewQuality {
+    Draft,
+    Normal,
+    Final
+};
+
 struct ExportSizePreset {
     const char* label;
     int width;
@@ -59,6 +72,36 @@ struct ExportQualitySettings {
     int implicitSurfaceResolution = 64;
     float wireThicknessScale = 1.0f;
     ExportSupersampling supersampling = ExportSupersampling::Off;
+};
+
+struct ExportWorldBounds {
+    double xMin = -1.0;
+    double xMax = 1.0;
+    double yMin = -1.0;
+    double yMax = 1.0;
+};
+
+struct ExportResolvedView {
+    int outputWidth = 0;
+    int outputHeight = 0;
+    ExportAspectMode aspectMode = ExportAspectMode::PreserveMathematicalScale;
+    ExportWorldBounds sourceBounds;
+    ExportWorldBounds visibleBounds;
+    double scaleX = 1.0;
+    double scaleY = 1.0;
+    double marginLeftPx = 0.0;
+    double marginRightPx = 0.0;
+    double marginTopPx = 0.0;
+    double marginBottomPx = 0.0;
+    double contentWidthPx = 0.0;
+    double contentHeightPx = 0.0;
+    bool uniformScale = true;
+};
+
+struct ExportPreviewSize {
+    int width = 0;
+    int height = 0;
+    bool reducedFromOutput = false;
 };
 
 inline int clampExportDimension(int value) {
@@ -113,6 +156,159 @@ inline std::uint64_t estimateRgbaBufferBytes(int width,
 
 inline double bytesToMiB(std::uint64_t bytes) {
     return static_cast<double>(bytes) / (1024.0 * 1024.0);
+}
+
+inline ExportWorldBounds normalizeWorldBounds(ExportWorldBounds bounds) {
+    if (bounds.xMin > bounds.xMax) {
+        std::swap(bounds.xMin, bounds.xMax);
+    }
+    if (bounds.yMin > bounds.yMax) {
+        std::swap(bounds.yMin, bounds.yMax);
+    }
+
+    constexpr double minRange = 1e-9;
+    const double centerX = (bounds.xMin + bounds.xMax) * 0.5;
+    const double centerY = (bounds.yMin + bounds.yMax) * 0.5;
+    double width = bounds.xMax - bounds.xMin;
+    double height = bounds.yMax - bounds.yMin;
+    if (!(width > minRange) || !std::isfinite(width)) {
+        width = 2.0;
+    }
+    if (!(height > minRange) || !std::isfinite(height)) {
+        height = 2.0;
+    }
+
+    bounds.xMin = centerX - width * 0.5;
+    bounds.xMax = centerX + width * 0.5;
+    bounds.yMin = centerY - height * 0.5;
+    bounds.yMax = centerY + height * 0.5;
+    return bounds;
+}
+
+inline double worldBoundsWidth(const ExportWorldBounds& bounds) {
+    return bounds.xMax - bounds.xMin;
+}
+
+inline double worldBoundsHeight(const ExportWorldBounds& bounds) {
+    return bounds.yMax - bounds.yMin;
+}
+
+inline ExportResolvedView resolveExportView(int outputWidth,
+                                            int outputHeight,
+                                            ExportWorldBounds sourceBounds,
+                                            ExportAspectMode aspectMode) {
+    ExportResolvedView resolved;
+    resolved.outputWidth = clampExportDimension(outputWidth);
+    resolved.outputHeight = clampExportDimension(outputHeight);
+    resolved.aspectMode = aspectMode;
+    resolved.sourceBounds = normalizeWorldBounds(sourceBounds);
+    resolved.visibleBounds = resolved.sourceBounds;
+
+    const double outW = static_cast<double>(resolved.outputWidth);
+    const double outH = static_cast<double>(resolved.outputHeight);
+    const double sourceW = worldBoundsWidth(resolved.sourceBounds);
+    const double sourceH = worldBoundsHeight(resolved.sourceBounds);
+    const double centerX = (resolved.sourceBounds.xMin + resolved.sourceBounds.xMax) * 0.5;
+    const double centerY = (resolved.sourceBounds.yMin + resolved.sourceBounds.yMax) * 0.5;
+    const double sourceAspect = sourceW / sourceH;
+    const double outputAspect = outW / outH;
+
+    auto setVisibleFromSize = [&](double width, double height) {
+        resolved.visibleBounds.xMin = centerX - width * 0.5;
+        resolved.visibleBounds.xMax = centerX + width * 0.5;
+        resolved.visibleBounds.yMin = centerY - height * 0.5;
+        resolved.visibleBounds.yMax = centerY + height * 0.5;
+    };
+
+    switch (aspectMode) {
+        case ExportAspectMode::PreserveVisibleBounds: {
+            const double scale = (std::min)(outW / sourceW, outH / sourceH);
+            resolved.scaleX = scale;
+            resolved.scaleY = scale;
+            resolved.contentWidthPx = sourceW * scale;
+            resolved.contentHeightPx = sourceH * scale;
+            resolved.marginLeftPx = (outW - resolved.contentWidthPx) * 0.5;
+            resolved.marginRightPx = outW - resolved.contentWidthPx - resolved.marginLeftPx;
+            resolved.marginTopPx = (outH - resolved.contentHeightPx) * 0.5;
+            resolved.marginBottomPx = outH - resolved.contentHeightPx - resolved.marginTopPx;
+            resolved.uniformScale = true;
+            break;
+        }
+        case ExportAspectMode::CropToFill: {
+            const double scale = (std::max)(outW / sourceW, outH / sourceH);
+            resolved.scaleX = scale;
+            resolved.scaleY = scale;
+            resolved.contentWidthPx = outW;
+            resolved.contentHeightPx = outH;
+            setVisibleFromSize(outW / scale, outH / scale);
+            resolved.uniformScale = true;
+            break;
+        }
+        case ExportAspectMode::StretchToOutput:
+            resolved.scaleX = outW / sourceW;
+            resolved.scaleY = outH / sourceH;
+            resolved.contentWidthPx = outW;
+            resolved.contentHeightPx = outH;
+            resolved.uniformScale = false;
+            break;
+        case ExportAspectMode::PreserveMathematicalScale:
+        default: {
+            double targetW = sourceW;
+            double targetH = sourceH;
+            if (outputAspect > sourceAspect) {
+                targetW = sourceH * outputAspect;
+            } else if (outputAspect < sourceAspect) {
+                targetH = sourceW / outputAspect;
+            }
+            setVisibleFromSize(targetW, targetH);
+            const double scale = outW / targetW;
+            resolved.scaleX = scale;
+            resolved.scaleY = scale;
+            resolved.contentWidthPx = outW;
+            resolved.contentHeightPx = outH;
+            resolved.uniformScale = true;
+            break;
+        }
+    }
+
+    resolved.marginLeftPx = (std::max)(0.0, resolved.marginLeftPx);
+    resolved.marginRightPx = (std::max)(0.0, resolved.marginRightPx);
+    resolved.marginTopPx = (std::max)(0.0, resolved.marginTopPx);
+    resolved.marginBottomPx = (std::max)(0.0, resolved.marginBottomPx);
+    resolved.contentWidthPx = (std::max)(1.0, resolved.contentWidthPx);
+    resolved.contentHeightPx = (std::max)(1.0, resolved.contentHeightPx);
+    return resolved;
+}
+
+inline int maxPreviewDimensionForQuality(ExportPreviewQuality quality) {
+    switch (quality) {
+        case ExportPreviewQuality::Draft: return 520;
+        case ExportPreviewQuality::Normal: return 960;
+        case ExportPreviewQuality::Final: return kMaxExportDimension;
+        default: return 960;
+    }
+}
+
+inline ExportPreviewSize resolveExportPreviewSize(int outputWidth,
+                                                  int outputHeight,
+                                                  ExportPreviewQuality quality) {
+    ExportPreviewSize resolved;
+    const int safeWidth = clampExportDimension(outputWidth);
+    const int safeHeight = clampExportDimension(outputHeight);
+    const int maxDimension = maxPreviewDimensionForQuality(quality);
+    const int longestSide = (std::max)(safeWidth, safeHeight);
+    if (quality == ExportPreviewQuality::Final || longestSide <= maxDimension) {
+        resolved.width = safeWidth;
+        resolved.height = safeHeight;
+        resolved.reducedFromOutput = false;
+        return resolved;
+    }
+
+    const double scale = static_cast<double>(maxDimension) / longestSide;
+    resolved.width = clampExportDimension(static_cast<int>(std::lround(safeWidth * scale)));
+    resolved.height = clampExportDimension(static_cast<int>(std::lround(safeHeight * scale)));
+    resolved.reducedFromOutput = true;
+    return resolved;
 }
 
 inline const std::array<ExportSizePreset, 8>& exportSizePresets() {
@@ -186,6 +382,40 @@ inline const char* exportSupersamplingLabel(ExportSupersampling supersampling) {
         case ExportSupersampling::X2: return "2x";
         case ExportSupersampling::X4: return "4x";
         default: return "Off";
+    }
+}
+
+inline const char* exportAspectModeLabel(ExportAspectMode mode) {
+    switch (mode) {
+        case ExportAspectMode::PreserveMathematicalScale: return "Preserve proportions";
+        case ExportAspectMode::PreserveVisibleBounds: return "Preserve visible bounds";
+        case ExportAspectMode::CropToFill: return "Crop to fill";
+        case ExportAspectMode::StretchToOutput: return "Stretch to output";
+        default: return "Preserve proportions";
+    }
+}
+
+inline const char* exportAspectModeTooltip(ExportAspectMode mode) {
+    switch (mode) {
+        case ExportAspectMode::PreserveMathematicalScale:
+            return "Keeps X and Y units equal and expands the world range when output aspect differs.";
+        case ExportAspectMode::PreserveVisibleBounds:
+            return "Keeps the exact current world bounds and adds centered margins when needed.";
+        case ExportAspectMode::CropToFill:
+            return "Keeps X and Y units equal, fills the output, and crops one axis when needed.";
+        case ExportAspectMode::StretchToOutput:
+            return "Keeps exact current bounds but may distort mathematical proportions.";
+        default:
+            return "";
+    }
+}
+
+inline const char* exportPreviewQualityLabel(ExportPreviewQuality quality) {
+    switch (quality) {
+        case ExportPreviewQuality::Draft: return "Draft";
+        case ExportPreviewQuality::Normal: return "Normal";
+        case ExportPreviewQuality::Final: return "Final";
+        default: return "Normal";
     }
 }
 

@@ -42,8 +42,10 @@ public:
         bool showAxisTriad = true;
         ExportBackgroundMode backgroundMode = ExportBackgroundMode::Current;
         ExportFormat format = ExportFormat::Png;
+        ExportAspectMode aspectMode = ExportAspectMode::PreserveMathematicalScale;
         ExportQualityMode qualityMode = ExportQualityMode::Interactive;
         ExportQualitySettings quality = qualitySettingsForPreset(ExportQualityPreset::Normal);
+        ExportPreviewQuality previewQuality = ExportPreviewQuality::Normal;
         bool autoRefreshPreview = false;
         bool openAfterSave = false;
         bool showInFolderAfterSave = false;
@@ -147,6 +149,7 @@ private:
     bool                      m_exportDialogPopupOpenNextFrame = false;
     bool                      m_exportDialogCenterOnOpen = false;
     bool                      m_exportDialogSizeInitialized = false;
+    float                     m_exportSettingsPaneWidth = 420.0f;
     ExportDialogSettings      m_exportDialogSettings;
     ExportDialogSettings      m_pendingExportSettings;
     bool                      m_scheduledSavePlotImage = false;
@@ -159,7 +162,12 @@ private:
     int                       m_exportPreviewHeight = 0;
     bool                      m_exportPreviewDirty = false;
     bool                      m_exportPreviewRefreshRequested = false;
+    bool                      m_exportPreviewUseFinalQualityOnce = false;
     std::chrono::steady_clock::time_point m_exportPreviewLastChanged;
+    float                     m_exportPreviewZoom = 0.0f; // 0 means fit to preview pane.
+    float                     m_exportPreviewPanX = 0.0f;
+    float                     m_exportPreviewPanY = 0.0f;
+    bool                      m_exportPreviewCheckerboard = true;
     std::string               m_exportPreviewStatus;
     std::string               m_exportStatus;
     std::wstring              m_lastExportSavedPath;

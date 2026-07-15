@@ -306,11 +306,12 @@ The UI does not directly save images when a button is clicked.
 Instead:
 
 1. `ControlPanel` returns a one-shot action to open the export dialog.
-2. `Application` owns and renders the export settings window (size, colors, background, include/exclude overlays).
-3. When the user clicks **Save** or **Copy**, `Application` stores pending export flags + a snapshot of export settings.
-4. Export dialog preview uses a cached offscreen render texture (refreshed outside the main UI frame to avoid nested ImGui frames).
-5. `PlotPanel` receives temporary render overrides for export and is rendered into a temporary offscreen D3D11 render target (plot-only ImGui frame).
-6. Export is processed after frame rendering (`processPendingExportActions()`), including pixel-format normalization (RGBA->BGRA, alpha handling) and post-processing (optional resize/grayscale), then file/clipboard output.
+2. `Application` owns and renders the export settings window (size, aspect mode, colors, background, include/exclude overlays, preview controls).
+3. Export aspect/framing is resolved through `ExportSettings` helpers before rendering so default exports preserve mathematical proportions.
+4. When the user clicks **Save As...** or **Copy**, `Application` stores pending export flags + a snapshot of export settings.
+5. Export dialog preview uses a cached offscreen render texture (refreshed outside the main UI frame to avoid nested ImGui frames), with Draft/Normal preview quality capped separately from final output.
+6. `PlotPanel` receives temporary render overrides for export and is rendered into a temporary offscreen D3D11 render target (plot-only ImGui frame).
+7. Export is processed after frame rendering (`processPendingExportActions()`), including pixel-format normalization (RGBA->BGRA, alpha handling) and post-processing (optional resize/grayscale), then file/clipboard output.
 
 This avoids mixing:
 

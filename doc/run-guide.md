@@ -154,7 +154,7 @@ Use the sidebar **Export** section:
 
 1. Click **Open Export Dialog...**.
 2. Configure export options in the tabbed settings pane:
-   - **Size**: choose the current viewport, a common preset, scale `1x`-`4x`, or custom `Width` / `Height`.
+   - **Size**: choose the current viewport, a common preset, scale `1x`-`4x`, custom `Width` / `Height`, and **Aspect Handling**.
    - **Appearance**: choose current, transparent, white, black, or custom background, and color vs grayscale output.
    - **Scene**: include/exclude grid, coordinates, wires, envelope, and the axis triad.
    - **Quality**: optionally override interactive quality for the export render only, including surface density, implicit-surface resolution, wire thickness scale, and supersampling.
@@ -162,16 +162,24 @@ Use the sidebar **Export** section:
 3. Use the right-side preview pane:
    - click **Refresh Preview** for a manual preview render.
    - enable **Auto Refresh** to refresh after a short debounce while changing settings.
+   - choose **Draft** or **Normal** preview quality, or click **Render Final-Quality Preview** for an exact expensive preview.
+   - use **Fit**, **100%**, zoom buttons, mouse-wheel zoom, and left-drag panning to inspect the preview.
    - transparent exports are shown over a checkerboard background.
-4. Click **Copy To Clipboard** to copy the exported plot image.
-5. Click **Save To File...** to save the exported plot as `.png` or `.bmp`.
+4. Use the footer actions:
+   - **Reset Settings** restores documented export defaults for the current view.
+   - **Copy** copies the exported plot image.
+   - **Save As...** saves the exported plot as `.png` or `.bmp`.
 
 Notes:
 
 - Export uses the current formulas and current view/zoom.
+- **Preserve proportions** is the default aspect mode and keeps equal X/Y world units visually equal, expanding the exported world range when needed.
+- **Preserve visible bounds** keeps the current world bounds and adds centered margins if the output aspect differs.
+- **Crop to fill** keeps proportions but crops one axis to fill the output.
+- **Stretch to output** matches the old behavior and can distort mathematical proportions.
 - Background/grid/coordinate/wire/envelope export options are applied only to an offscreen export render pass (the on-screen plot is not used as the export source).
 - Export size is the final image size. Supersampling, when enabled, renders a larger offscreen buffer and downsamples to the selected output size.
-- Quality overrides are applied only to preview/export rendering and do not mutate the interactive plot quality settings.
+- Quality overrides are applied only to preview/export rendering and do not mutate the interactive plot quality settings. Draft/Normal previews may use cheaper preview-only settings; final export still uses the configured final settings.
 - Transparent backgrounds are supported in PNG export. Some viewers may display fully transparent pixels as black because the RGB value of fully transparent pixels is not visually meaningful.
 
 ## Version Details / Build Metadata
