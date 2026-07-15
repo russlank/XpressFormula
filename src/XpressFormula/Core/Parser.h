@@ -47,7 +47,6 @@ private:
     size_t             m_pos = 0;
     std::string        m_error;
 
-    static const std::set<std::string> s_builtinFunctions;
     static const std::set<std::string> s_constants;
 };
 

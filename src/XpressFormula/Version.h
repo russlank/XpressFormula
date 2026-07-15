@@ -5,8 +5,8 @@
 // Semantic application version (major.minor.patch) plus an optional 4th Windows file-version part.
 // We keep the numeric pieces separate so they can be reused by both resource metadata and UI text.
 #define XF_VERSION_MAJOR 1
-#define XF_VERSION_MINOR 4
-#define XF_VERSION_PATCH 3
+#define XF_VERSION_MINOR 5
+#define XF_VERSION_PATCH 0
 #define XF_VERSION_BUILD 0
 
 // Windows VERSIONINFO resources expect a comma-separated numeric tuple, not a quoted string.

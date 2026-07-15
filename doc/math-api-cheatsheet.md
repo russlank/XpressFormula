@@ -25,6 +25,7 @@ Primary files:
 
 - [`src/XpressFormula/Core/Tokenizer.cpp`](../src/XpressFormula/Core/Tokenizer.cpp)
 - [`src/XpressFormula/Core/Parser.cpp`](../src/XpressFormula/Core/Parser.cpp)
+- [`src/XpressFormula/Core/FunctionRegistry.cpp`](../src/XpressFormula/Core/FunctionRegistry.cpp)
 - [`src/XpressFormula/UI/FormulaEntry.h`](../src/XpressFormula/UI/FormulaEntry.h)
 - [`src/XpressFormula/Core/Evaluator.cpp`](../src/XpressFormula/Core/Evaluator.cpp)
 - [`src/XpressFormula/Plotting/PlotRenderer.cpp`](../src/XpressFormula/Plotting/PlotRenderer.cpp)
@@ -132,6 +133,24 @@ Common values:
 - Defined in: [`src/XpressFormula/Core/Evaluator.h`](../src/XpressFormula/Core/Evaluator.h)
 - Used by:
   - all plot sampling paths (`Curve2D`, `Heatmap`, `CrossSection`, `Surface3D`, implicit contour/surface)
+
+### `Core::FunctionInfo` / Function Registry
+
+- Represents: shared metadata for every built-in expression function
+- Defined in:
+  - [`src/XpressFormula/Core/FunctionRegistry.h`](../src/XpressFormula/Core/FunctionRegistry.h)
+  - [`src/XpressFormula/Core/FunctionRegistry.cpp`](../src/XpressFormula/Core/FunctionRegistry.cpp)
+- Fields:
+  - function ID
+  - name
+  - signature
+  - description
+  - category
+  - minimum and maximum arity
+- Used by:
+  - parser known-function validation
+  - evaluator strict arity checks and dispatch
+  - formula editor supported-functions reference
 
 ### `Core::Vec2`
 
@@ -394,7 +413,7 @@ Files:
 
 | Goal | Primary place | Usually also touch |
 |---|---|---|
-| Add a new math function (e.g. `clamp`) | `Evaluator.cpp` | `Parser.cpp`, `FormulaPanel.cpp` function list, docs/tests |
+| Add a new math function (e.g. `clamp`) | `FunctionRegistry.cpp` + `Evaluator.cpp` | docs/tests; the Formula Editor reference is generated from the registry |
 | Add a constant (e.g. `phi`) | `MathConstants.h` | `Parser.cpp`, docs/tests |
 | Change operator behavior/precedence | `Parser.cpp` | tests, docs |
 | Change invalid math handling | `Evaluator.cpp` | renderers (if `NaN` policy changes) |

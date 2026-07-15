@@ -1,11 +1,35 @@
 // ParserTests.cpp - Unit tests for the expression parser.
 #include "CppUnitTest.h"
 #include "../XpressFormula/Core/Parser.h"
+#include "../XpressFormula/Core/FunctionRegistry.h"
+#include <cstring>
+#include <set>
+#include <string>
 
 using namespace Microsoft::VisualStudio::CppUnitTestFramework;
 using namespace XpressFormula::Core;
 
 namespace XpressFormulaTests {
+
+static std::wstring widenParserText(const char* text) {
+    if (text == nullptr) {
+        return {};
+    }
+    return std::wstring(text, text + std::strlen(text));
+}
+
+static std::string sampleCallFor(const FunctionInfo& info) {
+    std::string expression(info.name);
+    expression += "(";
+    for (int i = 0; i < info.minArity; ++i) {
+        if (i > 0) {
+            expression += ",";
+        }
+        expression += (i % 3 == 0) ? "x" : (i % 3 == 1) ? "y" : "z";
+    }
+    expression += ")";
+    return expression;
+}
 
 TEST_CASE(Parse_Number) {
         auto r = Parser::parse("42");
@@ -263,19 +287,68 @@ TEST_CASE(Parse_NegatedExpression) {
 }
 
 TEST_CASE(Parse_AllBuiltinFunctions) {
-    // Ensure all 25 builtin functions are accepted by the parser
-    const char* fns[] = {
-        "sin(x)", "cos(x)", "tan(x)", "asin(x)", "acos(x)", "atan(x)",
-        "sinh(x)", "cosh(x)", "tanh(x)", "sqrt(x)", "cbrt(x)",
-        "abs(x)", "ceil(x)", "floor(x)", "round(x)",
-        "log(x)", "log2(x)", "log10(x)", "exp(x)", "sign(x)",
-        "atan2(x,y)", "pow(x,y)", "min(x,y)", "max(x,y)", "mod(x,y)"
-    };
-    for (const char* fn : fns) {
-        auto r = Parser::parse(fn);
+    for (const FunctionInfo& info : functionRegistry()) {
+        const std::string expression = sampleCallFor(info);
+        auto r = Parser::parse(expression);
         Assert::IsTrue(r.success(),
-            (std::wstring(L"Failed to parse: ") + std::wstring(fn, fn + strlen(fn))).c_str());
+            (std::wstring(L"Failed to parse: ") + widenParserText(expression.c_str())).c_str());
     }
+}
+
+TEST_CASE(Parse_FunctionRegistryMetadataIsValid) {
+    std::set<std::string> names;
+
+    for (const FunctionInfo& info : functionRegistry()) {
+        Assert::IsTrue(info.name != nullptr && info.name[0] != '\0');
+        Assert::IsTrue(info.signature != nullptr && info.signature[0] != '\0');
+        Assert::IsTrue(info.description != nullptr && info.description[0] != '\0');
+        Assert::IsTrue(info.category != nullptr && info.category[0] != '\0');
+        Assert::IsTrue(info.minArity >= 0);
+        Assert::IsTrue(info.maxArity >= info.minArity);
+        Assert::IsTrue(names.insert(info.name).second,
+            (std::wstring(L"Duplicate function name: ") + widenParserText(info.name)).c_str());
+    }
+}
+
+TEST_CASE(Parse_NewHelperFunctions) {
+    const char* expressions[] = {
+        "hypot(3,4)",
+        "length3(x,y,z)",
+        "clamp(x,0,1)",
+        "mix(a,b,t)",
+        "smoothstep(0,1,x)",
+        "fract(x)",
+        "smin(a,b,0.2)",
+        "sdBox(x,y,z,1,1,1)",
+        "sdTorus(x,y,z,1.2,0.25)",
+        "noise2(x,y)",
+        "noise3(x,y,z)",
+        "fbm2(x,y)",
+        "fbm3(x,y,z)",
+    };
+
+    for (const char* expression : expressions) {
+        auto r = Parser::parse(expression);
+        Assert::IsTrue(r.success(),
+            (std::wstring(L"Failed to parse new helper: ") + widenParserText(expression)).c_str());
+    }
+}
+
+TEST_CASE(Parse_NewFunctionManyArguments) {
+    auto r = Parser::parse("distance3(0,0,0,1,2,2)");
+    Assert::IsTrue(r.success());
+    auto* fn = static_cast<FunctionCallNode*>(r.ast.get());
+    Assert::AreEqual(std::string("distance3"), fn->name);
+    Assert::AreEqual(size_t(6), fn->arguments.size());
+}
+
+TEST_CASE(Parse_NestedNewFunctionsCollectVariables) {
+    auto r = Parser::parse("smoothstep(0,1,noise3(x,length2(y,z),fbm2(x,y)))");
+    Assert::IsTrue(r.success());
+    Assert::AreEqual(size_t(3), r.variables.size());
+    Assert::IsTrue(r.variables.count("x") == 1);
+    Assert::IsTrue(r.variables.count("y") == 1);
+    Assert::IsTrue(r.variables.count("z") == 1);
 }
 
 TEST_CASE(Parse_VariableCollection) {

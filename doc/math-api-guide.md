@@ -300,15 +300,28 @@ This keeps the plotting pipeline robust and simple.
 
 ### Built-in function dispatch
 
-`evaluateFunction(name, args)` maps parsed function names to `<cmath>` operations.
+Built-in function metadata lives in:
 
-Examples supported:
+- [`src/XpressFormula/Core/FunctionRegistry.h`](../src/XpressFormula/Core/FunctionRegistry.h)
+- [`src/XpressFormula/Core/FunctionRegistry.cpp`](../src/XpressFormula/Core/FunctionRegistry.cpp)
 
-- `sin`, `cos`, `tan`
-- `sqrt`, `cbrt`, `abs`
-- `log`, `log2`, `log10`, `exp`
-- `pow`, `min`, `max`, `mod`
-- `atan2`
+The registry stores each function's parser name, UI signature, help text,
+category, function ID, and min/max arity. `Parser` uses the registry to reject
+unknown function names. `Evaluator::evaluateFunction(name, args)` then looks up
+the same metadata, applies strict arity checks, and dispatches by `FunctionId`.
+
+The function set includes:
+
+- basic math: `sqrt`, `cbrt`, `abs`, `log`, `pow`, `min`, `max`, `mod`, `sign`
+- trigonometry: `sin`, `cos`, `tan`, inverse trig, hyperbolic trig, `atan2`
+- distance helpers: `hypot`, `length2`, `length3`, `distance2`, `distance3`
+- range/interpolation helpers: `clamp`, `saturate`, `mix`, `lerp`, `smoothstep`
+- pattern helpers: `fract`, `tri`, `pulse`, `repeat`
+- implicit composition and SDF helpers: `smin`, `smax`, `sdSphere`, `sdBox`, `sdTorus`, cylinders
+- deterministic procedural noise: `noise2`, `noise3`, `fbm2`, `fbm3`
+
+Wrong argument counts return `NaN`; `log` intentionally supports both one and
+two arguments.
 
 ### Standard library dependencies and why
 
@@ -676,10 +689,13 @@ This is normal and expected in interactive plotting tools.
 
 ### Add a new built-in function
 
-1. Add the function name to `Parser::s_builtinFunctions`
-2. Implement it in `Evaluator::evaluateFunction`
-3. Add examples/docs/tests
-4. Add it to Formula Editor "Supported functions" list if user-facing
+1. Add the metadata row in `FunctionRegistry.cpp`
+2. Add a `FunctionId` in `FunctionRegistry.h`
+3. Implement the dispatch case in `Evaluator::evaluateFunction`
+4. Add parser, evaluator, docs, and example tests
+5. Update `expression-language.md`
+
+The Formula Editor supported-functions reference is generated from the registry.
 
 ### Add a new constant
 

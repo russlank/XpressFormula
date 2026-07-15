@@ -1,26 +1,18 @@
 // FormulaPanel.cpp - Formula-list panel implementation.
 #include "FormulaPanel.h"
 #include "FormulaExamples.h"
+#include "../Core/FunctionRegistry.h"
 #include "imgui.h"
 #include <cstring>
 #include <algorithm>
 #include <cstddef>
+#include <string_view>
 
 namespace XpressFormula::UI {
 
 namespace {
 
 constexpr const char* kFormulaEditorPopupId = "Formula Editor";
-
-const char* const kSupportedFunctions[] = {
-    "sin(a)", "cos(a)", "tan(a)",
-    "asin(a)", "acos(a)", "atan(a)", "atan2(y, x)",
-    "sinh(a)", "cosh(a)", "tanh(a)",
-    "sqrt(a)", "cbrt(a)", "abs(a)", "sign(a)",
-    "ceil(a)", "floor(a)", "round(a)",
-    "log(a)", "log(base, value)", "log2(a)", "log10(a)", "exp(a)",
-    "pow(a, b)", "min(a, b)", "max(a, b)", "mod(a, b)",
-};
 
 void loadEditorText(char* dest, size_t destSize, const char* value) {
     if (!dest || destSize == 0) {
@@ -155,8 +147,17 @@ void FormulaPanel::renderEditorDialog(std::vector<FormulaEntry>& formulas) {
         ImGui::BeginChild("FormulaEditorFunctions", ImVec2(leftWidth, refsHeight), true);
         ImGui::TextUnformatted("Supported functions");
         ImGui::Separator();
-        for (const char* fn : kSupportedFunctions) {
-            ImGui::BulletText("%s", fn);
+        std::string_view currentCategory;
+        for (const Core::FunctionInfo& fn : Core::functionRegistry()) {
+            const std::string_view category(fn.category);
+            if (currentCategory != category) {
+                if (!currentCategory.empty()) {
+                    ImGui::Dummy(ImVec2(0.0f, 3.0f));
+                }
+                currentCategory = category;
+                ImGui::TextDisabled("%s", fn.category);
+            }
+            ImGui::BulletText("%s - %s", fn.signature, fn.description);
         }
         ImGui::EndChild();
 
@@ -166,8 +167,9 @@ void FormulaPanel::renderEditorDialog(std::vector<FormulaEntry>& formulas) {
         ImGui::TextUnformatted("Example patterns");
         ImGui::TextDisabled("Click row or Load");
         ImGui::Separator();
-        for (int i = 0; i < static_cast<int>(kExamplePatterns.size()); ++i) {
-            const ExamplePattern& example = kExamplePatterns[i];
+        const auto examples = examplePatterns();
+        for (int i = 0; i < static_cast<int>(examples.size()); ++i) {
+            const ExamplePattern& example = examples[i];
             ImGui::PushID(i);
             if (ImGui::SmallButton("Load")) {
                 loadEditorText(m_editorBuffer, sizeof(m_editorBuffer), example.expression);
@@ -200,8 +202,9 @@ void FormulaPanel::render(std::vector<FormulaEntry>& formulas) {
 
     // --- Preset examples ---
     if (ImGui::CollapsingHeader("Presets")) {
-        for (int i = 0; i < static_cast<int>(kExamplePatterns.size()); ++i) {
-            const ExamplePattern& preset = kExamplePatterns[i];
+        const auto examples = examplePatterns();
+        for (int i = 0; i < static_cast<int>(examples.size()); ++i) {
+            const ExamplePattern& preset = examples[i];
             if (!preset.includeInPresets) {
                 continue;
             }

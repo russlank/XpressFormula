@@ -2,18 +2,11 @@
 #include "Parser.h"
 #include "Tokenizer.h"
 #include "MathConstants.h"
+#include "FunctionRegistry.h"
 
 namespace XpressFormula::Core {
 
 // ---- built-in names ---------------------------------------------------------
-const std::set<std::string> Parser::s_builtinFunctions = {
-    "sin",  "cos",  "tan",  "asin", "acos", "atan", "atan2",
-    "sinh", "cosh", "tanh",
-    "sqrt", "cbrt", "abs",  "ceil", "floor","round",
-    "log",  "log2", "log10","exp",
-    "min",  "max",  "pow",  "mod",  "sign"
-};
-
 const std::set<std::string> Parser::s_constants = { "pi", "e", "tau" };
 
 // ---- construction -----------------------------------------------------------
@@ -143,7 +136,7 @@ ASTNodePtr Parser::parsePrimary() {
 
         // Function call?
         if (current().type == TokenType::LeftParen) {
-            if (s_builtinFunctions.find(name) == s_builtinFunctions.end()) {
+            if (!isBuiltinFunction(name)) {
                 m_error = "Unknown function '" + name +
                           "' at position " + std::to_string(pos);
                 return nullptr;

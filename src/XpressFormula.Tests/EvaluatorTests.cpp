@@ -23,6 +23,15 @@ static void assertClose(double expected, double actual,
         (std::to_wstring(expected) + L" != " + std::to_wstring(actual)).c_str());
 }
 
+static void assertNaN(double actual) {
+    Assert::IsTrue(std::isnan(actual));
+}
+
+static void assertInNoiseRange(double actual) {
+    Assert::IsTrue(std::isfinite(actual));
+    Assert::IsTrue(actual >= -1.000001 && actual <= 1.000001);
+}
+
 // --- Literals ---
 TEST_CASE(Eval_Number) {
     assertClose(42.0, eval("42"));
@@ -337,15 +346,13 @@ TEST_CASE(Eval_ScientificNotation) {
     assertClose(0.0015, eval("1.5e-3"));
 }
 
-// --- Arity edge cases (recent fix) ---
+// --- Arity edge cases ---
 TEST_CASE(Eval_SingleArgFuncWithTwoArgs) {
-    // sin(x, y) with 2 args should fall back to sin(x) per recent fix
-    // Parser allows arbitrary args; evaluator handles gracefully
     auto r = Parser::parse("sin(x, y)");
     Assert::IsTrue(r.success());
     Evaluator::Variables vars = { {"x", 0.0}, {"y", 999.0} };
     double result = Evaluator::evaluate(r.ast, vars);
-    assertClose(0.0, result); // sin(0) = 0, y is ignored
+    assertNaN(result);
 }
 
 TEST_CASE(Eval_SingleArgFuncWithThreeArgs) {
@@ -353,22 +360,27 @@ TEST_CASE(Eval_SingleArgFuncWithThreeArgs) {
     Assert::IsTrue(r.success());
     Evaluator::Variables vars = { {"x", -5.0}, {"y", 1.0}, {"z", 2.0} };
     double result = Evaluator::evaluate(r.ast, vars);
-    assertClose(5.0, result); // abs(-5) = 5, y and z ignored
+    assertNaN(result);
 }
 
 TEST_CASE(Eval_TwoArgFuncWithExtraArgs) {
     auto r = Parser::parse("log(10, 100, 999)");
     Assert::IsTrue(r.success());
     double result = Evaluator::evaluate(r.ast, {});
-    assertClose(2.0, result); // extras ignored, preserve 2-arg log(base, value)
+    assertNaN(result);
+}
+
+TEST_CASE(Eval_StrictArityForNewFunctions) {
+    assertNaN(eval("clamp(1, 2)"));
+    assertNaN(eval("pow(2, 3, 4)"));
+    assertNaN(eval("length3(1, 2)"));
 }
 
 TEST_CASE(Eval_EmptyArgFunction) {
-    // sin() with no args → NaN (args.empty() returns NaN)
     auto r = Parser::parse("sin()");
     Assert::IsTrue(r.success());
     double result = Evaluator::evaluate(r.ast, {});
-    Assert::IsTrue(std::isnan(result));
+    assertNaN(result);
 }
 
 // --- Unary edge cases ---
@@ -432,6 +444,129 @@ TEST_CASE(Eval_NestedFunctions) {
 TEST_CASE(Eval_FunctionOfExpression) {
     // sqrt(3^2 + 4^2) = sqrt(25) = 5
     assertClose(5.0, eval("sqrt(3^2 + 4^2)"));
+}
+
+// --- Geometry and distance helpers ---
+TEST_CASE(Eval_DistanceHelpers) {
+    assertClose(5.0, eval("hypot(3,4)"));
+    assertClose(5.0, eval("length2(3,4)"));
+    assertClose(3.0, eval("length3(1,2,2)"));
+    assertClose(5.0, eval("distance2(0,0,3,4)"));
+    assertClose(3.0, eval("distance3(0,0,0,1,2,2)"));
+}
+
+// --- Range and interpolation helpers ---
+TEST_CASE(Eval_RangeInterpolationHelpers) {
+    assertClose(1.0, eval("clamp(2,0,1)"));
+    assertClose(0.0, eval("clamp(-1,0,1)"));
+    assertClose(0.4, eval("clamp(0.4,0,1)"));
+    assertClose(0.4, eval("clamp(0.4,1,0)"));
+    assertClose(1.0, eval("saturate(2)"));
+    assertClose(12.5, eval("mix(10,20,0.25)"));
+    assertClose(12.5, eval("lerp(10,20,0.25)"));
+    assertClose(25.0, eval("mix(10,20,1.5)"));
+    assertClose(0.5, eval("inverseLerp(10,20,15)"));
+    assertClose(150.0, eval("remap(0,10,100,200,5)"));
+    assertClose(0.0, eval("step(3,2)"));
+    assertClose(1.0, eval("step(3,3)"));
+    assertClose(1.0, eval("step(3,4)"));
+    assertClose(0.0, eval("smoothstep(0,1,0)"));
+    assertClose(1.0, eval("smoothstep(0,1,1)"));
+    assertClose(0.5, eval("smoothstep(0,1,0.5)"));
+    assertClose(0.5, eval("smootherstep(0,1,0.5)"));
+}
+
+TEST_CASE(Eval_RangeInterpolationInvalids) {
+    assertNaN(eval("inverseLerp(1,1,0.5)"));
+    assertNaN(eval("remap(1,1,0,10,0.5)"));
+    assertNaN(eval("smoothstep(1,1,0.5)"));
+    assertNaN(eval("smootherstep(1,1,0.5)"));
+}
+
+TEST_CASE(Eval_MixAndLerpAliasesMatch) {
+    const double mixValue = eval("mix(-2,8,0.37)");
+    const double lerpValue = eval("lerp(-2,8,0.37)");
+    assertClose(mixValue, lerpValue);
+}
+
+// --- Pattern helpers ---
+TEST_CASE(Eval_PatternHelpers) {
+    assertClose(0.25, eval("fract(1.25)"));
+    assertClose(0.75, eval("fract(-0.25)"));
+    assertClose(1.0, eval("tri(0)"));
+    assertClose(1.0, eval("pulse(0.25,0.75,0.5)"));
+    assertClose(0.0, eval("pulse(0.25,0.75,0.9)"));
+    assertClose(1.0, eval("pulse(0.75,0.25,0.5)"));
+    assertClose(0.25, eval("repeat(1.25,1)"));
+}
+
+TEST_CASE(Eval_PatternInvalids) {
+    assertNaN(eval("repeat(1,0)"));
+}
+
+// --- Smooth implicit composition helpers ---
+TEST_CASE(Eval_SmoothImplicitCompositionHelpers) {
+    assertClose(1.0, eval("smin(1,2,0)"));
+    assertClose(2.0, eval("smax(1,2,0)"));
+    Assert::IsTrue(eval("smin(1,1.2,0.5)") < 1.0);
+    Assert::IsTrue(eval("smax(1,1.2,0.5)") > 1.2);
+}
+
+// --- Signed-distance helpers ---
+TEST_CASE(Eval_SignedDistanceHelpers) {
+    assertClose(0.0, eval("sdSphere(1,0,0,1)"));
+    assertClose(-1.0, eval("sdSphere(0,0,0,1)"));
+    assertClose(-0.25, eval("sdTorus(1.2,0,0,1.2,0.25)"));
+    assertClose(0.0, eval("sdCylinderX(0,0.3,0.4,0.5)"));
+    assertClose(0.0, eval("sdCylinderY(0.3,0,0.4,0.5)"));
+    assertClose(0.0, eval("sdCylinderZ(0.3,0.4,0,0.5)"));
+    assertClose(0.0, eval("sdBox(1,0,0,1,1,1)"));
+    assertClose(-1.0, eval("sdBox(0,0,0,1,1,1)"));
+}
+
+TEST_CASE(Eval_SignedDistanceInvalids) {
+    assertNaN(eval("sdSphere(0,0,0,-1)"));
+    assertNaN(eval("sdBox(0,0,0,-1,1,1)"));
+    assertNaN(eval("sdTorus(0,0,0,-1,0.2)"));
+    assertNaN(eval("sdTorus(0,0,0,1,-0.2)"));
+    assertNaN(eval("sdCylinderX(0,0,0,-1)"));
+    assertNaN(eval("sdCylinderY(0,0,0,-1)"));
+    assertNaN(eval("sdCylinderZ(0,0,0,-1)"));
+}
+
+// --- Procedural noise helpers ---
+TEST_CASE(Eval_NoiseHelpersAreDeterministicAndInRange) {
+    const double n2a = eval("noise2(0.25,-1.75)");
+    const double n2b = eval("noise2(0.25,-1.75)");
+    const double n3a = eval("noise3(0.25,-1.75,2.5)");
+    const double n3b = eval("noise3(0.25,-1.75,2.5)");
+    const double f2a = eval("fbm2(0.25,-1.75)");
+    const double f2b = eval("fbm2(0.25,-1.75)");
+    const double f3a = eval("fbm3(0.25,-1.75,2.5)");
+    const double f3b = eval("fbm3(0.25,-1.75,2.5)");
+
+    assertClose(n2a, n2b);
+    assertClose(n3a, n3b);
+    assertClose(f2a, f2b);
+    assertClose(f3a, f3b);
+    assertInNoiseRange(n2a);
+    assertInNoiseRange(n3a);
+    assertInNoiseRange(f2a);
+    assertInNoiseRange(f3a);
+}
+
+TEST_CASE(Eval_NoiseHelpersVaryByInputAndHandleLargeCoordinates) {
+    const double n2a = eval("noise2(0.25,-1.75)");
+    const double n2b = eval("noise2(12.875,4.125)");
+    const double n3a = eval("noise3(0.25,-1.75,2.5)");
+    const double n3b = eval("noise3(12.875,4.125,-9.5)");
+
+    Assert::IsTrue(std::abs(n2a - n2b) > 1e-12);
+    Assert::IsTrue(std::abs(n3a - n3b) > 1e-12);
+    assertInNoiseRange(eval("noise2(123456789,-987654321)"));
+    assertInNoiseRange(eval("noise3(123456789,-987654321,55555555)"));
+    assertInNoiseRange(eval("fbm2(123456789,-987654321)"));
+    assertInNoiseRange(eval("fbm3(123456789,-987654321,55555555)"));
 }
 
 // --- Multiple variables ---

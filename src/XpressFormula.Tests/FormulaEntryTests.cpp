@@ -29,7 +29,7 @@ static std::wstring widen(const char* text) {
 }
 
 static const ExamplePattern* findExample(const char* label) {
-    for (const ExamplePattern& example : kExamplePatterns) {
+    for (const ExamplePattern& example : examplePatterns()) {
         if (std::strcmp(example.label, label) == 0) {
             return &example;
         }
@@ -297,7 +297,9 @@ TEST_CASE(FormulaEntry_AllBuiltinExamplesParse) {
     FormulaEntry bufferProbe;
     const std::size_t inputBufferSize = sizeof(bufferProbe.inputBuffer);
 
-    for (const ExamplePattern& example : kExamplePatterns) {
+    Evaluator::Variables vars = { {"x", 0.37}, {"y", -0.21}, {"z", 0.43} };
+
+    for (const ExamplePattern& example : examplePatterns()) {
         Assert::IsTrue(example.label != nullptr && example.label[0] != '\0');
         Assert::IsTrue(example.expression != nullptr && example.expression[0] != '\0');
         Assert::IsTrue(std::strlen(example.expression) < inputBufferSize,
@@ -310,6 +312,10 @@ TEST_CASE(FormulaEntry_AllBuiltinExamplesParse) {
         FormulaEntry entry = parseFormula(example.expression);
         Assert::IsTrue(entry.isValid(),
             (std::wstring(L"Failed to parse built-in example: ") + widen(example.label)).c_str());
+
+        const double value = Evaluator::evaluate(entry.ast, vars);
+        Assert::IsTrue(std::isfinite(value),
+            (std::wstring(L"Built-in example did not evaluate to a finite sample: ") + widen(example.label)).c_str());
     }
 }
 
@@ -325,6 +331,11 @@ TEST_CASE(FormulaEntry_NewDecorativeExamplesAreImplicit3D) {
         "Wavy superellipsoid",
         "Spiral seed pod",
         "Symmetric cage",
+        "Asteroid sphere",
+        "Smooth double blob",
+        "Box with round tunnel",
+        "Wavy torus",
+        "Morphed sphere cube",
     };
 
     for (const char* label : labels) {
@@ -341,6 +352,42 @@ TEST_CASE(FormulaEntry_NewDecorativeExamplesAreImplicit3D) {
             (std::wstring(L"Decorative example is not implicit 3D: ") + widen(label)).c_str());
         Assert::AreEqual(3, entry.variableCount,
             (std::wstring(L"Decorative example does not use x, y, and z: ") + widen(label)).c_str());
+    }
+}
+
+TEST_CASE(FormulaEntry_NewHelperExamplesUseExpectedRenderKinds) {
+    struct ExpectedExample {
+        const char* label;
+        FormulaRenderKind renderKind;
+        int variableCount;
+        bool isEquation;
+    };
+
+    const ExpectedExample expected[] = {
+        { "Wavy radial surface", FormulaRenderKind::Surface3D, 2, true },
+        { "Noisy terrain", FormulaRenderKind::Surface3D, 2, true },
+        { "Repeated cell pattern", FormulaRenderKind::Implicit2D, 2, true },
+        { "Asteroid sphere", FormulaRenderKind::ScalarField3D, 3, true },
+        { "Smooth double blob", FormulaRenderKind::ScalarField3D, 3, true },
+        { "Box with round tunnel", FormulaRenderKind::ScalarField3D, 3, true },
+        { "Wavy torus", FormulaRenderKind::ScalarField3D, 3, true },
+        { "Morphed sphere cube", FormulaRenderKind::ScalarField3D, 3, true },
+    };
+
+    for (const ExpectedExample& item : expected) {
+        const ExamplePattern* example = findExample(item.label);
+        Assert::IsTrue(example != nullptr,
+            (std::wstring(L"Missing helper example: ") + widen(item.label)).c_str());
+
+        FormulaEntry entry = parseFormula(example->expression);
+        Assert::IsTrue(entry.isValid(),
+            (std::wstring(L"Invalid helper example: ") + widen(item.label)).c_str());
+        Assert::IsTrue(entry.renderKind == item.renderKind,
+            (std::wstring(L"Unexpected render kind for helper example: ") + widen(item.label)).c_str());
+        Assert::AreEqual(item.variableCount, entry.variableCount,
+            (std::wstring(L"Unexpected variable count for helper example: ") + widen(item.label)).c_str());
+        Assert::AreEqual(item.isEquation, entry.isEquation,
+            (std::wstring(L"Unexpected equation flag for helper example: ") + widen(item.label)).c_str());
     }
 }
 

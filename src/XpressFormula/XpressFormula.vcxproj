@@ -1,10 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
-    <ProjectConfiguration Include="Debug|Win32"><Configuration>Debug</Configuration><Platform>Win32</Platform></ProjectConfiguration>
-    <ProjectConfiguration Include="Release|Win32"><Configuration>Release</Configuration><Platform>Win32</Platform></ProjectConfiguration>
-    <ProjectConfiguration Include="Debug|x64"><Configuration>Debug</Configuration><Platform>x64</Platform></ProjectConfiguration>
-    <ProjectConfiguration Include="Release|x64"><Configuration>Release</Configuration><Platform>x64</Platform></ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|Win32">
+      <Configuration>Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32">
+      <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>17.0</VCProjectVersion>
@@ -24,14 +36,14 @@
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
     <!-- <PlatformToolset>v145</PlatformToolset> -->
-    <PlatformToolset>v143</PlatformToolset>
+    <PlatformToolset>v145</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
     <!-- <PlatformToolset>v145</PlatformToolset> -->
-    <PlatformToolset>v143</PlatformToolset>
+    <PlatformToolset>v145</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
@@ -39,14 +51,14 @@
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
     <!-- <PlatformToolset>v145</PlatformToolset> -->
-    <PlatformToolset>v143</PlatformToolset>
+    <PlatformToolset>v145</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
     <!-- <PlatformToolset>v145</PlatformToolset> -->
-    <PlatformToolset>v143</PlatformToolset>
+    <PlatformToolset>v145</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
@@ -70,7 +82,7 @@
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>XF_BUILD_REPO_URL=&quot;$(XfBuildRepoUrl)&quot;;XF_BUILD_BRANCH=&quot;$(XfBuildBranch)&quot;;XF_BUILD_COMMIT=&quot;$(XfBuildCommit)&quot;;XF_BUILD_VERSION=&quot;$(XfBuildVersion)&quot;;WIN32;_DEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>XF_BUILD_REPO_URL="$(XfBuildRepoUrl)";XF_BUILD_BRANCH="$(XfBuildBranch)";XF_BUILD_COMMIT="$(XfBuildCommit)";XF_BUILD_VERSION="$(XfBuildVersion)";WIN32;_DEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <AdditionalIncludeDirectories>$(ProjectDir);$(SolutionDir)vendor\imgui;$(SolutionDir)vendor\imgui\backends;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
@@ -87,7 +99,7 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>XF_BUILD_REPO_URL=&quot;$(XfBuildRepoUrl)&quot;;XF_BUILD_BRANCH=&quot;$(XfBuildBranch)&quot;;XF_BUILD_COMMIT=&quot;$(XfBuildCommit)&quot;;XF_BUILD_VERSION=&quot;$(XfBuildVersion)&quot;;WIN32;NDEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>XF_BUILD_REPO_URL="$(XfBuildRepoUrl)";XF_BUILD_BRANCH="$(XfBuildBranch)";XF_BUILD_COMMIT="$(XfBuildCommit)";XF_BUILD_VERSION="$(XfBuildVersion)";WIN32;NDEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <AdditionalIncludeDirectories>$(ProjectDir);$(SolutionDir)vendor\imgui;$(SolutionDir)vendor\imgui\backends;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
@@ -104,7 +116,7 @@
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>XF_BUILD_REPO_URL=&quot;$(XfBuildRepoUrl)&quot;;XF_BUILD_BRANCH=&quot;$(XfBuildBranch)&quot;;XF_BUILD_COMMIT=&quot;$(XfBuildCommit)&quot;;XF_BUILD_VERSION=&quot;$(XfBuildVersion)&quot;;_DEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>XF_BUILD_REPO_URL="$(XfBuildRepoUrl)";XF_BUILD_BRANCH="$(XfBuildBranch)";XF_BUILD_COMMIT="$(XfBuildCommit)";XF_BUILD_VERSION="$(XfBuildVersion)";_DEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <AdditionalIncludeDirectories>$(ProjectDir);$(SolutionDir)vendor\imgui;$(SolutionDir)vendor\imgui\backends;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
@@ -121,7 +133,7 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>XF_BUILD_REPO_URL=&quot;$(XfBuildRepoUrl)&quot;;XF_BUILD_BRANCH=&quot;$(XfBuildBranch)&quot;;XF_BUILD_COMMIT=&quot;$(XfBuildCommit)&quot;;XF_BUILD_VERSION=&quot;$(XfBuildVersion)&quot;;NDEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>XF_BUILD_REPO_URL="$(XfBuildRepoUrl)";XF_BUILD_BRANCH="$(XfBuildBranch)";XF_BUILD_COMMIT="$(XfBuildCommit)";XF_BUILD_VERSION="$(XfBuildVersion)";NDEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <AdditionalIncludeDirectories>$(ProjectDir);$(SolutionDir)vendor\imgui;$(SolutionDir)vendor\imgui\backends;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
@@ -145,6 +157,8 @@
     <ClCompile Include="Core\Tokenizer.cpp" />
     <ClCompile Include="Core\Parser.cpp" />
     <ClCompile Include="Core\Evaluator.cpp" />
+    <ClCompile Include="Core\FunctionRegistry.cpp" />
+    <ClCompile Include="Core\ExampleFormulaCatalog.cpp" />
     <ClCompile Include="Core\ViewTransform.cpp" />
     <ClCompile Include="UI\Application.cpp" />
     <ClCompile Include="UI\FormulaPanel.cpp" />
@@ -167,6 +181,8 @@
     <ClInclude Include="Core\ASTNode.h" />
     <ClInclude Include="Core\Parser.h" />
     <ClInclude Include="Core\Evaluator.h" />
+    <ClInclude Include="Core\FunctionRegistry.h" />
+    <ClInclude Include="Core\ExampleFormulaCatalog.h" />
     <ClInclude Include="Core\ViewTransform.h" />
     <ClInclude Include="UI\Application.h" />
     <ClInclude Include="UI\FormulaExamples.h" />
