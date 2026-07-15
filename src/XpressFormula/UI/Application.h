@@ -6,6 +6,7 @@
 #include "FormulaEntry.h"
 #include "FormulaPanel.h"
 #include "ControlPanel.h"
+#include "ExportSettings.h"
 #include "PlotPanel.h"
 #include "PlotSettings.h"
 #include "../Core/ViewTransform.h"
@@ -30,6 +31,8 @@ public:
     struct ExportDialogSettings {
         int width = 0;
         int height = 0;
+        int scale = 1;
+        int selectedSizePreset = 0;
         bool lockAspectRatio = true;
         bool grayscaleOutput = false;
         bool showGrid = true;
@@ -37,6 +40,15 @@ public:
         bool showWires = true;
         bool showEnvelope = true;
         bool showAxisTriad = true;
+        ExportBackgroundMode backgroundMode = ExportBackgroundMode::Current;
+        ExportFormat format = ExportFormat::Png;
+        ExportQualityMode qualityMode = ExportQualityMode::Interactive;
+        ExportQualitySettings quality = qualitySettingsForPreset(ExportQualityPreset::Normal);
+        bool autoRefreshPreview = false;
+        bool openAfterSave = false;
+        bool showInFolderAfterSave = false;
+        bool copyPathAfterSave = false;
+        bool saveMetadataSidecar = false;
         std::array<float, 4> backgroundColor = { 0.098f, 0.098f, 0.118f, 1.0f };
     };
 
@@ -75,6 +87,9 @@ private:
     void startUpdateCheck(bool manualRequest);
     void pollUpdateCheckResult();
     bool promptSaveImagePath(std::wstring& path);
+    std::array<float, 4> resolveExportBackgroundColor(const ExportDialogSettings& settings) const;
+    void markExportPreviewOutOfDate();
+    void requestExportPreviewRefresh();
     bool capturePlotPixels(std::vector<std::uint8_t>& pixels, int& width, int& height);
     bool renderPlotPixelsOffscreen(const ExportDialogSettings& settings,
                                    std::vector<std::uint8_t>& pixels, int& width, int& height);
@@ -108,6 +123,9 @@ private:
                        int width, int height, std::string& error);
     bool copyPixelsToClipboard(const std::vector<std::uint8_t>& pixels,
                                int width, int height, std::string& error);
+    void openLastSavedExport();
+    void showLastSavedExportInFolder();
+    void copyLastSavedExportPath();
     void processPendingExportActions();
     static std::string narrowUtf8(const std::wstring& text);
 
@@ -140,8 +158,11 @@ private:
     int                       m_exportPreviewWidth = 0;
     int                       m_exportPreviewHeight = 0;
     bool                      m_exportPreviewDirty = false;
+    bool                      m_exportPreviewRefreshRequested = false;
+    std::chrono::steady_clock::time_point m_exportPreviewLastChanged;
     std::string               m_exportPreviewStatus;
     std::string               m_exportStatus;
+    std::wstring              m_lastExportSavedPath;
     std::future<UpdateCheckResult> m_updateCheckFuture;
     bool                      m_updateCheckInProgress = false;
     bool                      m_startupCheckDone = false;

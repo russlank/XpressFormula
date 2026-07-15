@@ -150,6 +150,7 @@
     <ClCompile Include="ViewTransformTests.cpp" />
     <ClCompile Include="FormulaEntryTests.cpp" />
     <ClCompile Include="UpdateVersionUtilsTests.cpp" />
+    <ClCompile Include="ExportSettingsTests.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />

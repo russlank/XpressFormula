@@ -18,7 +18,7 @@ The app supports:
 - `f(x,y,z)` scalar-field cross-sections at configurable `z` slices
 - `F(x,y,z)=0` implicit 3D surfaces (e.g. spheres and torus equations)
 - Auto/Force 2D/3D rendering preference with projected 3D grid-plane interleaving (`z=0`) for clearer depth ordering
-- Plot export dialog (size/aspect, color or grayscale, background color, include/exclude grid/coordinates/wires) with `.png`/`.bmp` save and clipboard copy
+- Plot export dialog with size presets/scales, background modes including transparency, scene toggles, export-only quality/supersampling, `.png`/`.bmp` save, clipboard copy, and post-save actions
 - Startup/manual update checks against GitHub releases with quick link to the releases page
 - Versioned binary metadata and installer packaging (`.msi` + setup `.exe`)
 

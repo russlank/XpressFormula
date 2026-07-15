@@ -35,6 +35,7 @@ void PlotPanel::render(std::vector<FormulaEntry>& formulas,
     const bool showWires = useOverrides ? overrides->showWires : settings.showWires;
     const bool showEnvelope = useOverrides ? overrides->showEnvelope : settings.showSurfaceEnvelope;
     const bool showAxisTriad = useOverrides ? overrides->showAxisTriad : settings.showAxisTriad;
+    const bool showCanvasBorder = useOverrides ? overrides->showCanvasBorder : true;
     const float effectiveWireThickness =
         (showWires && settings.wireThickness > 0.01f) ? settings.wireThickness : 0.0f;
     const std::array<float, 4> bg = useOverrides ? overrides->backgroundColor
@@ -225,9 +226,10 @@ void PlotPanel::render(std::vector<FormulaEntry>& formulas,
         drawFormulas(Plotting::PlotRenderer::SurfacePlanePass3D::All, true);
     }
 
-    // Border
-    dl->AddRect(pos, ImVec2(pos.x + size.x, pos.y + size.y),
-                IM_COL32(100, 100, 100, 255));
+    if (showCanvasBorder) {
+        dl->AddRect(pos, ImVec2(pos.x + size.x, pos.y + size.y),
+                    IM_COL32(100, 100, 100, 255));
+    }
 
     // --- Mouse interaction ---
     if (isHovered) {

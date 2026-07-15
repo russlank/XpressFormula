@@ -185,6 +185,7 @@
     <ClInclude Include="Core\ExampleFormulaCatalog.h" />
     <ClInclude Include="Core\ViewTransform.h" />
     <ClInclude Include="UI\Application.h" />
+    <ClInclude Include="UI\ExportSettings.h" />
     <ClInclude Include="UI\FormulaExamples.h" />
     <ClInclude Include="UI\FormulaEntry.h" />
     <ClInclude Include="UI\FormulaPanel.h" />

@@ -153,22 +153,25 @@ After launch:
 Use the sidebar **Export** section:
 
 1. Click **Open Export Dialog...**.
-2. Configure export options:
-   - output `Width` / `Height`
-   - **Lock Aspect Ratio** (or free width/height)
-   - **Color** vs **Grayscale**
-   - exported **Background Color** and **Background Opacity**
-   - include/exclude **Grid**, **Coordinates**, and **Wires / Wireframe**
-   - include/exclude **Envelope Box (3D)**
-   - use the **Preview** section to inspect export settings and click **Refresh Preview** after major changes if needed
-3. Click **Copy To Clipboard** to copy the exported plot image.
-4. Click **Save To File...** to save the exported plot as `.png` or `.bmp`.
+2. Configure export options in the tabbed settings pane:
+   - **Size**: choose the current viewport, a common preset, scale `1x`-`4x`, or custom `Width` / `Height`.
+   - **Appearance**: choose current, transparent, white, black, or custom background, and color vs grayscale output.
+   - **Scene**: include/exclude grid, coordinates, wires, envelope, and the axis triad.
+   - **Quality**: optionally override interactive quality for the export render only, including surface density, implicit-surface resolution, wire thickness scale, and supersampling.
+   - **Output**: choose `.png` or `.bmp` (PNG is the default) and optional post-save actions such as opening the image, showing it in Explorer, or copying the saved path.
+3. Use the right-side preview pane:
+   - click **Refresh Preview** for a manual preview render.
+   - enable **Auto Refresh** to refresh after a short debounce while changing settings.
+   - transparent exports are shown over a checkerboard background.
+4. Click **Copy To Clipboard** to copy the exported plot image.
+5. Click **Save To File...** to save the exported plot as `.png` or `.bmp`.
 
 Notes:
 
 - Export uses the current formulas and current view/zoom.
 - Background/grid/coordinate/wire/envelope export options are applied only to an offscreen export render pass (the on-screen plot is not used as the export source).
-- Export size is used as the offscreen render size (fallback screen-capture path may resample if offscreen export fails).
+- Export size is the final image size. Supersampling, when enabled, renders a larger offscreen buffer and downsamples to the selected output size.
+- Quality overrides are applied only to preview/export rendering and do not mutate the interactive plot quality settings.
 - Transparent backgrounds are supported in PNG export. Some viewers may display fully transparent pixels as black because the RGB value of fully transparent pixels is not visually meaningful.
 
 ## Version Details / Build Metadata

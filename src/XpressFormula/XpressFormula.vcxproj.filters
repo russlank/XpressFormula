@@ -98,6 +98,9 @@
     <ClInclude Include="UI\Application.h">
       <Filter>UI</Filter>
     </ClInclude>
+    <ClInclude Include="UI\ExportSettings.h">
+      <Filter>UI</Filter>
+    </ClInclude>
     <ClInclude Include="UI\FormulaExamples.h">
       <Filter>UI</Filter>
     </ClInclude>
