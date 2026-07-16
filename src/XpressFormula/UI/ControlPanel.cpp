@@ -209,6 +209,25 @@ ControlPanelActions ControlPanel::render(Core::ViewTransform& vt, PlotSettings& 
             settings.applyCoordinateOverlayPolicy();
         }
         ImGui::Checkbox("Show Wires", &settings.showWires);
+        if (ImGui::BeginCombo("HUD", plotHudModeLabel(settings.hudMode))) {
+            const PlotHudMode modes[] = {
+                PlotHudMode::Off,
+                PlotHudMode::Minimal,
+                PlotHudMode::Detailed,
+                PlotHudMode::OnlyWhileInteracting
+            };
+            for (PlotHudMode mode : modes) {
+                const bool selected = (settings.hudMode == mode);
+                if (ImGui::Selectable(plotHudModeLabel(mode), selected)) {
+                    settings.hudMode = mode;
+                }
+                if (selected) {
+                    ImGui::SetItemDefaultFocus();
+                }
+            }
+            ImGui::EndCombo();
+        }
+        ImGui::SetItemTooltip("Choose the stable corner readout shown over the plot.");
 
         if (effectiveRenderMode == XYRenderMode::Surface3D) {
             ImGui::Separator();
@@ -216,6 +235,13 @@ ControlPanelActions ControlPanel::render(Core::ViewTransform& vt, PlotSettings& 
             if (beginPropertyTable("Display3DProperties")) {
                 setupPropertyColumns();
                 ImGui::BeginDisabled(!settings.showWires);
+                sliderFloatProperty("Wire Opacity",
+                                    settings.wireOpacity,
+                                    0.0f,
+                                    1.0f,
+                                    kDefaultWireOpacity,
+                                    "%.2f",
+                                    "Opacity for 3D mesh/wire overlays.");
                 sliderFloatProperty("Wire Thickness",
                                     settings.wireThickness,
                                     0.0f,
@@ -223,7 +249,15 @@ ControlPanelActions ControlPanel::render(Core::ViewTransform& vt, PlotSettings& 
                                     kDefaultWireThickness,
                                     "%.2f",
                                     "Line thickness for 3D mesh/wire overlays.");
+                sliderIntProperty("Wire Stride",
+                                  settings.wireStride,
+                                  1,
+                                  8,
+                                  kDefaultWireStride,
+                                  "Draw every Nth wire row/column without changing surface sampling.");
                 ImGui::EndDisabled();
+                settings.wireOpacity = clampWireOpacity(settings.wireOpacity);
+                settings.wireStride = clampWireStride(settings.wireStride);
 
                 if (settings.showSurfaceEnvelope) {
                     sliderFloatProperty("Envelope Thickness",
@@ -246,6 +280,7 @@ ControlPanelActions ControlPanel::render(Core::ViewTransform& vt, PlotSettings& 
                 }
                 ImGui::EndTable();
             }
+            ImGui::TextWrapped("Surface Density changes mesh sampling; Wire Stride only changes displayed wire density.");
 
             ImGui::Checkbox("Show Envelope Box", &settings.showSurfaceEnvelope);
             ImGui::BeginDisabled(settings.showCoordinates);

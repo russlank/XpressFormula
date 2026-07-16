@@ -282,6 +282,7 @@ Then it delegates rendering to `PlotRenderer`, which draws:
 - background
 - grid
 - axes
+- corner HUD
 - labels
 - curves/heatmaps/triangles
 
@@ -289,6 +290,19 @@ This separation is important:
 
 - `PlotPanel` handles interaction and viewport bounds
 - `PlotRenderer` handles math and draw primitives
+
+### Plot HUD and Wire Readability
+
+`PlotSettings` owns the configurable plot HUD mode and the wire styling values. `PlotPanel` renders the HUD in a stable plot corner instead of using a cursor-following tooltip, so it does not cover central geometry while reading coordinates.
+
+The wire controls are intentionally separate:
+
+- `Surface Density` and `Implicit Resolution` change sampling/mesh quality
+- `Wire Opacity` changes visual strength
+- `Wire Thickness` changes line width
+- `Wire Stride` changes displayed wire density without changing mesh sampling
+
+Export preview/final rendering clones `PlotSettings`, so wire opacity, thickness, and stride match the interactive plot. Export overrides disable the interactive HUD so saved images do not include the corner readout.
 
 ## 11. Why the Plot Uses `ImDrawList` Instead of ImGui Widgets
 

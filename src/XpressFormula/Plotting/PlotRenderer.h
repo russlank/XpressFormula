@@ -25,7 +25,9 @@ public:
         // is O(N^3) and usually needs a different quality/perf tradeoff than z=f(x,y).
         int   implicitResolution = 64;
         float opacity = 0.82f;
+        float wireOpacity = 0.25f;
         float wireThickness = 1.0f;
+        int   wireStride = 2;
         bool  showEnvelope = true;
         float envelopeThickness = 1.25f;
         bool  showAxisTriad = true;

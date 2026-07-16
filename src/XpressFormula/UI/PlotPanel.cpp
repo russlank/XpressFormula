@@ -2,8 +2,58 @@
 #include "PlotPanel.h"
 #include "../Plotting/PlotRenderer.h"
 #include "imgui.h"
+#include <algorithm>
+#include <cmath>
+#include <cstdio>
+#include <string>
+#include <vector>
 
 namespace XpressFormula::UI {
+
+namespace {
+
+void drawCornerHud(ImDrawList* dl,
+                   const ImVec2& plotPos,
+                   const ImVec2& plotSize,
+                   const std::vector<std::string>& lines,
+                   float alpha) {
+    if (!dl || lines.empty() || alpha <= 0.0f || plotSize.x <= 32.0f || plotSize.y <= 32.0f) {
+        return;
+    }
+
+    const float margin = 10.0f;
+    const float paddingX = 8.0f;
+    const float paddingY = 6.0f;
+    const float lineHeight = ImGui::GetTextLineHeightWithSpacing();
+    float contentWidth = 0.0f;
+    for (const std::string& line : lines) {
+        contentWidth = (std::max)(contentWidth, ImGui::CalcTextSize(line.c_str()).x);
+    }
+
+    const float maxWidth = (std::max)(140.0f, (std::min)(340.0f, plotSize.x - margin * 2.0f));
+    const float width = (std::min)(contentWidth + paddingX * 2.0f, maxWidth);
+    const float height = paddingY * 2.0f + lineHeight * static_cast<float>(lines.size());
+    if (height >= plotSize.y - margin * 2.0f) {
+        return;
+    }
+
+    const ImVec2 min(plotPos.x + plotSize.x - width - margin,
+                     plotPos.y + margin);
+    const ImVec2 max(min.x + width, min.y + height);
+    const ImU32 bg = IM_COL32(18, 20, 24, static_cast<int>(std::clamp(alpha * 178.0f, 0.0f, 210.0f)));
+    const ImU32 border = IM_COL32(160, 166, 180, static_cast<int>(std::clamp(alpha * 80.0f, 0.0f, 120.0f)));
+    const ImU32 text = IM_COL32(236, 238, 244, static_cast<int>(std::clamp(alpha * 235.0f, 0.0f, 255.0f)));
+
+    dl->AddRectFilled(min, max, bg, 6.0f);
+    dl->AddRect(min, max, border, 6.0f);
+    float y = min.y + paddingY;
+    for (const std::string& line : lines) {
+        dl->AddText(ImVec2(min.x + paddingX, y), text, line.c_str());
+        y += lineHeight;
+    }
+}
+
+} // namespace
 
 void PlotPanel::render(std::vector<FormulaEntry>& formulas,
                        Core::ViewTransform& vt,
@@ -38,9 +88,13 @@ void PlotPanel::render(std::vector<FormulaEntry>& formulas,
         useOverrides ? overrides->showAxisTriad : settings.showAxisTriad;
     const bool showAxisTriad =
         isAxisTriadVisible(showCoordinates, showAxisTriadPreference);
+    const bool showHud = useOverrides ? overrides->showHud : true;
     const bool showCanvasBorder = useOverrides ? overrides->showCanvasBorder : true;
     const float effectiveWireThickness =
         (showWires && settings.wireThickness > 0.01f) ? settings.wireThickness : 0.0f;
+    const float effectiveWireOpacity =
+        (showWires && settings.wireOpacity > 0.0f) ? clampWireOpacity(settings.wireOpacity) : 0.0f;
+    const int effectiveWireStride = clampWireStride(settings.wireStride);
     const std::array<float, 4> bg = useOverrides ? overrides->backgroundColor
                                                   : std::array<float, 4>{0.098f, 0.098f, 0.118f, 1.0f};
     dl->AddRectFilled(pos, ImVec2(pos.x + size.x, pos.y + size.y),
@@ -146,7 +200,9 @@ void PlotPanel::render(std::vector<FormulaEntry>& formulas,
         options.resolution = interactiveSurfaceResolution;
         options.implicitResolution = interactiveImplicitResolution;
         options.opacity = settings.surfaceOpacity;
+        options.wireOpacity = effectiveWireOpacity;
         options.wireThickness = interactionWireThickness;
+        options.wireStride = effectiveWireStride;
         options.showEnvelope = showEnvelope;
         options.envelopeThickness = settings.envelopeThickness;
         // Axis triad is an alternative to coordinate overlays in 3D mode, so keep them
@@ -273,24 +329,77 @@ void PlotPanel::render(std::vector<FormulaEntry>& formulas,
         }
     }
 
-    // Tooltip showing 2D world coordinates or 3D view-plane coordinates (plus world domain coords).
-    if (isHovered) {
-        ImVec2 mousePos = ImGui::GetIO().MousePos;
-        double wx, wy;
-        vt.screenToWorld(mousePos.x, mousePos.y, wx, wy);
-        if (is3DMode) {
-            const double projectionScale = (vt.scaleX < vt.scaleY) ? vt.scaleX : vt.scaleY;
-            const double safeProjectionScale = (projectionScale > 1e-9) ? projectionScale : 1e-9;
-            const Core::Vec2 originScreen = vt.worldToScreen(0.0, 0.0);
-            const double viewU = (mousePos.x - originScreen.x) / safeProjectionScale;
-            const double viewV = (originScreen.y - mousePos.y) / safeProjectionScale;
+    const bool hudInteraction =
+        isHovered &&
+        (isActive || isZoomingView ||
+         ImGui::IsMouseDragging(ImGuiMouseButton_Left) ||
+         ImGui::IsMouseDragging(ImGuiMouseButton_Right));
+    const double now = ImGui::GetTime();
+    if (hudInteraction) {
+        m_lastHudInteractionTime = now;
+    }
 
-            ImGui::SetTooltip(
-                "view u = %.4g\nview v = %.4g\nworld x = %.4g\nworld y = %.4g\n3D camera: az %.1f, el %.1f",
-                viewU, viewV, wx, wy, settings.azimuthDeg, settings.elevationDeg);
+    float hudAlpha = 0.0f;
+    PlotHudMode hudMode = settings.hudMode;
+    if (showHud && hudMode != PlotHudMode::Off) {
+        if (hudMode == PlotHudMode::OnlyWhileInteracting) {
+            const double elapsed = now - m_lastHudInteractionTime;
+            if (elapsed <= 0.90) {
+                hudAlpha = 1.0f;
+            } else if (elapsed <= 1.50) {
+                hudAlpha = static_cast<float>((1.50 - elapsed) / 0.60);
+            }
         } else {
-            ImGui::SetTooltip("x = %.4g\ny = %.4g", wx, wy);
+            hudAlpha = 1.0f;
         }
+    }
+
+    if (hudAlpha > 0.0f) {
+        char line[128];
+        std::vector<std::string> hudLines;
+        const ImVec2 samplePos = isHovered
+            ? ImGui::GetIO().MousePos
+            : ImVec2(pos.x + size.x * 0.5f, pos.y + size.y * 0.5f);
+        double wx = 0.0;
+        double wy = 0.0;
+        vt.screenToWorld(samplePos.x, samplePos.y, wx, wy);
+        const char* sampleLabel = isHovered ? "Mouse" : "Center";
+
+        if (hudMode == PlotHudMode::Detailed) {
+            std::snprintf(line, sizeof(line), "%s | %s",
+                          is3DMode ? "3D" : "2D",
+                          effectiveRenderMode == XYRenderMode::Surface3D ? "surface" : "heatmap");
+            hudLines.emplace_back(line);
+            std::snprintf(line, sizeof(line), "%s x %.4g  y %.4g", sampleLabel, wx, wy);
+            hudLines.emplace_back(line);
+            std::snprintf(line, sizeof(line), "X [%.4g, %.4g]", vt.worldXMin(), vt.worldXMax());
+            hudLines.emplace_back(line);
+            std::snprintf(line, sizeof(line), "Y [%.4g, %.4g]", vt.worldYMin(), vt.worldYMax());
+            hudLines.emplace_back(line);
+            std::snprintf(line, sizeof(line), "Scale %.1f x %.1f px/unit", vt.scaleX, vt.scaleY);
+            hudLines.emplace_back(line);
+            if (is3DMode) {
+                std::snprintf(line, sizeof(line), "Camera az %.1f  el %.1f  z %.2f",
+                              settings.azimuthDeg, settings.elevationDeg, settings.zScale);
+                hudLines.emplace_back(line);
+                std::snprintf(line, sizeof(line), "Wires %.2f opacity  stride %d",
+                              effectiveWireOpacity, effectiveWireStride);
+                hudLines.emplace_back(line);
+            }
+        } else if (is3DMode) {
+            std::snprintf(line, sizeof(line), "%s x %.4g  y %.4g", sampleLabel, wx, wy);
+            hudLines.emplace_back(line);
+            std::snprintf(line, sizeof(line), "Camera az %.1f  el %.1f", settings.azimuthDeg, settings.elevationDeg);
+            hudLines.emplace_back(line);
+        } else {
+            std::snprintf(line, sizeof(line), "%s x %.4g  y %.4g", sampleLabel, wx, wy);
+            hudLines.emplace_back(line);
+            std::snprintf(line, sizeof(line), "Scale %.1f px/unit",
+                          std::sqrt(std::max(1e-6, vt.scaleX * vt.scaleY)));
+            hudLines.emplace_back(line);
+        }
+
+        drawCornerHud(dl, pos, size, hudLines, hudAlpha);
     }
 }
 

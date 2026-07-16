@@ -1,6 +1,8 @@
 // PlotSettings.h - Shared plotting settings for 2D and 3D render modes.
 #pragma once
 
+#include <algorithm>
+
 namespace XpressFormula::UI {
 
 enum class XYRenderMode {
@@ -14,13 +16,22 @@ enum class XYRenderModePreference {
     Force2D
 };
 
+enum class PlotHudMode {
+    Off,
+    Minimal,
+    Detailed,
+    OnlyWhileInteracting
+};
+
 inline constexpr float kDefaultAzimuthDeg = 30.0f;
 inline constexpr float kDefaultElevationDeg = -60.0f;
 inline constexpr float kDefaultZScale = 1.5f;
 inline constexpr int   kDefaultSurfaceResolution = 50;
 inline constexpr int   kDefaultImplicitSurfaceResolution = 64;
-inline constexpr float kDefaultSurfaceOpacity = 0.80f;
-inline constexpr float kDefaultWireThickness = 2.0f;
+inline constexpr float kDefaultSurfaceOpacity = 1.00f;
+inline constexpr float kDefaultWireOpacity = 0.25f;
+inline constexpr float kDefaultWireThickness = 1.0f;
+inline constexpr int   kDefaultWireStride = 2;
 inline constexpr float kDefaultEnvelopeThickness = 2.0f;
 inline constexpr float kDefaultAutoRotateSpeedDegPerSec = 20.0f;
 inline constexpr float kDefaultHeatmapOpacity = 0.62f;
@@ -38,8 +49,32 @@ inline bool resolveCoordinateOverlayPolicy(bool showCoordinates, bool& showAxisT
     return true;
 }
 
+[[nodiscard]] inline const char* plotHudModeLabel(PlotHudMode mode) {
+    switch (mode) {
+        case PlotHudMode::Off:
+            return "Off";
+        case PlotHudMode::Minimal:
+            return "Minimal";
+        case PlotHudMode::Detailed:
+            return "Detailed";
+        case PlotHudMode::OnlyWhileInteracting:
+            return "Only While Interacting";
+        default:
+            return "Minimal";
+    }
+}
+
+[[nodiscard]] inline float clampWireOpacity(float value) {
+    return std::clamp(value, 0.0f, 1.0f);
+}
+
+[[nodiscard]] inline int clampWireStride(int value) {
+    return std::clamp(value, 1, 16);
+}
+
 struct PlotSettings {
     XYRenderModePreference xyRenderModePreference = XYRenderModePreference::Auto;
+    PlotHudMode hudMode = PlotHudMode::Minimal;
     bool optimizeRendering = true;
     bool showGrid = true;
     bool showCoordinates = true;
@@ -89,7 +124,9 @@ struct PlotSettings {
     int   surfaceResolution = kDefaultSurfaceResolution;
     int   implicitSurfaceResolution = kDefaultImplicitSurfaceResolution;
     float surfaceOpacity = kDefaultSurfaceOpacity;
+    float wireOpacity = kDefaultWireOpacity;
     float wireThickness = kDefaultWireThickness;
+    int   wireStride = kDefaultWireStride;
     bool  showSurfaceEnvelope = true;
     float envelopeThickness = kDefaultEnvelopeThickness;
     bool  showAxisTriad = false;

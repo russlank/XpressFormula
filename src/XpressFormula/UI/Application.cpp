@@ -736,6 +736,7 @@ void Application::renderFrame() {
         exportOverrides.showAxisTriad = isAxisTriadVisible(
             m_pendingExportSettings.showCoordinates,
             m_pendingExportSettings.showAxisTriad);
+        exportOverrides.showHud = false;
         exportOverrides.showCanvasBorder = false;
         exportOverrides.backgroundColor = resolveExportBackgroundColor(m_pendingExportSettings);
     }
@@ -2649,8 +2650,10 @@ bool Application::renderPlotPixelsOffscreen(const Application::ExportDialogSetti
             exportSettings.surfaceResolution = std::clamp(settings.quality.surfaceResolution, 16, 256);
             exportSettings.implicitSurfaceResolution =
                 std::clamp(settings.quality.implicitSurfaceResolution, 16, 192);
-            exportSettings.wireThickness = (std::max)(
-                0.05f, exportSettings.wireThickness * settings.quality.wireThicknessScale);
+            if (exportSettings.wireThickness > 0.0f) {
+                exportSettings.wireThickness = (std::max)(
+                    0.05f, exportSettings.wireThickness * settings.quality.wireThicknessScale);
+            }
         }
 
         exportView.centerX = (resolvedView.visibleBounds.xMin + resolvedView.visibleBounds.xMax) * 0.5;
@@ -2666,6 +2669,7 @@ bool Application::renderPlotPixelsOffscreen(const Application::ExportDialogSetti
         exportOverrides.showEnvelope = settings.showEnvelope;
         exportOverrides.showAxisTriad =
             isAxisTriadVisible(settings.showCoordinates, settings.showAxisTriad);
+        exportOverrides.showHud = false;
         exportOverrides.showCanvasBorder = false;
         exportOverrides.backgroundColor = backgroundColor;
 
