@@ -161,9 +161,15 @@
     <ClCompile Include="Core\ExampleFormulaCatalog.cpp" />
     <ClCompile Include="Core\ViewTransform.cpp" />
     <ClCompile Include="UI\Application.cpp" />
+    <ClCompile Include="UI\Components\FormulaCard.cpp" />
+    <ClCompile Include="UI\Components\PlotToolbar.cpp" />
     <ClCompile Include="UI\FormulaPanel.cpp" />
     <ClCompile Include="UI\ControlPanel.cpp" />
     <ClCompile Include="UI\PlotPanel.cpp" />
+    <ClCompile Include="UI\UiKit\PropertyGrid.cpp" />
+    <ClCompile Include="UI\UiKit\ResponsiveLayout.cpp" />
+    <ClCompile Include="UI\UiKit\ResponsiveRows.cpp" />
+    <ClCompile Include="UI\UiKit\UiMetrics.cpp" />
     <ClCompile Include="Plotting\PlotRenderer.cpp" />
     <ClCompile Include="..\vendor\imgui\imgui.cpp" />
     <ClCompile Include="..\vendor\imgui\imgui_draw.cpp" />
@@ -185,6 +191,8 @@
     <ClInclude Include="Core\ExampleFormulaCatalog.h" />
     <ClInclude Include="Core\ViewTransform.h" />
     <ClInclude Include="UI\Application.h" />
+    <ClInclude Include="UI\Components\FormulaCard.h" />
+    <ClInclude Include="UI\Components\PlotToolbar.h" />
     <ClInclude Include="UI\ExportSettings.h" />
     <ClInclude Include="UI\FormulaExamples.h" />
     <ClInclude Include="UI\FormulaEntry.h" />
@@ -192,6 +200,11 @@
     <ClInclude Include="UI\ControlPanel.h" />
     <ClInclude Include="UI\PlotPanel.h" />
     <ClInclude Include="UI\PlotSettings.h" />
+    <ClInclude Include="UI\UiKit\PropertyGrid.h" />
+    <ClInclude Include="UI\UiKit\ResponsiveLayout.h" />
+    <ClInclude Include="UI\UiKit\ResponsiveRows.h" />
+    <ClInclude Include="UI\UiKit\UiMetrics.h" />
+    <ClInclude Include="UI\UiKit\UiScopes.h" />
     <ClInclude Include="Plotting\PlotRenderer.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

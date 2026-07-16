@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 // ControlPanel.cpp - Sidebar view/render/export controls implementation.
 #include "ControlPanel.h"
+#include "UiKit/PropertyGrid.h"
+#include "UiKit/UiScopes.h"
 #include "imgui.h"
 #include <algorithm>
 #include <cmath>
@@ -8,94 +10,6 @@
 #include <string>
 
 namespace XpressFormula::UI {
-
-namespace {
-
-bool beginPropertyTable(const char* id) {
-    return ImGui::BeginTable(id, 3,
-        ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_NoSavedSettings,
-        ImVec2(0.0f, 0.0f));
-}
-
-void setupPropertyColumns() {
-    ImGui::TableSetupColumn("Property", ImGuiTableColumnFlags_WidthFixed, 122.0f);
-    ImGui::TableSetupColumn("Slider with value", ImGuiTableColumnFlags_WidthStretch);
-    ImGui::TableSetupColumn("Reset", ImGuiTableColumnFlags_WidthFixed, 58.0f);
-}
-
-void drawPropertyLabel(const char* label, const char* tooltip) {
-    ImGui::TextUnformatted(label);
-    if (tooltip && tooltip[0] != '\0') {
-        ImGui::SetItemTooltip("%s", tooltip);
-    }
-}
-
-bool resetPropertyButton(const char* label) {
-    const char* buttonText = "Reset";
-    const float buttonWidth =
-        ImGui::CalcTextSize(buttonText).x + ImGui::GetStyle().FramePadding.x * 2.0f;
-    const float available = ImGui::GetContentRegionAvail().x;
-    if (available > buttonWidth) {
-        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + available - buttonWidth);
-    }
-
-    const bool clicked = ImGui::SmallButton(buttonText);
-    ImGui::SetItemTooltip("Reset %s to its default value.", label);
-    return clicked;
-}
-
-bool sliderFloatProperty(const char* label,
-                         float& value,
-                         float minValue,
-                         float maxValue,
-                         float resetValue,
-                         const char* sliderFormat,
-                         const char* tooltip = nullptr) {
-    bool changed = false;
-    ImGui::PushID(label);
-    ImGui::TableNextRow();
-    ImGui::TableSetColumnIndex(0);
-    drawPropertyLabel(label, tooltip);
-
-    ImGui::TableSetColumnIndex(1);
-    ImGui::SetNextItemWidth(-1.0f);
-    changed = ImGui::SliderFloat("##Control", &value, minValue, maxValue, sliderFormat);
-
-    ImGui::TableSetColumnIndex(2);
-    if (resetPropertyButton(label)) {
-        value = resetValue;
-        changed = true;
-    }
-    ImGui::PopID();
-    return changed;
-}
-
-bool sliderIntProperty(const char* label,
-                       int& value,
-                       int minValue,
-                       int maxValue,
-                       int resetValue,
-                       const char* tooltip = nullptr) {
-    bool changed = false;
-    ImGui::PushID(label);
-    ImGui::TableNextRow();
-    ImGui::TableSetColumnIndex(0);
-    drawPropertyLabel(label, tooltip);
-
-    ImGui::TableSetColumnIndex(1);
-    ImGui::SetNextItemWidth(-1.0f);
-    changed = ImGui::SliderInt("##Control", &value, minValue, maxValue);
-
-    ImGui::TableSetColumnIndex(2);
-    if (resetPropertyButton(label)) {
-        value = resetValue;
-        changed = true;
-    }
-    ImGui::PopID();
-    return changed;
-}
-
-} // namespace
 
 ControlPanelActions ControlPanel::render(Core::ViewTransform& vt, PlotSettings& settings,
                                          bool has2DFormula,
@@ -232,62 +146,65 @@ ControlPanelActions ControlPanel::render(Core::ViewTransform& vt, PlotSettings& 
         if (effectiveRenderMode == XYRenderMode::Surface3D) {
             ImGui::Separator();
             ImGui::TextDisabled("3D Display");
-            if (beginPropertyTable("Display3DProperties")) {
-                setupPropertyColumns();
-                ImGui::BeginDisabled(!settings.showWires);
-                sliderFloatProperty("Wire Opacity",
-                                    settings.wireOpacity,
-                                    0.0f,
-                                    1.0f,
-                                    kDefaultWireOpacity,
-                                    "%.2f",
-                                    "Opacity for 3D mesh/wire overlays.");
-                sliderFloatProperty("Wire Thickness",
-                                    settings.wireThickness,
-                                    0.0f,
-                                    2.5f,
-                                    kDefaultWireThickness,
-                                    "%.2f",
-                                    "Line thickness for 3D mesh/wire overlays.");
-                sliderIntProperty("Wire Stride",
-                                  settings.wireStride,
-                                  1,
-                                  8,
-                                  kDefaultWireStride,
-                                  "Draw every Nth wire row/column without changing surface sampling.");
-                ImGui::EndDisabled();
-                settings.wireOpacity = clampWireOpacity(settings.wireOpacity);
-                settings.wireStride = clampWireStride(settings.wireStride);
+            {
+                UiKit::PropertyGrid displayGrid("Display3DProperties");
+                if (displayGrid.begin()) {
+                    {
+                        UiKit::DisabledScope disabled(!settings.showWires);
+                        displayGrid.sliderFloat("Wire Opacity",
+                                                settings.wireOpacity,
+                                                0.0f,
+                                                1.0f,
+                                                kDefaultWireOpacity,
+                                                "%.2f",
+                                                "Opacity for 3D mesh/wire overlays.");
+                        displayGrid.sliderFloat("Wire Thickness",
+                                                settings.wireThickness,
+                                                0.0f,
+                                                2.5f,
+                                                kDefaultWireThickness,
+                                                "%.2f",
+                                                "Line thickness for 3D mesh/wire overlays.");
+                        displayGrid.sliderInt("Wire Stride",
+                                              settings.wireStride,
+                                              1,
+                                              8,
+                                              kDefaultWireStride,
+                                              "Draw every Nth wire row/column without changing surface sampling.");
+                    }
+                    settings.wireOpacity = clampWireOpacity(settings.wireOpacity);
+                    settings.wireStride = clampWireStride(settings.wireStride);
 
-                if (settings.showSurfaceEnvelope) {
-                    sliderFloatProperty("Envelope Thickness",
-                                        settings.envelopeThickness,
-                                        0.5f,
-                                        3.0f,
-                                        kDefaultEnvelopeThickness,
-                                        "%.2f",
-                                        "Thickness for the 3D bounding envelope.");
-                }
+                    if (settings.showSurfaceEnvelope) {
+                        displayGrid.sliderFloat("Envelope Thickness",
+                                                settings.envelopeThickness,
+                                                0.5f,
+                                                3.0f,
+                                                kDefaultEnvelopeThickness,
+                                                "%.2f",
+                                                "Thickness for the 3D bounding envelope.");
+                    }
 
-                if (settings.autoRotate) {
-                    sliderFloatProperty("Rotation Speed",
-                                        settings.autoRotateSpeedDegPerSec,
-                                        2.0f,
-                                        90.0f,
-                                        kDefaultAutoRotateSpeedDegPerSec,
-                                        "%.1f deg/s",
-                                        "Automatic camera rotation speed in degrees per second.");
+                    if (settings.autoRotate) {
+                        displayGrid.sliderFloat("Rotation Speed",
+                                                settings.autoRotateSpeedDegPerSec,
+                                                2.0f,
+                                                90.0f,
+                                                kDefaultAutoRotateSpeedDegPerSec,
+                                                "%.1f deg/s",
+                                                "Automatic camera rotation speed in degrees per second.");
+                    }
                 }
-                ImGui::EndTable();
             }
             ImGui::TextWrapped("Surface Density changes mesh sampling; Wire Stride only changes displayed wire density.");
 
             ImGui::Checkbox("Show Envelope Box", &settings.showSurfaceEnvelope);
-            ImGui::BeginDisabled(settings.showCoordinates);
-            if (ImGui::Checkbox("Show Axis Triad (X/Y/Z)", &settings.showAxisTriad)) {
-                settings.applyCoordinateOverlayPolicy();
+            {
+                UiKit::DisabledScope disabled(settings.showCoordinates);
+                if (ImGui::Checkbox("Show Axis Triad (X/Y/Z)", &settings.showAxisTriad)) {
+                    settings.applyCoordinateOverlayPolicy();
+                }
             }
-            ImGui::EndDisabled();
             if (settings.showCoordinates && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
                 ImGui::SetTooltip("Axis triad is disabled while coordinates are enabled.");
             }
@@ -302,49 +219,50 @@ ControlPanelActions ControlPanel::render(Core::ViewTransform& vt, PlotSettings& 
         ImGui::Separator();
         ImGui::TextUnformatted("3D Camera");
 
-        if (beginPropertyTable("Camera3DProperties")) {
-            setupPropertyColumns();
-            sliderFloatProperty("Azimuth",
-                                settings.azimuthDeg,
-                                -180.0f,
-                                180.0f,
-                                kDefaultAzimuthDeg,
-                                "%.1f deg",
-                                "Horizontal camera angle for 3D surfaces.");
-            sliderFloatProperty("Elevation",
-                                settings.elevationDeg,
-                                -85.0f,
-                                85.0f,
-                                kDefaultElevationDeg,
-                                "%.1f deg",
-                                "Vertical camera angle for 3D surfaces.");
-            sliderFloatProperty("Z Scale",
-                                settings.zScale,
-                                0.1f,
-                                8.0f,
-                                kDefaultZScale,
-                                "%.2f",
-                                "Vertical exaggeration applied to 3D geometry.");
-            sliderIntProperty("Surface Density",
-                              settings.surfaceResolution,
-                              12,
-                              96,
-                              kDefaultSurfaceResolution,
-                              "Sampling density for explicit z=f(x,y) surfaces.");
-            sliderIntProperty("Implicit Resolution",
-                              settings.implicitSurfaceResolution,
-                              16,
-                              96,
-                              kDefaultImplicitSurfaceResolution,
-                              "Grid resolution for implicit F(x,y,z)=0 surfaces.");
-            sliderFloatProperty("Surface Opacity",
-                                settings.surfaceOpacity,
-                                0.25f,
-                                1.0f,
-                                kDefaultSurfaceOpacity,
-                                "%.2f",
-                                "Surface fill opacity.");
-            ImGui::EndTable();
+        {
+            UiKit::PropertyGrid cameraGrid("Camera3DProperties");
+            if (cameraGrid.begin()) {
+                cameraGrid.sliderFloat("Azimuth",
+                                       settings.azimuthDeg,
+                                       -180.0f,
+                                       180.0f,
+                                       kDefaultAzimuthDeg,
+                                       "%.1f deg",
+                                       "Horizontal camera angle for 3D surfaces.");
+                cameraGrid.sliderFloat("Elevation",
+                                       settings.elevationDeg,
+                                       -85.0f,
+                                       85.0f,
+                                       kDefaultElevationDeg,
+                                       "%.1f deg",
+                                       "Vertical camera angle for 3D surfaces.");
+                cameraGrid.sliderFloat("Z Scale",
+                                       settings.zScale,
+                                       0.1f,
+                                       8.0f,
+                                       kDefaultZScale,
+                                       "%.2f",
+                                       "Vertical exaggeration applied to 3D geometry.");
+                cameraGrid.sliderInt("Surface Density",
+                                     settings.surfaceResolution,
+                                     12,
+                                     96,
+                                     kDefaultSurfaceResolution,
+                                     "Sampling density for explicit z=f(x,y) surfaces.");
+                cameraGrid.sliderInt("Implicit Resolution",
+                                     settings.implicitSurfaceResolution,
+                                     16,
+                                     96,
+                                     kDefaultImplicitSurfaceResolution,
+                                     "Grid resolution for implicit F(x,y,z)=0 surfaces.");
+                cameraGrid.sliderFloat("Surface Opacity",
+                                       settings.surfaceOpacity,
+                                       0.25f,
+                                       1.0f,
+                                       kDefaultSurfaceOpacity,
+                                       "%.2f",
+                                       "Surface fill opacity.");
+            }
         }
 
         if (hasSurfaceFormula) {
@@ -353,16 +271,17 @@ ControlPanelActions ControlPanel::render(Core::ViewTransform& vt, PlotSettings& 
             ImGui::TextWrapped("No 3D-capable formulas are currently visible (z=f(x,y) or F(x,y,z)=0).");
         }
     } else {
-        if (beginPropertyTable("HeatmapProperties")) {
-            setupPropertyColumns();
-            sliderFloatProperty("Heatmap Opacity",
-                                settings.heatmapOpacity,
-                                0.1f,
-                                1.0f,
-                                kDefaultHeatmapOpacity,
-                                "%.2f",
-                                "Opacity for heatmap and scalar-field cross-section fills.");
-            ImGui::EndTable();
+        {
+            UiKit::PropertyGrid heatmapGrid("HeatmapProperties");
+            if (heatmapGrid.begin()) {
+                heatmapGrid.sliderFloat("Heatmap Opacity",
+                                        settings.heatmapOpacity,
+                                        0.1f,
+                                        1.0f,
+                                        kDefaultHeatmapOpacity,
+                                        "%.2f",
+                                        "Opacity for heatmap and scalar-field cross-section fills.");
+            }
         }
     }
 

@@ -119,6 +119,8 @@ Run tests:
 .\src\x64\Debug\XpressFormula.Tests.exe
 ```
 
+The test runner includes pure UI layout coverage for toolbar breakpoints, responsive formula-card modes, splitter clamping, and modal sizing. These tests are useful after changing files under `src\XpressFormula\UI\UiKit` or `src\XpressFormula\UI\Components`.
+
 Win32 outputs (if built with `Platform=Win32`):
 
 - App: `.\src\Debug\XpressFormula.exe`

@@ -140,6 +140,36 @@ Why this pattern is useful:
 - resizable controls without docking complexity
 - easy to extend for desktop tooling apps
 
+## UI Toolkit Design Rules
+
+XpressFormula has a thin UI toolkit in [`src/XpressFormula/UI/UiKit`](../src/XpressFormula/UI/UiKit) and XpressFormula-specific components in [`src/XpressFormula/UI/Components`](../src/XpressFormula/UI/Components).
+
+Use `UiKit` for recurring ImGui mechanics:
+
+- shared spacing, breakpoints, and dimensions in `UiMetrics`
+- pure responsive plans such as toolbar, formula-card, splitter, and modal sizing decisions
+- RAII guards for `Push/Pop`, `Begin/EndDisabled`, and text wrapping
+- small structural helpers such as `ResponsiveRows` and `PropertyGrid`
+
+Use `Components` for reusable app UI that still follows immediate mode:
+
+- `PlotToolbar` renders the plot toolbar and returns one-shot app commands
+- `FormulaCard` renders one formula row/card and returns one formula action
+
+Panels and dialogs still own workflows and state. For example, `FormulaPanel` owns editor state and vector mutations, while `FormulaCard` only renders one card and reports the selected action.
+
+Direct ImGui remains the default for ordinary controls such as buttons, text, sliders, checkboxes, and one-off layouts. Do not add wrappers that only rename ImGui calls.
+
+> Add a toolkit abstraction only after the same layout or safety problem appears in at least two places, or when a pure tested plan can replace fragile cursor arithmetic.
+
+When adding a reusable layout primitive:
+
+1. Put pure decisions in a testable planner where practical.
+2. Keep application state outside the toolkit.
+3. Keep row counts, heights, and cursor placement derived from one calculation.
+4. Return explicit action structs for one-shot commands instead of performing workflow side effects inside components.
+5. Keep escape hatches simple by allowing direct ImGui alongside toolkit helpers.
+
 ## 7. State Ownership (Most Important ImGui Rule Here)
 
 ImGui draws widgets, but your app owns the state.
