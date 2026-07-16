@@ -295,6 +295,7 @@ void FormulaPanel::renderEditorDialog(std::vector<FormulaEntry>& formulas) {
 
         FormulaEntry& formula = formulas[m_editorFormulaIndex];
 
+        {
         UiKit::StyleVarScope itemSpacing(
             ImGuiStyleVar_ItemSpacing, ImVec2(10.0f, 9.0f));
         UiKit::StyleVarScope framePadding(
@@ -492,6 +493,7 @@ void FormulaPanel::renderEditorDialog(std::vector<FormulaEntry>& formulas) {
 
         renderFunctionHelpDialog();
         renderExampleHelpDialog();
+        }
 
         ImGui::EndPopup();
     }
