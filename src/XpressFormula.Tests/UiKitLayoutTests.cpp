@@ -226,6 +226,34 @@ TEST_CASE(HorizontalSplit_EnforcesPaneLimits) {
     Assert::AreEqual(392.0f, result.secondPaneWidth);
 }
 
+TEST_CASE(HorizontalSplit_EnforcesMinimumFirstPane) {
+    const HorizontalSplitResult result = resolveHorizontalSplit({
+        1000.0f,
+        100.0f,
+        280.0f,
+        600.0f,
+        360.0f,
+        8.0f
+    });
+
+    Assert::AreEqual(280.0f, result.firstPaneWidth);
+    Assert::AreEqual(712.0f, result.secondPaneWidth);
+}
+
+TEST_CASE(HorizontalSplit_EnforcesMinimumSecondPane) {
+    const HorizontalSplitResult result = resolveHorizontalSplit({
+        900.0f,
+        700.0f,
+        280.0f,
+        800.0f,
+        360.0f,
+        8.0f
+    });
+
+    Assert::AreEqual(532.0f, result.firstPaneWidth);
+    Assert::AreEqual(360.0f, result.secondPaneWidth);
+}
+
 TEST_CASE(HorizontalSplit_HandlesVerySmallTotalWidth) {
     const HorizontalSplitResult result = resolveHorizontalSplit({
         200.0f,
@@ -252,6 +280,20 @@ TEST_CASE(ModalSizePlan_ClampsPreferredSizeToWorkArea) {
     Assert::AreEqual(672.0f, plan.size.y);
     Assert::AreEqual(968.0f, plan.maximumSize.x);
     Assert::AreEqual(768.0f, plan.maximumSize.y);
+}
+
+TEST_CASE(ModalSizePlan_LargeViewportUsesPreferredFraction) {
+    const ModalSizePlan plan = planModalSize({
+        { 3000.0f, 2000.0f },
+        { 0.84f, 0.84f },
+        { 640.0f, 480.0f },
+        { 32.0f, 32.0f }
+    });
+
+    Assert::AreEqual(2520.0f, plan.size.x);
+    Assert::AreEqual(1680.0f, plan.size.y);
+    Assert::AreEqual(2968.0f, plan.maximumSize.x);
+    Assert::AreEqual(1968.0f, plan.maximumSize.y);
 }
 
 TEST_CASE(ModalSizePlan_TinyViewportKeepsUsableFallback) {

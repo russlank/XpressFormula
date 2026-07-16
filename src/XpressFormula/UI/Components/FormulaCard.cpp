@@ -7,6 +7,7 @@
 #include "imgui.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <string>
 
@@ -148,11 +149,13 @@ FormulaCardAction renderFormulaCard(FormulaEntry& formula,
         deleteWidth
     });
 
-    const float cardHeight =
+    const int nonZRows = plan.rowCount - (showZSlice ? 1 : 0);
+    const int textRows = std::max(0, nonZRows - 1);
+    const float cardHeight = std::ceil(
         style.WindowPadding.y * 2.0f +
-        lineHeight * static_cast<float>(std::max(3, plan.rowCount - (showZSlice ? 1 : 0))) +
-        (showZSlice ? frameHeight + style.ItemSpacing.y : 0.0f) +
-        10.0f;
+        frameHeight +
+        lineHeight * static_cast<float>(textRows) +
+        (showZSlice ? frameHeight : 0.0f));
 
     ImGui::BeginChild("##formula_card", ImVec2(0.0f, cardHeight), true,
                       ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);

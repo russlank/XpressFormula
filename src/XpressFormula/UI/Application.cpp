@@ -5,6 +5,8 @@
 #include "../Version.h"
 #include "../resource.h"
 #include "Components/PlotToolbar.h"
+#include "UiKit/Splitter.h"
+#include "UiKit/UiMetrics.h"
 
 #include "imgui.h"
 #include "imgui_impl_win32.h"
@@ -525,10 +527,12 @@ void Application::renderFrame() {
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
     float totalW = viewport->WorkSize.x;
     float totalH = viewport->WorkSize.y;
-    const float splitterWidth = kSidebarSplitterWidth;
-    const float availableForSidebar = totalW - splitterWidth - kMinPlotWidth;
-    const float dynamicMinSidebar = (std::min)(kMinSidebarWidth, (std::max)(180.0f, totalW * 0.38f));
-    const float maxSidebar = (std::min)(kMaxSidebarWidth,
+    const UiKit::UiMetrics& uiMetrics = UiKit::metrics();
+    const float splitterWidth = uiMetrics.splitterWidth;
+    const float availableForSidebar = totalW - splitterWidth - uiMetrics.minimumPlotWidth;
+    const float dynamicMinSidebar =
+        (std::min)(uiMetrics.minimumSidebarWidth, (std::max)(180.0f, totalW * 0.38f));
+    const float maxSidebar = (std::min)(uiMetrics.maximumSidebarWidth,
         (std::max)(dynamicMinSidebar, availableForSidebar));
     m_sidebarWidth = std::clamp(m_sidebarWidth, dynamicMinSidebar, maxSidebar);
     const float sidebar = m_sidebarWidth;
@@ -670,30 +674,14 @@ void Application::renderFrame() {
                  ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse |
                  ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings |
                  ImGuiWindowFlags_NoBackground);
-    ImGui::InvisibleButton("##SidebarSplitterHandle", ImVec2(splitterWidth, totalH),
-                           ImGuiButtonFlags_MouseButtonLeft);
-    if (ImGui::IsItemHovered() || ImGui::IsItemActive()) {
-        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
-    }
-    if (ImGui::IsItemActive()) {
-        m_sidebarWidth = std::clamp(m_sidebarWidth + ImGui::GetIO().MouseDelta.x,
-                                    dynamicMinSidebar, maxSidebar);
+    if (UiKit::drawVerticalSplitter("##SidebarSplitterHandle",
+                                    totalH,
+                                    m_sidebarWidth,
+                                    dynamicMinSidebar,
+                                    maxSidebar,
+                                    uiMetrics.defaultSidebarWidth,
+                                    splitterWidth)) {
         m_redrawRequested = true;
-    }
-    if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
-        m_sidebarWidth = std::clamp(kDefaultSidebarWidth, dynamicMinSidebar, maxSidebar);
-        m_redrawRequested = true;
-    }
-    {
-        const ImVec2 min = ImGui::GetItemRectMin();
-        const ImVec2 max = ImGui::GetItemRectMax();
-        const bool active = ImGui::IsItemActive();
-        const bool hovered = ImGui::IsItemHovered();
-        ImGui::GetWindowDrawList()->AddLine(
-            ImVec2((min.x + max.x) * 0.5f, min.y + 6.0f),
-            ImVec2((min.x + max.x) * 0.5f, max.y - 6.0f),
-            IM_COL32(120, 120, 128, hovered ? 230 : 150),
-            active ? 2.0f : 1.0f);
     }
     ImGui::End();
     ImGui::PopStyleVar(2);
@@ -1076,7 +1064,7 @@ void Application::renderExportDialog(float, float) {
         ImGui::BeginChild("##ExportDialogBody", ImVec2(0.0f, -footerHeight), false);
         const float bodyWidth = ImGui::GetContentRegionAvail().x;
         const float bodyHeight = ImGui::GetContentRegionAvail().y;
-        const float splitterWidth = 8.0f;
+        const float splitterWidth = UiKit::metrics().splitterWidth;
         const float minSettingsWidth = 300.0f;
         const float minPreviewWidth = 240.0f;
         const float maxSettingsWidth = (std::max)(minSettingsWidth, bodyWidth - splitterWidth - minPreviewWidth);
@@ -1415,28 +1403,14 @@ void Application::renderExportDialog(float, float) {
         ImGui::EndChild();
 
         ImGui::SameLine(0.0f, 0.0f);
-        ImGui::InvisibleButton("##ExportDialogSplitter", ImVec2(splitterWidth, bodyHeight));
-        if (ImGui::IsItemHovered() || ImGui::IsItemActive()) {
-            ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
-        }
-        if (ImGui::IsItemActive()) {
-            m_exportSettingsPaneWidth = std::clamp(
-                m_exportSettingsPaneWidth + ImGui::GetIO().MouseDelta.x,
-                minSettingsWidth, maxSettingsWidth);
+        if (UiKit::drawVerticalSplitter("##ExportDialogSplitter",
+                                        bodyHeight,
+                                        m_exportSettingsPaneWidth,
+                                        minSettingsWidth,
+                                        maxSettingsWidth,
+                                        bodyWidth * 0.42f,
+                                        splitterWidth)) {
             m_redrawRequested = true;
-        }
-        if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
-            m_exportSettingsPaneWidth = std::clamp(bodyWidth * 0.42f, minSettingsWidth, maxSettingsWidth);
-            m_redrawRequested = true;
-        }
-        {
-            const ImVec2 splitterMin = ImGui::GetItemRectMin();
-            const ImVec2 splitterMax = ImGui::GetItemRectMax();
-            ImGui::GetWindowDrawList()->AddLine(
-                ImVec2((splitterMin.x + splitterMax.x) * 0.5f, splitterMin.y + 4.0f),
-                ImVec2((splitterMin.x + splitterMax.x) * 0.5f, splitterMax.y - 4.0f),
-                IM_COL32(120, 120, 128, ImGui::IsItemHovered() ? 220 : 140),
-                ImGui::IsItemActive() ? 2.0f : 1.0f);
         }
 
         ImGui::SameLine(0.0f, 0.0f);

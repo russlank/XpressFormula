@@ -192,12 +192,6 @@ private:
     FormulaPanel  m_formulaPanel;
     ControlPanel  m_controlPanel;
     PlotPanel     m_plotPanel;
-
-    static constexpr float kDefaultSidebarWidth = 360.0f;
-    static constexpr float kMinSidebarWidth = 280.0f;
-    static constexpr float kMaxSidebarWidth = 600.0f;
-    static constexpr float kSidebarSplitterWidth = 8.0f;
-    static constexpr float kMinPlotWidth = 360.0f;
 };
 
 } // namespace XpressFormula::UI

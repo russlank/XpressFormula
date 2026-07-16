@@ -169,6 +169,7 @@
     <ClCompile Include="UI\UiKit\PropertyGrid.cpp" />
     <ClCompile Include="UI\UiKit\ResponsiveLayout.cpp" />
     <ClCompile Include="UI\UiKit\ResponsiveRows.cpp" />
+    <ClCompile Include="UI\UiKit\Splitter.cpp" />
     <ClCompile Include="UI\UiKit\UiMetrics.cpp" />
     <ClCompile Include="Plotting\PlotRenderer.cpp" />
     <ClCompile Include="..\vendor\imgui\imgui.cpp" />
@@ -203,6 +204,7 @@
     <ClInclude Include="UI\UiKit\PropertyGrid.h" />
     <ClInclude Include="UI\UiKit\ResponsiveLayout.h" />
     <ClInclude Include="UI\UiKit\ResponsiveRows.h" />
+    <ClInclude Include="UI\UiKit\Splitter.h" />
     <ClInclude Include="UI\UiKit\UiMetrics.h" />
     <ClInclude Include="UI\UiKit\UiScopes.h" />
     <ClInclude Include="Plotting\PlotRenderer.h" />

@@ -67,6 +67,9 @@
     <ClCompile Include="UI\UiKit\ResponsiveRows.cpp">
       <Filter>UI\UiKit</Filter>
     </ClCompile>
+    <ClCompile Include="UI\UiKit\Splitter.cpp">
+      <Filter>UI\UiKit</Filter>
+    </ClCompile>
     <ClCompile Include="UI\UiKit\UiMetrics.cpp">
       <Filter>UI\UiKit</Filter>
     </ClCompile>
@@ -156,6 +159,9 @@
       <Filter>UI\UiKit</Filter>
     </ClInclude>
     <ClInclude Include="UI\UiKit\ResponsiveRows.h">
+      <Filter>UI\UiKit</Filter>
+    </ClInclude>
+    <ClInclude Include="UI\UiKit\Splitter.h">
       <Filter>UI\UiKit</Filter>
     </ClInclude>
     <ClInclude Include="UI\UiKit\UiMetrics.h">
