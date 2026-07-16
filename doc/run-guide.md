@@ -128,7 +128,11 @@ Win32 outputs (if built with `Platform=Win32`):
 
 After launch:
 
-1. Add a formula in the sidebar (`+ Add Formula`).
+1. Add a formula in the sidebar (`+ Add Formula`). The formula list uses compact cards with visibility, color, edit, actions, and delete controls.
+   - Double-click a formula expression, click **Edit**, or use the card actions menu to open the editor.
+   - Right-click an expression or open the card actions menu to duplicate, copy, hide others, move up/down, or delete.
+   - Delete asks for confirmation before removing the formula.
+   - Long expressions are clipped in the card and shown in full in the tooltip.
 2. Enter one of these forms:
    - `sin(x)` for a 2D curve (`y=f(x)`)
    - `x^2+y^2` or `z=sin(x)*cos(y)` for a 3D surface (`z=f(x,y)`)

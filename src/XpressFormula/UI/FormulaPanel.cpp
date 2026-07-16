@@ -1,11 +1,13 @@
 // FormulaPanel.cpp - Formula-list panel implementation.
 #include "FormulaPanel.h"
 #include "FormulaExamples.h"
+#include "FormulaListActions.h"
 #include "../Core/FunctionRegistry.h"
 #include "imgui.h"
 #include <cstring>
 #include <algorithm>
 #include <cstddef>
+#include <string>
 #include <string_view>
 
 namespace XpressFormula::UI {
@@ -15,6 +17,7 @@ namespace {
 constexpr const char* kFormulaEditorPopupId = "Formula Editor";
 constexpr const char* kFunctionHelpPopupId = "Function Details";
 constexpr const char* kExampleHelpPopupId = "Example Details";
+constexpr const char* kDeleteFormulaPopupId = "Delete Formula";
 
 void loadEditorText(char* dest, size_t destSize, const char* value) {
     if (!dest || destSize == 0) {
@@ -39,6 +42,46 @@ void showWrappedTooltip(const char* first, const char* second = nullptr, const c
     }
     ImGui::PopTextWrapPos();
     ImGui::EndTooltip();
+}
+
+std::string ellipsizeForWidth(const char* text, float maxWidth) {
+    std::string value = text ? text : "";
+    if (value.empty()) {
+        value = "(empty formula)";
+    }
+
+    if (maxWidth <= 0.0f || ImGui::CalcTextSize(value.c_str()).x <= maxWidth) {
+        return value;
+    }
+
+    constexpr const char* ellipsis = "...";
+    const float ellipsisWidth = ImGui::CalcTextSize(ellipsis).x;
+    if (maxWidth <= ellipsisWidth) {
+        return ellipsis;
+    }
+
+    while (!value.empty() &&
+           ImGui::CalcTextSize(value.c_str()).x + ellipsisWidth > maxWidth) {
+        value.pop_back();
+    }
+    return value.empty() ? ellipsis : value + ellipsis;
+}
+
+const char* validationLabel(const FormulaEntry& formula) {
+    if (formula.isValid()) {
+        return "Valid";
+    }
+    return FormulaListActions::formulaExpression(formula).empty() ? "Empty" : "Invalid";
+}
+
+ImVec4 validationColor(const FormulaEntry& formula) {
+    if (formula.isValid()) {
+        return ImVec4(0.44f, 0.92f, 0.52f, 1.0f);
+    }
+    if (FormulaListActions::formulaExpression(formula).empty()) {
+        return ImVec4(0.72f, 0.72f, 0.78f, 1.0f);
+    }
+    return ImVec4(1.0f, 0.45f, 0.38f, 1.0f);
 }
 
 void wrappedBlock(const char* id, const char* text, float height) {
@@ -72,6 +115,66 @@ void FormulaPanel::loadEditorFormula(const char* expression) {
     m_focusEditorInput = true;
     m_editorPreviousText.clear();
     m_editorPreview = FormulaEntry{};
+}
+
+void FormulaPanel::requestDeleteFormula(int formulaIndex) {
+    m_pendingDeleteFormulaIndex = formulaIndex;
+    m_openDeleteConfirmPopupNextFrame = true;
+}
+
+void FormulaPanel::renderDeleteConfirmationDialog(std::vector<FormulaEntry>& formulas) {
+    if (m_openDeleteConfirmPopupNextFrame) {
+        ImGui::OpenPopup(kDeleteFormulaPopupId);
+        m_openDeleteConfirmPopupNextFrame = false;
+    }
+
+    ImGui::SetNextWindowSize(ImVec2(430.0f, 0.0f), ImGuiCond_Appearing);
+    if (ImGui::BeginPopupModal(kDeleteFormulaPopupId, nullptr,
+                               ImGuiWindowFlags_AlwaysAutoResize |
+                               ImGuiWindowFlags_NoSavedSettings)) {
+        const bool validIndex = FormulaListActions::isValidFormulaIndex(
+            formulas, m_pendingDeleteFormulaIndex);
+        if (!validIndex) {
+            ImGui::TextWrapped("The selected formula is no longer available.");
+            if (ImGui::Button("Close", ImVec2(120.0f, 0.0f))) {
+                m_pendingDeleteFormulaIndex = -1;
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
+            return;
+        }
+
+        const FormulaEntry& formula = formulas[static_cast<std::size_t>(m_pendingDeleteFormulaIndex)];
+        ImGui::Text("Delete Formula %d?", m_pendingDeleteFormulaIndex + 1);
+        ImGui::Spacing();
+        ImGui::PushTextWrapPos(ImGui::GetFontSize() * 42.0f);
+        ImGui::TextWrapped("%s", FormulaListActions::formulaExpression(formula).c_str());
+        ImGui::PopTextWrapPos();
+        ImGui::Spacing();
+        ImGui::TextDisabled("This only removes the formula from the current list.");
+        ImGui::Separator();
+
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.70f, 0.16f, 0.16f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.86f, 0.22f, 0.22f, 1.0f));
+        if (ImGui::Button("Delete", ImVec2(120.0f, 0.0f))) {
+            FormulaListActions::deleteFormula(formulas, m_pendingDeleteFormulaIndex,
+                                              &m_editorFormulaIndex);
+            m_pendingDeleteFormulaIndex = -1;
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::PopStyleColor(2);
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel", ImVec2(120.0f, 0.0f))) {
+            m_pendingDeleteFormulaIndex = -1;
+            ImGui::CloseCurrentPopup();
+        }
+
+        ImGui::EndPopup();
+    }
+
+    if (!ImGui::IsPopupOpen(kDeleteFormulaPopupId) && !m_openDeleteConfirmPopupNextFrame) {
+        m_pendingDeleteFormulaIndex = -1;
+    }
 }
 
 void FormulaPanel::renderFunctionHelpDialog() {
@@ -436,6 +539,18 @@ void FormulaPanel::render(std::vector<FormulaEntry>& formulas) {
     ImGui::TextUnformatted("Formulas");
     ImGui::Separator();
 
+    if (ImGui::Button("+ Add Formula", ImVec2(ImGui::GetContentRegionAvail().x, 0))) {
+        FormulaEntry entry;
+        int idx = m_nextColorIndex % kPaletteSize;
+        std::memcpy(entry.color, kDefaultPalette[idx], sizeof(entry.color));
+        m_nextColorIndex++;
+        formulas.push_back(std::move(entry));
+        openEditor(formulas.back(), static_cast<int>(formulas.size()) - 1);
+    }
+
+    ImGui::Spacing();
+    ImGui::TextWrapped("Enter expressions like y=f(x), z=f(x,y), or equations like x^2+y^2=100.");
+
     // --- Preset examples ---
     if (ImGui::CollapsingHeader("Presets")) {
         const auto examples = examplePatterns();
@@ -471,53 +586,181 @@ void FormulaPanel::render(std::vector<FormulaEntry>& formulas) {
     }
 
     ImGui::Separator();
-    ImGui::TextWrapped("Enter expressions like y=f(x), z=f(x,y), or equations like x^2+y^2=100.");
 
     // --- Formula list ---
-    int removeIndex = -1;
+    int duplicateIndex = -1;
+    int hideOthersIndex = -1;
+    int moveFromIndex = -1;
+    int moveToIndex = -1;
+
+    auto drawFormulaActionsMenu = [&](int index, FormulaEntry& formula) {
+        if (ImGui::MenuItem("Edit")) {
+            openEditor(formula, index);
+        }
+        if (ImGui::MenuItem("Duplicate")) {
+            duplicateIndex = index;
+        }
+        if (ImGui::MenuItem("Copy Formula")) {
+            const std::string expression = FormulaListActions::formulaExpression(formula);
+            ImGui::SetClipboardText(expression.c_str());
+        }
+        if (ImGui::MenuItem("Hide Others")) {
+            hideOthersIndex = index;
+        }
+        ImGui::Separator();
+        if (index <= 0) {
+            ImGui::BeginDisabled();
+        }
+        if (ImGui::MenuItem("Move Up")) {
+            moveFromIndex = index;
+            moveToIndex = index - 1;
+        }
+        if (index <= 0) {
+            ImGui::EndDisabled();
+        }
+        if (index + 1 >= static_cast<int>(formulas.size())) {
+            ImGui::BeginDisabled();
+        }
+        if (ImGui::MenuItem("Move Down")) {
+            moveFromIndex = index;
+            moveToIndex = index + 1;
+        }
+        if (index + 1 >= static_cast<int>(formulas.size())) {
+            ImGui::EndDisabled();
+        }
+        ImGui::Separator();
+        if (ImGui::MenuItem("Delete")) {
+            requestDeleteFormula(index);
+        }
+    };
+
+    if (formulas.empty()) {
+        ImGui::TextDisabled("No formulas yet.");
+    }
+
     for (int i = 0; i < static_cast<int>(formulas.size()); ++i) {
         ImGui::PushID(i);
         FormulaEntry& f = formulas[i];
+        const bool showZSlice = f.renderKind == FormulaRenderKind::ScalarField3D && f.isValid();
+        const ImGuiStyle& style = ImGui::GetStyle();
+        const float lineHeight = ImGui::GetTextLineHeightWithSpacing();
+        const float frameHeight = ImGui::GetFrameHeightWithSpacing();
+        const float cardHeight =
+            style.WindowPadding.y * 2.0f +
+            lineHeight * 3.0f +
+            (showZSlice ? frameHeight + style.ItemSpacing.y : 0.0f) +
+            10.0f;
 
-        // Visibility toggle
-        ImGui::Checkbox("##vis", &f.visible);
+        ImGui::BeginChild("##formula_card", ImVec2(0.0f, cardHeight), true,
+                          ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+
+        ImGui::Checkbox("##visible", &f.visible);
+        ImGui::SetItemTooltip("%s Formula %d.", f.visible ? "Hide" : "Show", i + 1);
         ImGui::SameLine();
 
-        // Color picker
-        ImGui::ColorEdit4("##col", f.color,
-                          ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel);
+        ImGui::ColorEdit4("##color", f.color,
+                          ImGuiColorEditFlags_NoInputs |
+                          ImGuiColorEditFlags_NoLabel |
+                          ImGuiColorEditFlags_NoTooltip);
+        ImGui::SetItemTooltip("Set Formula %d color.", i + 1);
         ImGui::SameLine();
 
-        // Input field
-        ImGui::SetNextItemWidth(std::max(120.0f, ImGui::GetContentRegionAvail().x - 150.0f));
-        if (ImGui::InputText("##expr", f.inputBuffer, sizeof(f.inputBuffer))) {
-            f.parse();
+        std::string title = "Formula " + std::to_string(i + 1);
+        ImGui::TextUnformatted(title.c_str());
+        ImGui::SameLine();
+        ImGui::PushStyleColor(ImGuiCol_Text, validationColor(f));
+        ImGui::TextUnformatted(validationLabel(f));
+        ImGui::PopStyleColor();
+        if (ImGui::IsItemHovered() && !f.error.empty()) {
+            showWrappedTooltip("Invalid formula", f.error.c_str());
         }
-        ImGui::SameLine();
+
+        const float editWidth =
+            ImGui::CalcTextSize("Edit").x + style.FramePadding.x * 2.0f;
+        const float actionsWidth =
+            ImGui::CalcTextSize("...").x + style.FramePadding.x * 2.0f;
+        const float deleteWidth =
+            ImGui::CalcTextSize("X").x + style.FramePadding.x * 2.0f;
+        const float totalButtonWidth =
+            editWidth + actionsWidth + deleteWidth + style.ItemSpacing.x * 2.0f;
+        const float rightAlignedX = ImGui::GetWindowContentRegionMax().x - totalButtonWidth;
+        if (ImGui::GetCursorPosX() < rightAlignedX) {
+            ImGui::SameLine(rightAlignedX);
+        } else {
+            ImGui::SameLine();
+        }
 
         if (ImGui::SmallButton("Edit")) {
             openEditor(f, i);
         }
+        ImGui::SetItemTooltip("Edit Formula %d.", i + 1);
         ImGui::SameLine();
 
-        // Type label
-        ImGui::TextUnformatted(f.typeLabel());
+        if (ImGui::SmallButton("...##actions")) {
+            ImGui::OpenPopup("FormulaActionsMenu");
+        }
+        ImGui::SetItemTooltip("Open formula actions.");
+        if (ImGui::BeginPopup("FormulaActionsMenu")) {
+            drawFormulaActionsMenu(i, f);
+            ImGui::EndPopup();
+        }
         ImGui::SameLine();
 
-        // Delete button
         if (ImGui::SmallButton("X")) {
-            removeIndex = i;
+            requestDeleteFormula(i);
+        }
+        ImGui::SetItemTooltip("Delete Formula %d.", i + 1);
+
+        const std::string expression = FormulaListActions::formulaExpression(f);
+        const float expressionWidth = ImGui::GetContentRegionAvail().x;
+        const float expressionRowHeight = ImGui::GetTextLineHeightWithSpacing();
+        const std::string expressionPreview =
+            ellipsizeForWidth(expression.c_str(), expressionWidth - 4.0f);
+        ImGui::Selectable("##expression", false,
+                          ImGuiSelectableFlags_AllowDoubleClick,
+                          ImVec2(expressionWidth, expressionRowHeight));
+        const bool expressionHovered = ImGui::IsItemHovered();
+        if (expressionHovered && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+            openEditor(f, i);
+        }
+        const ImVec2 expressionMin = ImGui::GetItemRectMin();
+        const float expressionTextY =
+            expressionMin.y + (expressionRowHeight - ImGui::GetTextLineHeight()) * 0.5f;
+        const ImU32 expressionColor = ImGui::GetColorU32(
+            expression.empty() ? ImGuiCol_TextDisabled : ImGuiCol_Text);
+        ImGui::GetWindowDrawList()->AddText(
+            ImVec2(expressionMin.x, expressionTextY),
+            expressionColor,
+            expressionPreview.c_str());
+
+        if (expressionHovered) {
+            const char* expressionText = expression.empty() ? "(empty formula)" : expression.c_str();
+            showWrappedTooltip(expressionText, "Double-click to edit. Right-click for actions.");
+        }
+        if (ImGui::BeginPopupContextItem("FormulaExpressionContext")) {
+            drawFormulaActionsMenu(i, f);
+            ImGui::EndPopup();
         }
 
-        // Error message
-        if (!f.error.empty()) {
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 0.3f, 0.3f, 1));
-            ImGui::TextWrapped("  Error: %s", f.error.c_str());
+        if (f.isValid()) {
+            ImGui::TextDisabled("%s | %s | variables: %d",
+                                f.typeLabel(),
+                                f.isEquation ? "Equation" : "Expression",
+                                f.variableCount);
+        } else if (!f.error.empty()) {
+            ImGui::PushStyleColor(ImGuiCol_Text, validationColor(f));
+            ImGui::TextUnformatted("Invalid");
             ImGui::PopStyleColor();
+            ImGui::SameLine();
+            ImGui::TextDisabled("| hover for error details");
+            if (ImGui::IsItemHovered()) {
+                showWrappedTooltip("Invalid formula", f.error.c_str());
+            }
+        } else {
+            ImGui::TextDisabled("Empty | no parsed formula yet");
         }
 
-        // Z-slice slider for scalar fields that include z.
-        if (f.renderKind == FormulaRenderKind::ScalarField3D && f.isValid()) {
+        if (showZSlice) {
             ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
             if (f.isEquation) {
                 ImGui::SliderFloat("z slice / center", &f.zSlice, -10.0f, 10.0f, "z = %.2f");
@@ -526,29 +769,22 @@ void FormulaPanel::render(std::vector<FormulaEntry>& formulas) {
             }
         }
 
+        ImGui::EndChild();
         ImGui::PopID();
     }
 
-    if (removeIndex >= 0) {
-        if (m_editorFormulaIndex == removeIndex) {
-            m_editorFormulaIndex = -1;
-        } else if (m_editorFormulaIndex > removeIndex) {
-            --m_editorFormulaIndex;
-        }
-        formulas.erase(formulas.begin() + removeIndex);
+    if (hideOthersIndex >= 0) {
+        FormulaListActions::hideOtherFormulas(formulas, hideOthersIndex);
+    }
+    if (duplicateIndex >= 0) {
+        FormulaListActions::duplicateFormula(formulas, duplicateIndex, &m_editorFormulaIndex);
+    }
+    if (moveFromIndex >= 0 && moveToIndex >= 0) {
+        FormulaListActions::moveFormula(formulas, moveFromIndex, moveToIndex,
+                                        &m_editorFormulaIndex);
     }
 
-    ImGui::Separator();
-
-    // --- Add button ---
-    if (ImGui::Button("+ Add Formula", ImVec2(ImGui::GetContentRegionAvail().x, 0))) {
-        FormulaEntry entry;
-        int idx = m_nextColorIndex % kPaletteSize;
-        std::memcpy(entry.color, kDefaultPalette[idx], sizeof(entry.color));
-        m_nextColorIndex++;
-        formulas.push_back(std::move(entry));
-    }
-
+    renderDeleteConfirmationDialog(formulas);
     renderEditorDialog(formulas);
 }
 

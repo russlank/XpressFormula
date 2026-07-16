@@ -24,12 +24,16 @@ private:
     void renderEditorDialog(std::vector<FormulaEntry>& formulas);
     void renderFunctionHelpDialog();
     void renderExampleHelpDialog();
+    void requestDeleteFormula(int formulaIndex);
+    void renderDeleteConfirmationDialog(std::vector<FormulaEntry>& formulas);
 
     int m_nextColorIndex = 0;
     bool m_openEditorPopupNextFrame = false;
     bool m_focusEditorInput = false;
     int  m_editorFormulaIndex = -1;
     char m_editorBuffer[2048] = {};
+    int  m_pendingDeleteFormulaIndex = -1;
+    bool m_openDeleteConfirmPopupNextFrame = false;
 
     const Core::FunctionInfo* m_selectedFunctionHelp = nullptr;
     bool m_openFunctionHelpPopupNextFrame = false;

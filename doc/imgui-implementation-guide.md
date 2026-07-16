@@ -217,6 +217,19 @@ Why "next frame" popup opening is common:
 - ImGui popups are frame-driven
 - opening and rendering often happens in a controlled sequence
 
+### Formula Cards and List Actions
+
+The formula sidebar renders each formula as a compact card:
+
+- header row: visibility, color, formula index, validation status, edit/actions/delete controls
+- expression row: clipped preview text with a full wrapped tooltip
+- metadata row: parsed render type and validation state
+- optional `z slice` control for scalar-field formulas
+
+The card list defers structural mutations until after all cards are drawn for the frame. This matters because duplicating, moving, or deleting a `std::vector<FormulaEntry>` item during the loop would invalidate references used by later cards.
+
+Reusable formula-list operations live in [`src/XpressFormula/UI/FormulaListActions.h`](../src/XpressFormula/UI/FormulaListActions.h). The helper covers duplicate, reorder, delete-index adjustment, hide-others, and exact expression-copy behavior, and is tested outside ImGui. Keep future formula-list state changes in that helper when practical.
+
 ### Live Validation in the Formula Editor
 
 The editor does realtime validation while typing:
