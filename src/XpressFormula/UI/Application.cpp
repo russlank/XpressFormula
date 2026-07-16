@@ -763,7 +763,8 @@ void Application::renderPlotToolbar(bool has2DFormula, bool hasSurfaceFormula) {
     enum class ToolbarLayout {
         OneRow,
         TwoRow,
-        Compact
+        Compact,
+        ExtraCompact
     };
 
     struct CameraPreset {
@@ -784,27 +785,49 @@ void Application::renderPlotToolbar(bool has2DFormula, bool hasSurfaceFormula) {
           "Restore the default isometric camera." },
     };
 
-    const float availableWidth = ImGui::GetContentRegionAvail().x;
+    const ImVec2 availableRegion = ImGui::GetContentRegionAvail();
+    const float availableWidth = availableRegion.x;
+    const float availableHeight = availableRegion.y;
     const bool compact = availableWidth < (is3DMode ? 700.0f : 600.0f);
+    const bool extraCompact =
+        is3DMode && compact && (availableWidth < 520.0f || availableHeight < 260.0f);
     const bool oneRow = !compact &&
         ((is3DMode && availableWidth >= 1220.0f) ||
          (!is3DMode && availableWidth >= 860.0f));
-    const ToolbarLayout layout = compact ? ToolbarLayout::Compact
-        : (oneRow ? ToolbarLayout::OneRow : ToolbarLayout::TwoRow);
-    const int rowCount = (layout == ToolbarLayout::OneRow)
-        ? 1
-        : (layout == ToolbarLayout::TwoRow ? 2 : (is3DMode ? 3 : 2));
+    const ToolbarLayout layout = extraCompact ? ToolbarLayout::ExtraCompact
+        : (compact ? ToolbarLayout::Compact
+        : (oneRow ? ToolbarLayout::OneRow : ToolbarLayout::TwoRow));
+    int rowCount = 1;
+    switch (layout) {
+        case ToolbarLayout::OneRow:
+            rowCount = 1;
+            break;
+        case ToolbarLayout::TwoRow:
+        case ToolbarLayout::ExtraCompact:
+            rowCount = 2;
+            break;
+        case ToolbarLayout::Compact:
+            rowCount = is3DMode ? 3 : 2;
+            break;
+    }
 
     const ImGuiStyle& style = ImGui::GetStyle();
+    const ImVec2 toolbarPadding(6.0f, 4.0f);
+    const float rowStride = ImGui::GetFrameHeightWithSpacing();
     const float toolbarHeight =
-        style.WindowPadding.y * 2.0f +
+        toolbarPadding.y * 2.0f +
         ImGui::GetFrameHeight() * static_cast<float>(rowCount) +
         style.ItemSpacing.y * static_cast<float>((std::max)(0, rowCount - 1)) +
-        2.0f;
+        4.0f;
 
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(6.0f, 4.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, toolbarPadding);
     ImGui::BeginChild("##PlotToolbar", ImVec2(0.0f, toolbarHeight), false,
                       ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+
+    auto beginToolbarRow = [&](int rowIndex) {
+        ImGui::SetCursorPosY(toolbarPadding.y + static_cast<float>(rowIndex) * rowStride);
+        ImGui::SetCursorPosX(toolbarPadding.x);
+    };
 
     auto nextGroup = []() {
         ImGui::SameLine();
@@ -835,7 +858,9 @@ void Application::renderPlotToolbar(bool has2DFormula, bool hasSurfaceFormula) {
     auto drawModeControls = [&](bool showEffectiveMode) {
         ImGui::TextUnformatted("Mode");
         ImGui::SameLine();
-        const float modeWidth = (layout == ToolbarLayout::Compact) ? 132.0f : 104.0f;
+        const bool compactModeWidth =
+            layout == ToolbarLayout::Compact || layout == ToolbarLayout::ExtraCompact;
+        const float modeWidth = compactModeWidth ? 132.0f : 104.0f;
         ImGui::SetNextItemWidth(modeWidth);
         if (ImGui::BeginCombo("##PlotRenderModePreference",
                               renderModePreferenceLabel(m_plotSettings.xyRenderModePreference))) {
@@ -882,7 +907,23 @@ void Application::renderPlotToolbar(bool has2DFormula, bool hasSurfaceFormula) {
         ImGui::SetItemTooltip("Show or hide coordinate axes and labels.");
     };
 
-    auto drawMoreMenu = [&]() {
+    auto drawCameraPresetMenuItems = [&]() {
+        ImGui::TextDisabled("Camera");
+        for (const CameraPreset& preset : cameraPresets) {
+            const bool selected =
+                std::abs(m_plotSettings.azimuthDeg - preset.azimuthDeg) < 0.01f &&
+                std::abs(m_plotSettings.elevationDeg - preset.elevationDeg) < 0.01f;
+            if (ImGui::Selectable(preset.label, selected)) {
+                applyCameraPreset(preset.azimuthDeg, preset.elevationDeg);
+            }
+            ImGui::SetItemTooltip("%s", preset.tooltip);
+            if (selected) {
+                ImGui::SetItemDefaultFocus();
+            }
+        }
+    };
+
+    auto drawMoreMenu = [&](bool includeCameraPresets) {
         if (ImGui::Button("More...##PlotToolbar")) {
             ImGui::OpenPopup("##PlotToolbarMore");
         }
@@ -912,6 +953,10 @@ void Application::renderPlotToolbar(bool has2DFormula, bool hasSurfaceFormula) {
                 if (m_plotSettings.showCoordinates &&
                     ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
                     ImGui::SetTooltip("Axis triad is disabled while coordinates are enabled.");
+                }
+                if (includeCameraPresets) {
+                    ImGui::Separator();
+                    drawCameraPresetMenuItems();
                 }
             }
             ImGui::EndPopup();
@@ -967,6 +1012,7 @@ void Application::renderPlotToolbar(bool has2DFormula, bool hasSurfaceFormula) {
     };
 
     if (layout == ToolbarLayout::OneRow) {
+        beginToolbarRow(0);
         drawActions();
         nextGroup();
         drawModeControls(true);
@@ -977,28 +1023,37 @@ void Application::renderPlotToolbar(bool has2DFormula, bool hasSurfaceFormula) {
             drawCameraButtons();
         }
     } else if (layout == ToolbarLayout::TwoRow) {
+        beginToolbarRow(0);
         drawActions();
         nextGroup();
         drawModeControls(true);
         if (is3DMode) {
             nextGroup();
             drawDisplayToggles();
-            ImGui::NewLine();
+            beginToolbarRow(1);
             drawCameraButtons();
         } else {
-            ImGui::NewLine();
+            beginToolbarRow(1);
             drawDisplayToggles();
         }
-    } else {
+    } else if (layout == ToolbarLayout::Compact) {
+        beginToolbarRow(0);
         drawActions();
         ImGui::SameLine();
-        drawMoreMenu();
-        ImGui::NewLine();
+        drawMoreMenu(false);
+        beginToolbarRow(1);
         drawModeControls(false);
         if (is3DMode) {
-            ImGui::NewLine();
+            beginToolbarRow(2);
             drawCameraCombo();
         }
+    } else {
+        beginToolbarRow(0);
+        drawActions();
+        ImGui::SameLine();
+        drawMoreMenu(true);
+        beginToolbarRow(1);
+        drawModeControls(false);
     }
 
     ImGui::EndChild();
