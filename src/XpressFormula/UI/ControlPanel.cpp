@@ -222,7 +222,7 @@ ControlPanelActions ControlPanel::render(Core::ViewTransform& vt, PlotSettings& 
                                     settings.wireThickness,
                                     0.0f,
                                     2.5f,
-                                    2.0f,
+                                    kDefaultWireThickness,
                                     "%.2f",
                                     "%.2f",
                                     "Line thickness for 3D mesh/wire overlays.");
@@ -233,7 +233,7 @@ ControlPanelActions ControlPanel::render(Core::ViewTransform& vt, PlotSettings& 
                                         settings.envelopeThickness,
                                         0.5f,
                                         3.0f,
-                                        2.0f,
+                                        kDefaultEnvelopeThickness,
                                         "%.2f",
                                         "%.2f",
                                         "Thickness for the 3D bounding envelope.");
@@ -244,7 +244,7 @@ ControlPanelActions ControlPanel::render(Core::ViewTransform& vt, PlotSettings& 
                                         settings.autoRotateSpeedDegPerSec,
                                         2.0f,
                                         90.0f,
-                                        20.0f,
+                                        kDefaultAutoRotateSpeedDegPerSec,
                                         "%.1f deg/s",
                                         "%.1f",
                                         "Automatic camera rotation speed in degrees per second.");
@@ -274,7 +274,7 @@ ControlPanelActions ControlPanel::render(Core::ViewTransform& vt, PlotSettings& 
                                 settings.azimuthDeg,
                                 -180.0f,
                                 180.0f,
-                                30.0f,
+                                kDefaultAzimuthDeg,
                                 "%.1f deg",
                                 "%.1f",
                                 "Horizontal camera angle for 3D surfaces.");
@@ -282,7 +282,7 @@ ControlPanelActions ControlPanel::render(Core::ViewTransform& vt, PlotSettings& 
                                 settings.elevationDeg,
                                 -85.0f,
                                 85.0f,
-                                -60.0f,
+                                kDefaultElevationDeg,
                                 "%.1f deg",
                                 "%.1f",
                                 "Vertical camera angle for 3D surfaces.");
@@ -290,7 +290,7 @@ ControlPanelActions ControlPanel::render(Core::ViewTransform& vt, PlotSettings& 
                                 settings.zScale,
                                 0.1f,
                                 8.0f,
-                                1.5f,
+                                kDefaultZScale,
                                 "%.2f",
                                 "%.2f",
                                 "Vertical exaggeration applied to 3D geometry.");
@@ -298,19 +298,19 @@ ControlPanelActions ControlPanel::render(Core::ViewTransform& vt, PlotSettings& 
                               settings.surfaceResolution,
                               12,
                               96,
-                              50,
+                              kDefaultSurfaceResolution,
                               "Sampling density for explicit z=f(x,y) surfaces.");
             sliderIntProperty("Implicit res.",
                               settings.implicitSurfaceResolution,
                               16,
                               96,
-                              64,
+                              kDefaultImplicitSurfaceResolution,
                               "Grid resolution for implicit F(x,y,z)=0 surfaces.");
             sliderFloatProperty("Opacity",
                                 settings.surfaceOpacity,
                                 0.25f,
                                 1.0f,
-                                0.80f,
+                                kDefaultSurfaceOpacity,
                                 "%.2f",
                                 "%.2f",
                                 "Surface fill opacity.");
@@ -329,7 +329,7 @@ ControlPanelActions ControlPanel::render(Core::ViewTransform& vt, PlotSettings& 
                                 settings.heatmapOpacity,
                                 0.1f,
                                 1.0f,
-                                0.62f,
+                                kDefaultHeatmapOpacity,
                                 "%.2f",
                                 "%.2f",
                                 "Opacity for heatmap and scalar-field cross-section fills.");

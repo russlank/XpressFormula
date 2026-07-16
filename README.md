@@ -18,7 +18,7 @@ The app supports:
 - `f(x,y,z)` scalar-field cross-sections at configurable `z` slices
 - `F(x,y,z)=0` implicit 3D surfaces (e.g. spheres and torus equations)
 - Auto/Force 2D/3D rendering preference with projected 3D grid-plane interleaving (`z=0`) for clearer depth ordering
-- Resizable ImGui sidebar with aligned 3D camera/display property rows and per-control resets
+- Resizable ImGui sidebar with aligned 3D camera/display property rows, per-control resets, and a compact plot toolbar for common view/export actions
 - Plot export dialog with aspect-safe framing modes, size presets/scales, background transparency, scene toggles, preview zoom/quality, export-only quality/supersampling, `.png`/`.bmp` save, clipboard copy, and post-save actions
 - Startup/manual update checks against GitHub releases with quick link to the releases page
 - Versioned binary metadata and installer packaging (`.msi` + setup `.exe`)

@@ -22,7 +22,7 @@ XpressFormula is organized into three primary layers:
 - [`src/XpressFormula/Core/UpdateVersionUtils.h`](../src/XpressFormula/Core/UpdateVersionUtils.h)
   - Small header-only utilities for semantic-version parsing/comparison and extracting GitHub release fields from API JSON.
 - [`src/XpressFormula/UI/Application.h`](../src/XpressFormula/UI/Application.h) and [`src/XpressFormula/UI/Application.cpp`](../src/XpressFormula/UI/Application.cpp)
-  - Owns Win32 window, D3D11 resources, ImGui lifecycle, frame loop, and main sidebar/plot layout state.
+  - Owns Win32 window, D3D11 resources, ImGui lifecycle, frame loop, main sidebar/plot layout state, plot toolbar actions, and export workflow.
 - [`src/XpressFormula/UI/FormulaPanel.h`](../src/XpressFormula/UI/FormulaPanel.h) and [`src/XpressFormula/UI/FormulaPanel.cpp`](../src/XpressFormula/UI/FormulaPanel.cpp)
   - Formula list management and per-formula controls.
 - [`src/XpressFormula/UI/ControlPanel.h`](../src/XpressFormula/UI/ControlPanel.h) and [`src/XpressFormula/UI/ControlPanel.cpp`](../src/XpressFormula/UI/ControlPanel.cpp)

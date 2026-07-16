@@ -14,6 +14,17 @@ enum class XYRenderModePreference {
     Force2D
 };
 
+inline constexpr float kDefaultAzimuthDeg = 30.0f;
+inline constexpr float kDefaultElevationDeg = -60.0f;
+inline constexpr float kDefaultZScale = 1.5f;
+inline constexpr int   kDefaultSurfaceResolution = 50;
+inline constexpr int   kDefaultImplicitSurfaceResolution = 64;
+inline constexpr float kDefaultSurfaceOpacity = 0.80f;
+inline constexpr float kDefaultWireThickness = 2.0f;
+inline constexpr float kDefaultEnvelopeThickness = 2.0f;
+inline constexpr float kDefaultAutoRotateSpeedDegPerSec = 20.0f;
+inline constexpr float kDefaultHeatmapOpacity = 0.62f;
+
 struct PlotSettings {
     XYRenderModePreference xyRenderModePreference = XYRenderModePreference::Auto;
     bool optimizeRendering = true;
@@ -51,21 +62,21 @@ struct PlotSettings {
     //bool  autoRotate = false;
     //float autoRotateSpeedDegPerSec = 20.0f;
 
-    float azimuthDeg = 30.0f;
-    float elevationDeg = -60.0f;
-    float zScale = 1.5f;
-    int   surfaceResolution = 50;
-    int   implicitSurfaceResolution = 64;
-    float surfaceOpacity = 0.80f;
-    float wireThickness = 2.0f;
+    float azimuthDeg = kDefaultAzimuthDeg;
+    float elevationDeg = kDefaultElevationDeg;
+    float zScale = kDefaultZScale;
+    int   surfaceResolution = kDefaultSurfaceResolution;
+    int   implicitSurfaceResolution = kDefaultImplicitSurfaceResolution;
+    float surfaceOpacity = kDefaultSurfaceOpacity;
+    float wireThickness = kDefaultWireThickness;
     bool  showSurfaceEnvelope = true;
-    float envelopeThickness = 2.00f;
+    float envelopeThickness = kDefaultEnvelopeThickness;
     bool  showAxisTriad = true;
     bool  autoRotate = false;
-    float autoRotateSpeedDegPerSec = 20.0f;
+    float autoRotateSpeedDegPerSec = kDefaultAutoRotateSpeedDegPerSec;
 
     // Heatmap and scalar-field alpha.
-    float heatmapOpacity = 0.62f;
+    float heatmapOpacity = kDefaultHeatmapOpacity;
 };
 
 } // namespace XpressFormula::UI

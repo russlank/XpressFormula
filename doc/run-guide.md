@@ -147,7 +147,20 @@ After launch:
    - The **XYZ Dimension Arrows** gizmo is shown near the lower-left of the plot viewport only when coordinates are hidden (mutually exclusive with **Show Coordinates**).
    - Keep **Optimize Rendering** enabled for lower idle GPU usage and smoother 3D dragging/zooming (temporary interaction-time quality reduction for heavy implicit meshes).
    - For implicit 3D equations, keep the formula `z slice / center` near the shape center (often `0`) and make sure the visible `X/Y` range contains the shape (for example, a sphere `x^2+y^2+z^2=16` needs roughly `[-4,4]` in both `X` and `Y`).
-4. Use mouse drag to pan and mouse wheel to zoom domain coordinates.
+4. Use the compact toolbar above the plot for common actions:
+   - **Fit** fits the view to the standard `[-10, 10]` math domain.
+   - **Reset** restores the default view and 3D camera.
+   - **Mode** mirrors the sidebar Auto/Force 3D/Force 2D render preference.
+   - **Grid**, **Wires**, and **Axes** mirror the sidebar display toggles.
+   - **Export** opens the export dialog.
+   - In 3D mode, **Front**, **Back**, **Left**, **Right**, **Top**, **Bottom**, and **Iso** apply deterministic camera presets.
+5. Keyboard shortcuts are available when text entry and modal dialogs are inactive:
+   - `F`: fit view.
+   - `Home`: reset view and 3D camera.
+   - `G`: toggle grid.
+   - `W`: toggle wire overlays.
+   - `E`: open export dialog.
+6. Use mouse drag to pan and mouse wheel to zoom domain coordinates.
 
 ## Export Plot Image
 

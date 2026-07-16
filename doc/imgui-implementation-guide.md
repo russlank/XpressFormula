@@ -132,7 +132,7 @@ and then creating borderless windows with flags like:
 - `NoMove`
 - `NoCollapse`
 
-The sidebar width is owned by `Application` state and adjusted through the splitter each frame, with min/max constraints so the plot retains usable space.
+The sidebar width is owned by `Application` state and adjusted through the splitter each frame, with min/max constraints so the plot retains usable space. The plot window reserves a small toolbar child before the canvas; the toolbar mutates the same `ViewTransform` and `PlotSettings` objects as the sidebar, so both control surfaces stay synchronized.
 
 Why this pattern is useful:
 
@@ -181,6 +181,12 @@ Used for persistent state like:
 Used by `ControlPanel` for one-shot actions:
 
 - open export settings dialog
+
+Used by the plot toolbar for direct application-level commands:
+
+- fit/reset the view
+- open export settings dialog
+- apply deterministic 3D camera presets
 
 Used by `Application` (outside panel code) for other side-effecting actions:
 

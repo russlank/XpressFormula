@@ -86,6 +86,11 @@ private:
     bool createDeviceD3D(HWND hWnd);
     void cleanupDeviceD3D();
     void renderFrame();
+    void renderPlotToolbar(bool has2DFormula, bool hasSurfaceFormula);
+    void handlePlotShortcuts();
+    void fitDefaultView();
+    void resetViewAndCamera();
+    void applyCameraPreset(float azimuthDeg, float elevationDeg);
     void startUpdateCheck(bool manualRequest);
     void pollUpdateCheckResult();
     bool promptSaveImagePath(std::wstring& path);

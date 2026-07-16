@@ -303,6 +303,24 @@ namespace XpressFormula::UI {
 Application::Application()  = default;
 Application::~Application() = default;
 
+namespace {
+
+const char* renderModePreferenceLabel(XYRenderModePreference preference) {
+    switch (preference) {
+        case XYRenderModePreference::Force3D: return "Force 3D";
+        case XYRenderModePreference::Force2D: return "Force 2D";
+        case XYRenderModePreference::Auto:
+        default:
+            return "Auto";
+    }
+}
+
+const char* effectiveRenderModeLabel(XYRenderMode mode) {
+    return mode == XYRenderMode::Surface3D ? "3D" : "2D";
+}
+
+} // namespace
+
 // ---- initialisation ---------------------------------------------------------
 
 bool Application::initialize(HINSTANCE hInstance, int width, int height) {
@@ -706,6 +724,8 @@ void Application::renderFrame() {
                  ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
                  ImGuiWindowFlags_NoMove     | ImGuiWindowFlags_NoCollapse |
                  ImGuiWindowFlags_NoScrollbar);
+    handlePlotShortcuts();
+    renderPlotToolbar(has2DFormula, hasSurfaceFormula);
     PlotRenderOverrides exportOverrides;
     if (m_pendingSavePlotImage || m_pendingCopyPlotImage) {
         exportOverrides.active = true;
@@ -731,6 +751,174 @@ void Application::renderFrame() {
 
     HRESULT hr = m_swapChain->Present(1, 0); // VSync
     m_swapChainOccluded = (hr == DXGI_STATUS_OCCLUDED);
+}
+
+void Application::renderPlotToolbar(bool has2DFormula, bool hasSurfaceFormula) {
+    const XYRenderMode effectiveRenderMode =
+        m_plotSettings.resolveXYRenderMode(has2DFormula, hasSurfaceFormula);
+    const bool is3DMode = (effectiveRenderMode == XYRenderMode::Surface3D);
+    const float lineHeight = ImGui::GetFrameHeightWithSpacing();
+    const float toolbarHeight = is3DMode ? (lineHeight * 4.0f + 10.0f) : (lineHeight * 3.0f + 8.0f);
+
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(6.0f, 4.0f));
+    ImGui::BeginChild("##PlotToolbar", ImVec2(0.0f, toolbarHeight), false,
+                      ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+
+    if (ImGui::Button("Fit##PlotToolbar")) {
+        fitDefaultView();
+    }
+    ImGui::SetItemTooltip("Fit the plot to the standard [-10, 10] math domain. Shortcut: F.");
+    ImGui::SameLine();
+
+    if (ImGui::Button("Reset##PlotToolbar")) {
+        resetViewAndCamera();
+    }
+    ImGui::SetItemTooltip("Reset view scale, center, and 3D camera. Shortcut: Home.");
+    ImGui::SameLine();
+
+    if (ImGui::Button("Export##PlotToolbar")) {
+        m_exportDialogOpenRequested = true;
+        m_redrawRequested = true;
+    }
+    ImGui::SetItemTooltip("Open the export dialog. Shortcut: E.");
+
+    ImGui::TextUnformatted("Mode");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(104.0f);
+    if (ImGui::BeginCombo("##PlotRenderModePreference",
+                          renderModePreferenceLabel(m_plotSettings.xyRenderModePreference))) {
+        const XYRenderModePreference preferences[] = {
+            XYRenderModePreference::Auto,
+            XYRenderModePreference::Force3D,
+            XYRenderModePreference::Force2D
+        };
+        for (XYRenderModePreference preference : preferences) {
+            const bool selected = (m_plotSettings.xyRenderModePreference == preference);
+            if (ImGui::Selectable(renderModePreferenceLabel(preference), selected)) {
+                m_plotSettings.xyRenderModePreference = preference;
+                m_redrawRequested = true;
+            }
+            if (selected) {
+                ImGui::SetItemDefaultFocus();
+            }
+        }
+        ImGui::EndCombo();
+    }
+    ImGui::SetItemTooltip("Select automatic mode, force 3D surfaces, or force 2D heatmaps/cross-sections.");
+    ImGui::SameLine();
+
+    ImGui::TextDisabled("Effective: %s", effectiveRenderModeLabel(effectiveRenderMode));
+
+    if (ImGui::Checkbox("Grid##PlotToolbar", &m_plotSettings.showGrid)) {
+        m_redrawRequested = true;
+    }
+    ImGui::SetItemTooltip("Show or hide the grid. Shortcut: G.");
+    ImGui::SameLine();
+    if (ImGui::Checkbox("Wires##PlotToolbar", &m_plotSettings.showWires)) {
+        m_redrawRequested = true;
+    }
+    ImGui::SetItemTooltip("Show or hide 3D wire overlays. Shortcut: W.");
+    ImGui::SameLine();
+    if (ImGui::Checkbox("Axes##PlotToolbar", &m_plotSettings.showCoordinates)) {
+        m_redrawRequested = true;
+    }
+    ImGui::SetItemTooltip("Show or hide coordinate axes and labels.");
+    if (m_plotSettings.showCoordinates && m_plotSettings.showAxisTriad) {
+        ImGui::SameLine();
+        ImGui::TextDisabled("Triad hidden while axes are on");
+    }
+
+    if (is3DMode) {
+        struct CameraPreset {
+            const char* label;
+            float azimuthDeg;
+            float elevationDeg;
+            const char* tooltip;
+        };
+        const CameraPreset presets[] = {
+            { "Front", 0.0f, -85.0f, "View from the front, showing X and Z." },
+            { "Back", 180.0f, -85.0f, "View from the back, showing X and Z reversed." },
+            { "Left", -90.0f, -85.0f, "View from the left, showing Y and Z." },
+            { "Right", 90.0f, -85.0f, "View from the right, showing Y and Z." },
+            { "Top", 0.0f, 0.0f, "Top-down X/Y view." },
+            { "Bottom", 180.0f, 0.0f, "Bottom-oriented X/Y view." },
+            { "Iso", kDefaultAzimuthDeg, kDefaultElevationDeg, "Restore the default isometric camera." },
+        };
+
+        ImGui::TextUnformatted("Cam");
+        ImGui::SameLine();
+        for (const CameraPreset& preset : presets) {
+            if (ImGui::Button(preset.label)) {
+                applyCameraPreset(preset.azimuthDeg, preset.elevationDeg);
+            }
+            ImGui::SetItemTooltip("%s", preset.tooltip);
+            if (&preset != &presets[sizeof(presets) / sizeof(presets[0]) - 1]) {
+                ImGui::SameLine();
+            }
+        }
+    }
+
+    ImGui::EndChild();
+    ImGui::PopStyleVar();
+}
+
+void Application::handlePlotShortcuts() {
+    ImGuiIO& io = ImGui::GetIO();
+    const bool modifiersDown = io.KeyCtrl || io.KeyAlt || io.KeySuper;
+    const bool canUsePlotShortcuts =
+        !m_exportDialogOpen && !io.WantTextInput && !ImGui::IsAnyItemActive() && !modifiersDown;
+    if (!canUsePlotShortcuts) {
+        return;
+    }
+
+    if (ImGui::IsKeyPressed(ImGuiKey_F, false)) {
+        fitDefaultView();
+    }
+    if (ImGui::IsKeyPressed(ImGuiKey_Home, false)) {
+        resetViewAndCamera();
+    }
+    if (ImGui::IsKeyPressed(ImGuiKey_G, false)) {
+        m_plotSettings.showGrid = !m_plotSettings.showGrid;
+        m_redrawRequested = true;
+    }
+    if (ImGui::IsKeyPressed(ImGuiKey_W, false)) {
+        m_plotSettings.showWires = !m_plotSettings.showWires;
+        m_redrawRequested = true;
+    }
+    if (ImGui::IsKeyPressed(ImGuiKey_E, false)) {
+        m_exportDialogOpenRequested = true;
+        m_redrawRequested = true;
+    }
+}
+
+void Application::fitDefaultView() {
+    constexpr double targetWorldSpan = 20.0;
+    constexpr double marginScale = 0.94;
+    const double fitScaleX = (std::max)(1.0f, m_viewTransform.screenWidth) / targetWorldSpan;
+    const double fitScaleY = (std::max)(1.0f, m_viewTransform.screenHeight) / targetWorldSpan;
+    const double fitScale = (std::max)(0.1, (std::min)(fitScaleX, fitScaleY) * marginScale);
+
+    m_viewTransform.centerX = 0.0;
+    m_viewTransform.centerY = 0.0;
+    m_viewTransform.scaleX = fitScale;
+    m_viewTransform.scaleY = fitScale;
+    m_redrawRequested = true;
+}
+
+void Application::resetViewAndCamera() {
+    m_viewTransform.reset();
+    m_plotSettings.azimuthDeg = kDefaultAzimuthDeg;
+    m_plotSettings.elevationDeg = kDefaultElevationDeg;
+    m_plotSettings.zScale = kDefaultZScale;
+    m_plotSettings.autoRotate = false;
+    m_redrawRequested = true;
+}
+
+void Application::applyCameraPreset(float azimuthDeg, float elevationDeg) {
+    m_plotSettings.azimuthDeg = azimuthDeg;
+    m_plotSettings.elevationDeg = elevationDeg;
+    m_plotSettings.autoRotate = false;
+    m_redrawRequested = true;
 }
 
 void Application::startUpdateCheck(bool manualRequest) {
