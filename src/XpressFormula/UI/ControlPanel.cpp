@@ -12,16 +12,15 @@ namespace XpressFormula::UI {
 namespace {
 
 bool beginPropertyTable(const char* id) {
-    return ImGui::BeginTable(id, 4,
+    return ImGui::BeginTable(id, 3,
         ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_NoSavedSettings,
         ImVec2(0.0f, 0.0f));
 }
 
 void setupPropertyColumns() {
-    ImGui::TableSetupColumn("Property", ImGuiTableColumnFlags_WidthFixed, 112.0f);
-    ImGui::TableSetupColumn("Control", ImGuiTableColumnFlags_WidthStretch);
-    ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthFixed, 64.0f);
-    ImGui::TableSetupColumn("Reset", ImGuiTableColumnFlags_WidthFixed, 52.0f);
+    ImGui::TableSetupColumn("Property", ImGuiTableColumnFlags_WidthFixed, 122.0f);
+    ImGui::TableSetupColumn("Slider with value", ImGuiTableColumnFlags_WidthStretch);
+    ImGui::TableSetupColumn("Reset", ImGuiTableColumnFlags_WidthFixed, 58.0f);
 }
 
 void drawPropertyLabel(const char* label, const char* tooltip) {
@@ -31,13 +30,26 @@ void drawPropertyLabel(const char* label, const char* tooltip) {
     }
 }
 
+bool resetPropertyButton(const char* label) {
+    const char* buttonText = "Reset";
+    const float buttonWidth =
+        ImGui::CalcTextSize(buttonText).x + ImGui::GetStyle().FramePadding.x * 2.0f;
+    const float available = ImGui::GetContentRegionAvail().x;
+    if (available > buttonWidth) {
+        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + available - buttonWidth);
+    }
+
+    const bool clicked = ImGui::SmallButton(buttonText);
+    ImGui::SetItemTooltip("Reset %s to its default value.", label);
+    return clicked;
+}
+
 bool sliderFloatProperty(const char* label,
                          float& value,
                          float minValue,
                          float maxValue,
                          float resetValue,
                          const char* sliderFormat,
-                         const char* valueFormat,
                          const char* tooltip = nullptr) {
     bool changed = false;
     ImGui::PushID(label);
@@ -50,14 +62,10 @@ bool sliderFloatProperty(const char* label,
     changed = ImGui::SliderFloat("##Control", &value, minValue, maxValue, sliderFormat);
 
     ImGui::TableSetColumnIndex(2);
-    ImGui::Text(valueFormat, value);
-
-    ImGui::TableSetColumnIndex(3);
-    if (ImGui::SmallButton("Reset")) {
+    if (resetPropertyButton(label)) {
         value = resetValue;
         changed = true;
     }
-    ImGui::SetItemTooltip("Reset %s to its default value.", label);
     ImGui::PopID();
     return changed;
 }
@@ -79,14 +87,10 @@ bool sliderIntProperty(const char* label,
     changed = ImGui::SliderInt("##Control", &value, minValue, maxValue);
 
     ImGui::TableSetColumnIndex(2);
-    ImGui::Text("%d", value);
-
-    ImGui::TableSetColumnIndex(3);
-    if (ImGui::SmallButton("Reset")) {
+    if (resetPropertyButton(label)) {
         value = resetValue;
         changed = true;
     }
-    ImGui::SetItemTooltip("Reset %s to its default value.", label);
     ImGui::PopID();
     return changed;
 }
@@ -99,65 +103,57 @@ ControlPanelActions ControlPanel::render(Core::ViewTransform& vt, PlotSettings& 
                                          const std::string& exportStatus) {
     ControlPanelActions actions;
 
-    ImGui::TextUnformatted("View Controls");
+    ImGui::TextUnformatted("View");
     ImGui::Separator();
 
-    // --- Zoom all ---
-    float zoomAllLog = static_cast<float>(std::log(std::max(vt.scaleX, 1e-6)) / std::log(2.0));
-    if (ImGui::SliderFloat("Zoom##all", &zoomAllLog, -3.0f, 14.0f, "2^%.1f")) {
-        double newScale = std::clamp(std::pow(2.0, static_cast<double>(zoomAllLog)), 0.1, 100000.0);
+    float viewScale = static_cast<float>(std::clamp(
+        std::sqrt(std::max(1e-6, vt.scaleX * vt.scaleY)),
+        0.1,
+        100000.0));
+    ImGui::SetNextItemWidth(-1.0f);
+    if (ImGui::SliderFloat("Zoom / scale##all",
+                           &viewScale,
+                           0.1f,
+                           100000.0f,
+                           "%.1f px/unit",
+                           ImGuiSliderFlags_Logarithmic)) {
+        const double newScale = std::clamp(static_cast<double>(viewScale), 0.1, 100000.0);
         vt.scaleX = newScale;
         vt.scaleY = newScale;
     }
+    ImGui::SetItemTooltip("Adjust X and Y scale together in pixels per world unit.");
 
-    if (ImGui::Button("Zoom In##all")) { vt.zoomAll(1.25); }
-    ImGui::SameLine();
-    if (ImGui::Button("Zoom Out##all")) { vt.zoomAll(0.8); }
-
-    ImGui::Spacing();
-
-    // --- Zoom X only ---
-    if (ImGui::Button("Zoom X+")) { vt.zoomX(1.25); }
-    ImGui::SameLine();
-    if (ImGui::Button("Zoom X-")) { vt.zoomX(0.8); }
-
-    // --- Zoom Y only ---
-    if (ImGui::Button("Zoom Y+")) { vt.zoomY(1.25); }
-    ImGui::SameLine();
-    if (ImGui::Button("Zoom Y-")) { vt.zoomY(0.8); }
-
-    ImGui::Spacing();
-
-    // --- Pan ---
-    float panStep = 1.0f;
-    ImGui::TextUnformatted("Pan:");
-    if (ImGui::Button("Left"))  { vt.pan(-panStep, 0); }
-    ImGui::SameLine();
-    if (ImGui::Button("Right")) { vt.pan( panStep, 0); }
-    ImGui::SameLine();
-    if (ImGui::Button("Up"))    { vt.pan(0,  panStep); }
-    ImGui::SameLine();
-    if (ImGui::Button("Down"))  { vt.pan(0, -panStep); }
-
-    ImGui::Spacing();
-    ImGui::Separator();
-
-    // --- Reset ---
-    if (ImGui::Button("Reset View", ImVec2(ImGui::GetContentRegionAvail().x, 0))) {
-        vt.reset();
-    }
-
-    ImGui::Spacing();
-
-    // --- Current view range info ---
-    ImGui::TextUnformatted("View Range:");
     char buf[128];
-    std::snprintf(buf, sizeof(buf), "  X: [%.4g, %.4g]", vt.worldXMin(), vt.worldXMax());
+    std::snprintf(buf, sizeof(buf), "X: [%.4g, %.4g]", vt.worldXMin(), vt.worldXMax());
     ImGui::TextUnformatted(buf);
-    std::snprintf(buf, sizeof(buf), "  Y: [%.4g, %.4g]", vt.worldYMin(), vt.worldYMax());
+    std::snprintf(buf, sizeof(buf), "Y: [%.4g, %.4g]", vt.worldYMin(), vt.worldYMax());
     ImGui::TextUnformatted(buf);
-    std::snprintf(buf, sizeof(buf), "  Scale: %.1f x %.1f px/unit", vt.scaleX, vt.scaleY);
+    std::snprintf(buf, sizeof(buf), "Scale: %.1f x %.1f px/unit", vt.scaleX, vt.scaleY);
     ImGui::TextUnformatted(buf);
+    ImGui::TextWrapped("Mouse: drag to pan; wheel to zoom; Shift/Ctrl wheel constrains X/Y.");
+
+    ImGui::SetNextItemOpen(m_advancedViewExpanded, ImGuiCond_Always);
+    m_advancedViewExpanded = ImGui::CollapsingHeader(
+        "Advanced View Controls##AdvancedViewControls", ImGuiTreeNodeFlags_SpanAvailWidth);
+    if (m_advancedViewExpanded) {
+        if (ImGui::Button("Zoom X+")) { vt.zoomX(1.25); }
+        ImGui::SameLine();
+        if (ImGui::Button("Zoom X-")) { vt.zoomX(0.8); }
+
+        if (ImGui::Button("Zoom Y+")) { vt.zoomY(1.25); }
+        ImGui::SameLine();
+        if (ImGui::Button("Zoom Y-")) { vt.zoomY(0.8); }
+
+        const float panStep = 1.0f;
+        ImGui::TextUnformatted("Pan");
+        if (ImGui::Button("Left"))  { vt.pan(-panStep, 0); }
+        ImGui::SameLine();
+        if (ImGui::Button("Right")) { vt.pan( panStep, 0); }
+        ImGui::SameLine();
+        if (ImGui::Button("Up"))    { vt.pan(0,  panStep); }
+        ImGui::SameLine();
+        if (ImGui::Button("Down"))  { vt.pan(0, -panStep); }
+    }
 
     ImGui::Spacing();
     ImGui::Separator();
@@ -209,7 +205,9 @@ ControlPanelActions ControlPanel::render(Core::ViewTransform& vt, PlotSettings& 
     if (m_displaySectionExpanded) {
         ImGui::Spacing();
         ImGui::Checkbox("Show Grid", &settings.showGrid);
-        ImGui::Checkbox("Show Coordinates", &settings.showCoordinates);
+        if (ImGui::Checkbox("Show Coordinates", &settings.showCoordinates)) {
+            settings.applyCoordinateOverlayPolicy();
+        }
         ImGui::Checkbox("Show Wires", &settings.showWires);
 
         if (effectiveRenderMode == XYRenderMode::Surface3D) {
@@ -218,44 +216,45 @@ ControlPanelActions ControlPanel::render(Core::ViewTransform& vt, PlotSettings& 
             if (beginPropertyTable("Display3DProperties")) {
                 setupPropertyColumns();
                 ImGui::BeginDisabled(!settings.showWires);
-                sliderFloatProperty("Wire",
+                sliderFloatProperty("Wire Thickness",
                                     settings.wireThickness,
                                     0.0f,
                                     2.5f,
                                     kDefaultWireThickness,
                                     "%.2f",
-                                    "%.2f",
                                     "Line thickness for 3D mesh/wire overlays.");
                 ImGui::EndDisabled();
 
                 if (settings.showSurfaceEnvelope) {
-                    sliderFloatProperty("Envelope",
+                    sliderFloatProperty("Envelope Thickness",
                                         settings.envelopeThickness,
                                         0.5f,
                                         3.0f,
                                         kDefaultEnvelopeThickness,
                                         "%.2f",
-                                        "%.2f",
                                         "Thickness for the 3D bounding envelope.");
                 }
 
                 if (settings.autoRotate) {
-                    sliderFloatProperty("Rotate",
+                    sliderFloatProperty("Rotation Speed",
                                         settings.autoRotateSpeedDegPerSec,
                                         2.0f,
                                         90.0f,
                                         kDefaultAutoRotateSpeedDegPerSec,
                                         "%.1f deg/s",
-                                        "%.1f",
                                         "Automatic camera rotation speed in degrees per second.");
                 }
                 ImGui::EndTable();
             }
 
             ImGui::Checkbox("Show Envelope Box", &settings.showSurfaceEnvelope);
-            ImGui::Checkbox("Show Axis Triad (X/Y/Z)", &settings.showAxisTriad);
-            if (settings.showCoordinates && settings.showAxisTriad) {
-                ImGui::TextDisabled("Axis triad is hidden while coordinates are enabled.");
+            ImGui::BeginDisabled(settings.showCoordinates);
+            if (ImGui::Checkbox("Show Axis Triad (X/Y/Z)", &settings.showAxisTriad)) {
+                settings.applyCoordinateOverlayPolicy();
+            }
+            ImGui::EndDisabled();
+            if (settings.showCoordinates && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+                ImGui::SetTooltip("Axis triad is disabled while coordinates are enabled.");
             }
             ImGui::Checkbox("Auto Rotate", &settings.autoRotate);
         } else {
@@ -276,7 +275,6 @@ ControlPanelActions ControlPanel::render(Core::ViewTransform& vt, PlotSettings& 
                                 180.0f,
                                 kDefaultAzimuthDeg,
                                 "%.1f deg",
-                                "%.1f",
                                 "Horizontal camera angle for 3D surfaces.");
             sliderFloatProperty("Elevation",
                                 settings.elevationDeg,
@@ -284,34 +282,31 @@ ControlPanelActions ControlPanel::render(Core::ViewTransform& vt, PlotSettings& 
                                 85.0f,
                                 kDefaultElevationDeg,
                                 "%.1f deg",
-                                "%.1f",
                                 "Vertical camera angle for 3D surfaces.");
-            sliderFloatProperty("Z scale",
+            sliderFloatProperty("Z Scale",
                                 settings.zScale,
                                 0.1f,
                                 8.0f,
                                 kDefaultZScale,
                                 "%.2f",
-                                "%.2f",
                                 "Vertical exaggeration applied to 3D geometry.");
-            sliderIntProperty("Surface density",
+            sliderIntProperty("Surface Density",
                               settings.surfaceResolution,
                               12,
                               96,
                               kDefaultSurfaceResolution,
                               "Sampling density for explicit z=f(x,y) surfaces.");
-            sliderIntProperty("Implicit res.",
+            sliderIntProperty("Implicit Resolution",
                               settings.implicitSurfaceResolution,
                               16,
                               96,
                               kDefaultImplicitSurfaceResolution,
                               "Grid resolution for implicit F(x,y,z)=0 surfaces.");
-            sliderFloatProperty("Opacity",
+            sliderFloatProperty("Surface Opacity",
                                 settings.surfaceOpacity,
                                 0.25f,
                                 1.0f,
                                 kDefaultSurfaceOpacity,
-                                "%.2f",
                                 "%.2f",
                                 "Surface fill opacity.");
             ImGui::EndTable();
@@ -325,12 +320,11 @@ ControlPanelActions ControlPanel::render(Core::ViewTransform& vt, PlotSettings& 
     } else {
         if (beginPropertyTable("HeatmapProperties")) {
             setupPropertyColumns();
-            sliderFloatProperty("Heatmap",
+            sliderFloatProperty("Heatmap Opacity",
                                 settings.heatmapOpacity,
                                 0.1f,
                                 1.0f,
                                 kDefaultHeatmapOpacity,
-                                "%.2f",
                                 "%.2f",
                                 "Opacity for heatmap and scalar-field cross-section fills.");
             ImGui::EndTable();

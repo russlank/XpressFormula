@@ -39,7 +39,7 @@ public:
         bool showCoordinates = true;
         bool showWires = true;
         bool showEnvelope = true;
-        bool showAxisTriad = true;
+        bool showAxisTriad = false;
         ExportBackgroundMode backgroundMode = ExportBackgroundMode::Current;
         ExportFormat format = ExportFormat::Png;
         ExportAspectMode aspectMode = ExportAspectMode::PreserveMathematicalScale;

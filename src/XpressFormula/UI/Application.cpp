@@ -733,7 +733,9 @@ void Application::renderFrame() {
         exportOverrides.showCoordinates = m_pendingExportSettings.showCoordinates;
         exportOverrides.showWires = m_pendingExportSettings.showWires;
         exportOverrides.showEnvelope = m_pendingExportSettings.showEnvelope;
-        exportOverrides.showAxisTriad = m_pendingExportSettings.showAxisTriad;
+        exportOverrides.showAxisTriad = isAxisTriadVisible(
+            m_pendingExportSettings.showCoordinates,
+            m_pendingExportSettings.showAxisTriad);
         exportOverrides.showCanvasBorder = false;
         exportOverrides.backgroundColor = resolveExportBackgroundColor(m_pendingExportSettings);
     }
@@ -757,104 +759,245 @@ void Application::renderPlotToolbar(bool has2DFormula, bool hasSurfaceFormula) {
     const XYRenderMode effectiveRenderMode =
         m_plotSettings.resolveXYRenderMode(has2DFormula, hasSurfaceFormula);
     const bool is3DMode = (effectiveRenderMode == XYRenderMode::Surface3D);
-    const float lineHeight = ImGui::GetFrameHeightWithSpacing();
-    const float toolbarHeight = is3DMode ? (lineHeight * 4.0f + 10.0f) : (lineHeight * 3.0f + 8.0f);
+
+    enum class ToolbarLayout {
+        OneRow,
+        TwoRow,
+        Compact
+    };
+
+    struct CameraPreset {
+        const char* label;
+        float azimuthDeg;
+        float elevationDeg;
+        const char* tooltip;
+    };
+
+    const CameraPreset cameraPresets[] = {
+        { "Front", 0.0f, -85.0f, "View from the front, showing X and Z." },
+        { "Back", 180.0f, -85.0f, "View from the back, showing X and Z reversed." },
+        { "Left", -90.0f, -85.0f, "View from the left, showing Y and Z." },
+        { "Right", 90.0f, -85.0f, "View from the right, showing Y and Z." },
+        { "Top", 0.0f, 0.0f, "Top-down X/Y view." },
+        { "Bottom", 180.0f, 0.0f, "Bottom-oriented X/Y view." },
+        { "Isometric", kDefaultAzimuthDeg, kDefaultElevationDeg,
+          "Restore the default isometric camera." },
+    };
+
+    const float availableWidth = ImGui::GetContentRegionAvail().x;
+    const bool compact = availableWidth < (is3DMode ? 700.0f : 600.0f);
+    const bool oneRow = !compact &&
+        ((is3DMode && availableWidth >= 1220.0f) ||
+         (!is3DMode && availableWidth >= 860.0f));
+    const ToolbarLayout layout = compact ? ToolbarLayout::Compact
+        : (oneRow ? ToolbarLayout::OneRow : ToolbarLayout::TwoRow);
+    const int rowCount = (layout == ToolbarLayout::OneRow)
+        ? 1
+        : (layout == ToolbarLayout::TwoRow ? 2 : (is3DMode ? 3 : 2));
+
+    const ImGuiStyle& style = ImGui::GetStyle();
+    const float toolbarHeight =
+        style.WindowPadding.y * 2.0f +
+        ImGui::GetFrameHeight() * static_cast<float>(rowCount) +
+        style.ItemSpacing.y * static_cast<float>((std::max)(0, rowCount - 1)) +
+        2.0f;
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(6.0f, 4.0f));
     ImGui::BeginChild("##PlotToolbar", ImVec2(0.0f, toolbarHeight), false,
                       ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
-    if (ImGui::Button("Fit##PlotToolbar")) {
-        fitDefaultView();
-    }
-    ImGui::SetItemTooltip("Fit the plot to the standard [-10, 10] math domain. Shortcut: F.");
-    ImGui::SameLine();
+    auto nextGroup = []() {
+        ImGui::SameLine();
+        ImGui::TextDisabled("|");
+        ImGui::SameLine();
+    };
 
-    if (ImGui::Button("Reset##PlotToolbar")) {
-        resetViewAndCamera();
-    }
-    ImGui::SetItemTooltip("Reset view scale, center, and 3D camera. Shortcut: Home.");
-    ImGui::SameLine();
+    auto drawActions = [&]() {
+        if (ImGui::Button("Fit##PlotToolbar")) {
+            fitDefaultView();
+        }
+        ImGui::SetItemTooltip("Fit the plot to the standard [-10, 10] math domain. Shortcut: F.");
+        ImGui::SameLine();
 
-    if (ImGui::Button("Export##PlotToolbar")) {
-        m_exportDialogOpenRequested = true;
-        m_redrawRequested = true;
-    }
-    ImGui::SetItemTooltip("Open the export dialog. Shortcut: E.");
+        if (ImGui::Button("Reset##PlotToolbar")) {
+            resetViewAndCamera();
+        }
+        ImGui::SetItemTooltip("Reset view scale, center, and 3D camera. Shortcut: Home.");
+        ImGui::SameLine();
 
-    ImGui::TextUnformatted("Mode");
-    ImGui::SameLine();
-    ImGui::SetNextItemWidth(104.0f);
-    if (ImGui::BeginCombo("##PlotRenderModePreference",
-                          renderModePreferenceLabel(m_plotSettings.xyRenderModePreference))) {
-        const XYRenderModePreference preferences[] = {
-            XYRenderModePreference::Auto,
-            XYRenderModePreference::Force3D,
-            XYRenderModePreference::Force2D
-        };
-        for (XYRenderModePreference preference : preferences) {
-            const bool selected = (m_plotSettings.xyRenderModePreference == preference);
-            if (ImGui::Selectable(renderModePreferenceLabel(preference), selected)) {
-                m_plotSettings.xyRenderModePreference = preference;
+        if (ImGui::Button("Export##PlotToolbar")) {
+            m_exportDialogOpenRequested = true;
+            m_redrawRequested = true;
+        }
+        ImGui::SetItemTooltip("Open the export dialog. Shortcut: E.");
+    };
+
+    auto drawModeControls = [&](bool showEffectiveMode) {
+        ImGui::TextUnformatted("Mode");
+        ImGui::SameLine();
+        const float modeWidth = (layout == ToolbarLayout::Compact) ? 132.0f : 104.0f;
+        ImGui::SetNextItemWidth(modeWidth);
+        if (ImGui::BeginCombo("##PlotRenderModePreference",
+                              renderModePreferenceLabel(m_plotSettings.xyRenderModePreference))) {
+            const XYRenderModePreference preferences[] = {
+                XYRenderModePreference::Auto,
+                XYRenderModePreference::Force3D,
+                XYRenderModePreference::Force2D
+            };
+            for (XYRenderModePreference preference : preferences) {
+                const bool selected = (m_plotSettings.xyRenderModePreference == preference);
+                if (ImGui::Selectable(renderModePreferenceLabel(preference), selected)) {
+                    m_plotSettings.xyRenderModePreference = preference;
+                    m_redrawRequested = true;
+                }
+                if (selected) {
+                    ImGui::SetItemDefaultFocus();
+                }
+            }
+            ImGui::EndCombo();
+        }
+        ImGui::SetItemTooltip("Select automatic mode, force 3D surfaces, or force 2D heatmaps/cross-sections.");
+
+        if (showEffectiveMode) {
+            ImGui::SameLine();
+            ImGui::TextDisabled("Effective %s", effectiveRenderModeLabel(effectiveRenderMode));
+        }
+    };
+
+    auto drawDisplayToggles = [&]() {
+        if (ImGui::Checkbox("Grid##PlotToolbar", &m_plotSettings.showGrid)) {
+            m_redrawRequested = true;
+        }
+        ImGui::SetItemTooltip("Show or hide the grid. Shortcut: G.");
+        ImGui::SameLine();
+        if (ImGui::Checkbox("Wires##PlotToolbar", &m_plotSettings.showWires)) {
+            m_redrawRequested = true;
+        }
+        ImGui::SetItemTooltip("Show or hide 3D wire overlays. Shortcut: W.");
+        ImGui::SameLine();
+        if (ImGui::Checkbox("Coordinates##PlotToolbar", &m_plotSettings.showCoordinates)) {
+            m_plotSettings.applyCoordinateOverlayPolicy();
+            m_redrawRequested = true;
+        }
+        ImGui::SetItemTooltip("Show or hide coordinate axes and labels.");
+    };
+
+    auto drawMoreMenu = [&]() {
+        if (ImGui::Button("More...##PlotToolbar")) {
+            ImGui::OpenPopup("##PlotToolbarMore");
+        }
+        ImGui::SetItemTooltip("Show display toggles and additional 3D overlay controls.");
+        if (ImGui::BeginPopup("##PlotToolbarMore")) {
+            if (ImGui::Checkbox("Grid", &m_plotSettings.showGrid)) {
                 m_redrawRequested = true;
             }
-            if (selected) {
-                ImGui::SetItemDefaultFocus();
+            ImGui::SetItemTooltip("Show or hide the grid. Shortcut: G.");
+            if (ImGui::Checkbox("Wires", &m_plotSettings.showWires)) {
+                m_redrawRequested = true;
+            }
+            ImGui::SetItemTooltip("Show or hide 3D wire overlays. Shortcut: W.");
+            if (ImGui::Checkbox("Coordinates", &m_plotSettings.showCoordinates)) {
+                m_plotSettings.applyCoordinateOverlayPolicy();
+                m_redrawRequested = true;
+            }
+            ImGui::SetItemTooltip("Show or hide coordinate axes and labels.");
+            if (is3DMode) {
+                ImGui::Separator();
+                ImGui::BeginDisabled(m_plotSettings.showCoordinates);
+                if (ImGui::Checkbox("Axis Triad", &m_plotSettings.showAxisTriad)) {
+                    m_plotSettings.applyCoordinateOverlayPolicy();
+                    m_redrawRequested = true;
+                }
+                ImGui::EndDisabled();
+                if (m_plotSettings.showCoordinates &&
+                    ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+                    ImGui::SetTooltip("Axis triad is disabled while coordinates are enabled.");
+                }
+            }
+            ImGui::EndPopup();
+        }
+    };
+
+    auto matchingCameraLabel = [&]() {
+        for (const CameraPreset& preset : cameraPresets) {
+            if (std::abs(m_plotSettings.azimuthDeg - preset.azimuthDeg) < 0.01f &&
+                std::abs(m_plotSettings.elevationDeg - preset.elevationDeg) < 0.01f) {
+                return preset.label;
             }
         }
-        ImGui::EndCombo();
-    }
-    ImGui::SetItemTooltip("Select automatic mode, force 3D surfaces, or force 2D heatmaps/cross-sections.");
-    ImGui::SameLine();
+        return "Custom";
+    };
 
-    ImGui::TextDisabled("Effective: %s", effectiveRenderModeLabel(effectiveRenderMode));
-
-    if (ImGui::Checkbox("Grid##PlotToolbar", &m_plotSettings.showGrid)) {
-        m_redrawRequested = true;
-    }
-    ImGui::SetItemTooltip("Show or hide the grid. Shortcut: G.");
-    ImGui::SameLine();
-    if (ImGui::Checkbox("Wires##PlotToolbar", &m_plotSettings.showWires)) {
-        m_redrawRequested = true;
-    }
-    ImGui::SetItemTooltip("Show or hide 3D wire overlays. Shortcut: W.");
-    ImGui::SameLine();
-    if (ImGui::Checkbox("Axes##PlotToolbar", &m_plotSettings.showCoordinates)) {
-        m_redrawRequested = true;
-    }
-    ImGui::SetItemTooltip("Show or hide coordinate axes and labels.");
-    if (m_plotSettings.showCoordinates && m_plotSettings.showAxisTriad) {
+    auto drawCameraButtons = [&]() {
+        ImGui::TextUnformatted("Camera");
         ImGui::SameLine();
-        ImGui::TextDisabled("Triad hidden while axes are on");
-    }
-
-    if (is3DMode) {
-        struct CameraPreset {
-            const char* label;
-            float azimuthDeg;
-            float elevationDeg;
-            const char* tooltip;
-        };
-        const CameraPreset presets[] = {
-            { "Front", 0.0f, -85.0f, "View from the front, showing X and Z." },
-            { "Back", 180.0f, -85.0f, "View from the back, showing X and Z reversed." },
-            { "Left", -90.0f, -85.0f, "View from the left, showing Y and Z." },
-            { "Right", 90.0f, -85.0f, "View from the right, showing Y and Z." },
-            { "Top", 0.0f, 0.0f, "Top-down X/Y view." },
-            { "Bottom", 180.0f, 0.0f, "Bottom-oriented X/Y view." },
-            { "Iso", kDefaultAzimuthDeg, kDefaultElevationDeg, "Restore the default isometric camera." },
-        };
-
-        ImGui::TextUnformatted("Cam");
-        ImGui::SameLine();
-        for (const CameraPreset& preset : presets) {
+        const size_t presetCount = sizeof(cameraPresets) / sizeof(cameraPresets[0]);
+        for (size_t i = 0; i < presetCount; ++i) {
+            const CameraPreset& preset = cameraPresets[i];
             if (ImGui::Button(preset.label)) {
                 applyCameraPreset(preset.azimuthDeg, preset.elevationDeg);
             }
             ImGui::SetItemTooltip("%s", preset.tooltip);
-            if (&preset != &presets[sizeof(presets) / sizeof(presets[0]) - 1]) {
+            if (i + 1 < presetCount) {
                 ImGui::SameLine();
             }
+        }
+    };
+
+    auto drawCameraCombo = [&]() {
+        ImGui::TextUnformatted("Camera");
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(154.0f);
+        if (ImGui::BeginCombo("##PlotToolbarCameraPreset", matchingCameraLabel())) {
+            for (const CameraPreset& preset : cameraPresets) {
+                const bool selected =
+                    std::abs(m_plotSettings.azimuthDeg - preset.azimuthDeg) < 0.01f &&
+                    std::abs(m_plotSettings.elevationDeg - preset.elevationDeg) < 0.01f;
+                if (ImGui::Selectable(preset.label, selected)) {
+                    applyCameraPreset(preset.azimuthDeg, preset.elevationDeg);
+                }
+                ImGui::SetItemTooltip("%s", preset.tooltip);
+                if (selected) {
+                    ImGui::SetItemDefaultFocus();
+                }
+            }
+            ImGui::EndCombo();
+        }
+        ImGui::SetItemTooltip("Apply a deterministic 3D camera preset.");
+    };
+
+    if (layout == ToolbarLayout::OneRow) {
+        drawActions();
+        nextGroup();
+        drawModeControls(true);
+        nextGroup();
+        drawDisplayToggles();
+        if (is3DMode) {
+            nextGroup();
+            drawCameraButtons();
+        }
+    } else if (layout == ToolbarLayout::TwoRow) {
+        drawActions();
+        nextGroup();
+        drawModeControls(true);
+        if (is3DMode) {
+            nextGroup();
+            drawDisplayToggles();
+            ImGui::NewLine();
+            drawCameraButtons();
+        } else {
+            ImGui::NewLine();
+            drawDisplayToggles();
+        }
+    } else {
+        drawActions();
+        ImGui::SameLine();
+        drawMoreMenu();
+        ImGui::NewLine();
+        drawModeControls(false);
+        if (is3DMode) {
+            ImGui::NewLine();
+            drawCameraCombo();
         }
     }
 
@@ -1033,9 +1176,8 @@ void Application::renderExportDialog(float, float) {
         m_exportDialogSettings.showWires = m_plotSettings.showWires;
         m_exportDialogSettings.showEnvelope = m_plotSettings.showSurfaceEnvelope;
         m_exportDialogSettings.showAxisTriad = m_plotSettings.showAxisTriad;
-        if (m_exportDialogSettings.showCoordinates) {
-            m_exportDialogSettings.showAxisTriad = false;
-        }
+        resolveCoordinateOverlayPolicy(m_exportDialogSettings.showCoordinates,
+                                       m_exportDialogSettings.showAxisTriad);
         m_exportPreviewZoom = 0.0f;
         m_exportPreviewPanX = 0.0f;
         m_exportPreviewPanY = 0.0f;
@@ -1086,6 +1228,9 @@ void Application::renderExportDialog(float, float) {
         settings.selectedSizePreset = std::clamp(settings.selectedSizePreset, 0,
             static_cast<int>(exportSizePresets().size()) - 1);
         settings.scale = std::clamp(settings.scale, 1, 4);
+        previewChanged = resolveCoordinateOverlayPolicy(settings.showCoordinates,
+                                                        settings.showAxisTriad) ||
+                         previewChanged;
 
         auto applySelectedSizePreset = [&]() {
             const auto& preset = exportSizePresets()[static_cast<size_t>(settings.selectedSizePreset)];
@@ -1114,9 +1259,7 @@ void Application::renderExportDialog(float, float) {
             settings.showWires = m_plotSettings.showWires;
             settings.showEnvelope = m_plotSettings.showSurfaceEnvelope;
             settings.showAxisTriad = m_plotSettings.showAxisTriad;
-            if (settings.showCoordinates) {
-                settings.showAxisTriad = false;
-            }
+            resolveCoordinateOverlayPolicy(settings.showCoordinates, settings.showAxisTriad);
             m_exportPreviewZoom = 0.0f;
             m_exportPreviewPanX = 0.0f;
             m_exportPreviewPanY = 0.0f;
@@ -1356,9 +1499,7 @@ void Application::renderExportDialog(float, float) {
             if (ImGui::BeginTabItem("Scene")) {
                 previewChanged = ImGui::Checkbox("Grid", &settings.showGrid) || previewChanged;
                 if (ImGui::Checkbox("Coordinates", &settings.showCoordinates)) {
-                    if (settings.showCoordinates) {
-                        settings.showAxisTriad = false;
-                    }
+                    resolveCoordinateOverlayPolicy(settings.showCoordinates, settings.showAxisTriad);
                     previewChanged = true;
                 }
                 previewChanged = ImGui::Checkbox("Wires", &settings.showWires) || previewChanged;
@@ -2468,7 +2609,8 @@ bool Application::renderPlotPixelsOffscreen(const Application::ExportDialogSetti
         exportOverrides.showCoordinates = settings.showCoordinates;
         exportOverrides.showWires = settings.showWires;
         exportOverrides.showEnvelope = settings.showEnvelope;
-        exportOverrides.showAxisTriad = settings.showAxisTriad;
+        exportOverrides.showAxisTriad =
+            isAxisTriadVisible(settings.showCoordinates, settings.showAxisTriad);
         exportOverrides.showCanvasBorder = false;
         exportOverrides.backgroundColor = backgroundColor;
 

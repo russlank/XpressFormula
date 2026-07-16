@@ -34,7 +34,10 @@ void PlotPanel::render(std::vector<FormulaEntry>& formulas,
     const bool showCoordinates = useOverrides ? overrides->showCoordinates : settings.showCoordinates;
     const bool showWires = useOverrides ? overrides->showWires : settings.showWires;
     const bool showEnvelope = useOverrides ? overrides->showEnvelope : settings.showSurfaceEnvelope;
-    const bool showAxisTriad = useOverrides ? overrides->showAxisTriad : settings.showAxisTriad;
+    const bool showAxisTriadPreference =
+        useOverrides ? overrides->showAxisTriad : settings.showAxisTriad;
+    const bool showAxisTriad =
+        isAxisTriadVisible(showCoordinates, showAxisTriadPreference);
     const bool showCanvasBorder = useOverrides ? overrides->showCanvasBorder : true;
     const float effectiveWireThickness =
         (showWires && settings.wireThickness > 0.01f) ? settings.wireThickness : 0.0f;
@@ -148,7 +151,7 @@ void PlotPanel::render(std::vector<FormulaEntry>& formulas,
         options.envelopeThickness = settings.envelopeThickness;
         // Axis triad is an alternative to coordinate overlays in 3D mode, so keep them
         // mutually exclusive to avoid redundant on-screen guidance.
-        options.showAxisTriad = showAxisTriad && !showCoordinates;
+        options.showAxisTriad = showAxisTriad;
         return options;
     };
 

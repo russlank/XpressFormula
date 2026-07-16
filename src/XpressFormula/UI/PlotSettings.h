@@ -25,6 +25,19 @@ inline constexpr float kDefaultEnvelopeThickness = 2.0f;
 inline constexpr float kDefaultAutoRotateSpeedDegPerSec = 20.0f;
 inline constexpr float kDefaultHeatmapOpacity = 0.62f;
 
+[[nodiscard]] inline bool isAxisTriadVisible(bool showCoordinates, bool showAxisTriad) {
+    return showAxisTriad && !showCoordinates;
+}
+
+inline bool resolveCoordinateOverlayPolicy(bool showCoordinates, bool& showAxisTriad) {
+    if (!showCoordinates || !showAxisTriad) {
+        return false;
+    }
+
+    showAxisTriad = false;
+    return true;
+}
+
 struct PlotSettings {
     XYRenderModePreference xyRenderModePreference = XYRenderModePreference::Auto;
     bool optimizeRendering = true;
@@ -49,6 +62,14 @@ struct PlotSettings {
         }
     }
 
+    [[nodiscard]] bool effectiveShowAxisTriad() const {
+        return isAxisTriadVisible(showCoordinates, showAxisTriad);
+    }
+
+    bool applyCoordinateOverlayPolicy() {
+        return resolveCoordinateOverlayPolicy(showCoordinates, showAxisTriad);
+    }
+
     // 3D camera controls for z=f(x,y).
     //float azimuthDeg = 40.0f;
     //float elevationDeg = 30.0f;
@@ -58,7 +79,7 @@ struct PlotSettings {
     //float wireThickness = 1.0f;
     //bool  showSurfaceEnvelope = true;
     //float envelopeThickness = 1.25f;
-    //bool  showAxisTriad = true;
+    //bool  showAxisTriad = false;
     //bool  autoRotate = false;
     //float autoRotateSpeedDegPerSec = 20.0f;
 
@@ -71,7 +92,7 @@ struct PlotSettings {
     float wireThickness = kDefaultWireThickness;
     bool  showSurfaceEnvelope = true;
     float envelopeThickness = kDefaultEnvelopeThickness;
-    bool  showAxisTriad = true;
+    bool  showAxisTriad = false;
     bool  autoRotate = false;
     float autoRotateSpeedDegPerSec = kDefaultAutoRotateSpeedDegPerSec;
 
