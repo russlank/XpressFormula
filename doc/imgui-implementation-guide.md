@@ -40,6 +40,8 @@ The UI is split into focused panels:
   - plot canvas region, mouse interaction, renderer dispatch
 - [`src/XpressFormula/UI/PlotSettings.h`](../src/XpressFormula/UI/PlotSettings.h)
   - shared settings for rendering and camera behavior
+- [`src/XpressFormula/UI/ProjectSession.h`](../src/XpressFormula/UI/ProjectSession.h)
+  - versioned `.xfplot` records, JSON serialization/parsing, and safe session application helpers
 
 Why this split works well:
 
@@ -114,9 +116,10 @@ This is the core frame template you can reuse in similar apps.
 
 ## 6. Layout Strategy in This App
 
-The app uses two fixed ImGui windows that fill the OS window:
+The app uses borderless ImGui windows that fill the OS window:
 
 - left sidebar (`##Sidebar`)
+- vertical splitter (`##SidebarSplitter`)
 - right plot area (`##Plot`)
 
 This is done each frame by setting:
@@ -131,11 +134,43 @@ and then creating borderless windows with flags like:
 - `NoMove`
 - `NoCollapse`
 
+The sidebar width is owned by `Application` state and adjusted through the splitter each frame, with min/max constraints so the plot retains usable space. The plot window reserves a small toolbar child before the canvas; the toolbar mutates the same `ViewTransform` and `PlotSettings` objects as the sidebar, so both control surfaces stay synchronized.
+
 Why this pattern is useful:
 
 - simple, deterministic layout
-- no docking complexity
+- resizable controls without docking complexity
 - easy to extend for desktop tooling apps
+
+## UI Toolkit Design Rules
+
+XpressFormula has a thin UI toolkit in [`src/XpressFormula/UI/UiKit`](../src/XpressFormula/UI/UiKit) and XpressFormula-specific components in [`src/XpressFormula/UI/Components`](../src/XpressFormula/UI/Components).
+
+Use `UiKit` for recurring ImGui mechanics:
+
+- shared spacing, breakpoints, and dimensions in `UiMetrics`
+- pure responsive plans such as toolbar, formula-card, splitter, and modal sizing decisions
+- RAII guards for `Push/Pop`, `Begin/EndDisabled`, and text wrapping
+- small structural helpers such as `ResponsiveRows` and `PropertyGrid`
+
+Use `Components` for reusable app UI that still follows immediate mode:
+
+- `PlotToolbar` renders the plot toolbar and returns one-shot app commands
+- `FormulaCard` renders one formula row/card and returns one formula action
+
+Panels and dialogs still own workflows and state. For example, `FormulaPanel` owns editor state and vector mutations, while `FormulaCard` only renders one card and reports the selected action.
+
+Direct ImGui remains the default for ordinary controls such as buttons, text, sliders, checkboxes, and one-off layouts. Do not add wrappers that only rename ImGui calls.
+
+> Add a toolkit abstraction only after the same layout or safety problem appears in at least two places, or when a pure tested plan can replace fragile cursor arithmetic.
+
+When adding a reusable layout primitive:
+
+1. Put pure decisions in a testable planner where practical.
+2. Keep application state outside the toolkit.
+3. Keep row counts, heights, and cursor placement derived from one calculation.
+4. Return explicit action structs for one-shot commands instead of performing workflow side effects inside components.
+5. Keep escape hatches simple by allowing direct ImGui alongside toolkit helpers.
 
 ## 7. State Ownership (Most Important ImGui Rule Here)
 
@@ -147,6 +182,7 @@ In XpressFormula:
 - camera/view state in `m_viewTransform`
 - render settings in `m_plotSettings`
 - transient export requests in booleans/action flags
+- project path, dirty state, recent projects, and unsaved-change prompts in `Application`
 
 Panels receive references to these objects and render widgets directly from them.
 
@@ -160,6 +196,22 @@ ImGui::SliderFloat("Opacity", &settings.surfaceOpacity, 0.25f, 1.0f);
 This is the recommended mental model:
 
 - UI is just a view/editor for your application state
+
+### Project Persistence State
+
+Project files are deliberately outside the widget layer:
+
+- `Application` owns live state and project workflow commands.
+- `ProjectSession` converts live state to/from plain records.
+- Serializers do not know about ImGui IDs, popups, panels, or layout.
+- Open parses the full file before replacing active formulas, view, and plot settings.
+- Invalid loaded formulas are copied into edit buffers, reparsed, and surfaced as warnings instead of being silently dropped.
+- Dirty state is based on serialized state comparison with the last clean snapshot.
+- Save writes to a temporary file, then replaces the target path.
+
+The unsaved-change modal may request a close, but it must not destroy the Win32 window while ImGui is still rendering. It sets a deferred close flag; `Application::run()` processes that flag after the current frame is complete.
+
+`ProjectSession.h` currently contains both the schema and JSON parser/serializer. Keep it as the persistence boundary unless the format grows enough to justify splitting schema records from parsing code.
 
 ## 8. Panel Communication Pattern
 
@@ -178,6 +230,12 @@ Used for persistent state like:
 Used by `ControlPanel` for one-shot actions:
 
 - open export settings dialog
+
+Used by the plot toolbar for direct application-level commands:
+
+- fit/reset the view
+- open export settings dialog
+- apply deterministic 3D camera presets
 
 Used by `Application` (outside panel code) for other side-effecting actions:
 
@@ -207,6 +265,19 @@ Why "next frame" popup opening is common:
 
 - ImGui popups are frame-driven
 - opening and rendering often happens in a controlled sequence
+
+### Formula Cards and List Actions
+
+The formula sidebar renders each formula as a compact card:
+
+- header row: visibility, color, formula index, validation status, edit/actions/delete controls
+- expression row: clipped preview text with a full wrapped tooltip
+- metadata row: parsed render type and validation state
+- optional `z slice` control for scalar-field formulas
+
+The card list defers structural mutations until after all cards are drawn for the frame. This matters because duplicating, moving, or deleting a `std::vector<FormulaEntry>` item during the loop would invalidate references used by later cards.
+
+Reusable formula-list operations live in [`src/XpressFormula/UI/FormulaListActions.h`](../src/XpressFormula/UI/FormulaListActions.h). The helper covers duplicate, reorder, delete-index adjustment, hide-others, and exact expression-copy behavior, and is tested outside ImGui. Keep future formula-list state changes in that helper when practical.
 
 ### Live Validation in the Formula Editor
 
@@ -260,6 +331,7 @@ Then it delegates rendering to `PlotRenderer`, which draws:
 - background
 - grid
 - axes
+- corner HUD
 - labels
 - curves/heatmaps/triangles
 
@@ -267,6 +339,19 @@ This separation is important:
 
 - `PlotPanel` handles interaction and viewport bounds
 - `PlotRenderer` handles math and draw primitives
+
+### Plot HUD and Wire Readability
+
+`PlotSettings` owns the configurable plot HUD mode and the wire styling values. `PlotPanel` renders the HUD in a stable plot corner instead of using a cursor-following tooltip, so it does not cover central geometry while reading coordinates.
+
+The wire controls are intentionally separate:
+
+- `Surface Density` and `Implicit Resolution` change sampling/mesh quality
+- `Wire Opacity` changes visual strength
+- `Wire Thickness` changes line width
+- `Wire Stride` changes displayed wire density without changing mesh sampling
+
+Export preview/final rendering clones `PlotSettings`, so wire opacity, thickness, and stride match the interactive plot. Export overrides disable the interactive HUD so saved images do not include the corner readout.
 
 ## 11. Why the Plot Uses `ImDrawList` Instead of ImGui Widgets
 
@@ -306,11 +391,12 @@ The UI does not directly save images when a button is clicked.
 Instead:
 
 1. `ControlPanel` returns a one-shot action to open the export dialog.
-2. `Application` owns and renders the export settings window (size, colors, background, include/exclude overlays).
-3. When the user clicks **Save** or **Copy**, `Application` stores pending export flags + a snapshot of export settings.
-4. Export dialog preview uses a cached offscreen render texture (refreshed outside the main UI frame to avoid nested ImGui frames).
-5. `PlotPanel` receives temporary render overrides for export and is rendered into a temporary offscreen D3D11 render target (plot-only ImGui frame).
-6. Export is processed after frame rendering (`processPendingExportActions()`), including pixel-format normalization (RGBA->BGRA, alpha handling) and post-processing (optional resize/grayscale), then file/clipboard output.
+2. `Application` owns and renders the export settings window (size, aspect mode, colors, background, include/exclude overlays, preview controls).
+3. Export aspect/framing is resolved through `ExportSettings` helpers before rendering so default exports preserve mathematical proportions.
+4. When the user clicks **Save As...** or **Copy**, `Application` stores pending export flags + a snapshot of export settings.
+5. Export dialog preview uses a cached offscreen render texture (refreshed outside the main UI frame to avoid nested ImGui frames), with Draft/Normal preview quality capped separately from final output.
+6. `PlotPanel` receives temporary render overrides for export and is rendered into a temporary offscreen D3D11 render target (plot-only ImGui frame).
+7. Export is processed after frame rendering (`processPendingExportActions()`), including pixel-format normalization (RGBA->BGRA, alpha handling) and post-processing (optional resize/grayscale), then file/clipboard output.
 
 This avoids mixing:
 

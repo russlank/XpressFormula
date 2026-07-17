@@ -22,13 +22,19 @@ XpressFormula is organized into three primary layers:
 - [`src/XpressFormula/Core/UpdateVersionUtils.h`](../src/XpressFormula/Core/UpdateVersionUtils.h)
   - Small header-only utilities for semantic-version parsing/comparison and extracting GitHub release fields from API JSON.
 - [`src/XpressFormula/UI/Application.h`](../src/XpressFormula/UI/Application.h) and [`src/XpressFormula/UI/Application.cpp`](../src/XpressFormula/UI/Application.cpp)
-  - Owns Win32 window, D3D11 resources, ImGui lifecycle, frame loop.
+  - Owns Win32 window, D3D11 resources, ImGui lifecycle, frame loop, main sidebar/plot layout state, plot toolbar actions, and export workflow.
+- [`src/XpressFormula/UI/UiKit`](../src/XpressFormula/UI/UiKit)
+  - Thin immediate-mode UI helpers: shared metrics, pure responsive layout planners, RAII ImGui scopes, deterministic toolbar rows, property grids, splitter sizing, and modal sizing.
+- [`src/XpressFormula/UI/Components`](../src/XpressFormula/UI/Components)
+  - Reusable XpressFormula-specific UI components such as `PlotToolbar` and `FormulaCard`. Components may edit ordinary widget state passed by reference, but collection mutations and application commands stay with panels or `Application`.
 - [`src/XpressFormula/UI/FormulaPanel.h`](../src/XpressFormula/UI/FormulaPanel.h) and [`src/XpressFormula/UI/FormulaPanel.cpp`](../src/XpressFormula/UI/FormulaPanel.cpp)
-  - Formula list management and per-formula controls.
+  - Formula list management, editor modal workflow, collection mutations, and action handling returned by formula-card components.
 - [`src/XpressFormula/UI/ControlPanel.h`](../src/XpressFormula/UI/ControlPanel.h) and [`src/XpressFormula/UI/ControlPanel.cpp`](../src/XpressFormula/UI/ControlPanel.cpp)
-  - Global 2D view controls, display toggles (grid/coordinates/wires), 3D surface camera settings, and export dialog launch action.
+  - Global 2D view controls, display toggles (grid/coordinates/wires), reusable property-grid rows for 3D/heatmap controls, and export dialog launch action.
 - [`src/XpressFormula/UI/PlotPanel.h`](../src/XpressFormula/UI/PlotPanel.h) and [`src/XpressFormula/UI/PlotPanel.cpp`](../src/XpressFormula/UI/PlotPanel.cpp)
   - Interactive plotting area, mouse interactions, and export-time plot render overrides (background/grid/coordinates/wires).
+- [`src/XpressFormula/UI/ProjectSession.h`](../src/XpressFormula/UI/ProjectSession.h)
+  - Versioned `.xfplot` persistence boundary: plain session records, JSON serialization/parsing, schema validation, and safe application of loaded values.
 - [`src/XpressFormula/Version.h`](../src/XpressFormula/Version.h)
   - Centralized semantic version metadata used by window title, resources, and packaging.
 - [`src/XpressFormula/Plotting/PlotRenderer.h`](../src/XpressFormula/Plotting/PlotRenderer.h) and [`src/XpressFormula/Plotting/PlotRenderer.cpp`](../src/XpressFormula/Plotting/PlotRenderer.cpp)
@@ -43,7 +49,36 @@ XpressFormula is organized into three primary layers:
 5. `PlotPanel` updates `ViewTransform` from current viewport and delegates drawing to `PlotRenderer`.
 6. `PlotRenderer` evaluates formulas through `Core::Evaluator` and draws based on variable dimensionality and equation form.
 7. `Application` also polls a background GitHub release check future and updates sidebar notification state when a result arrives.
-8. Export requests trigger a plot-only offscreen render pass (temporary D3D11 render target) with export-specific overrides, then post-processing (pixel-format normalization, optional resize/grayscale) before file/clipboard output.
+8. Export requests resolve aspect/framing settings, trigger a plot-only offscreen render pass (temporary D3D11 render target) with export-specific overrides, then post-processing (pixel-format normalization, optional resize/grayscale) before file/clipboard output.
+9. Project New/Open/Save/Save As workflows stay in `Application`; `.xfplot` parsing completes before active formulas, view, or plot settings are mutated.
+
+## Project Persistence Boundary
+
+`ProjectSession` is the versioned boundary for `.xfplot` files. `Application` still owns live state (`FormulaEntry`, `ViewTransform`, `PlotSettings`, project path, dirty flag, and recent list), while the serializer works on plain records that do not depend on ImGui widgets.
+
+Important rules:
+
+- Build a `ProjectSession` snapshot from application state before saving.
+- Parse and validate a full project file before mutating active application state.
+- Retain invalid loaded formulas where possible and report load warnings after reparsing.
+- Clamp or ignore unsafe numeric values before applying them to the live view and plot settings.
+- Keep unknown fields tolerated for schema version 1 so future writers can add data without breaking older builds.
+- Write project files through a temporary file followed by replacement so failed writes do not leave a partial target file.
+- Treat dirty state as a serialized-state comparison against the last clean snapshot.
+
+`ProjectSession.h` currently contains both the schema records and the small JSON parser/serializer. That can be split later if the format grows, but file size alone is not a reason to refactor it.
+
+## UI Toolkit Boundary
+
+The UI toolkit is intentionally small and immediate-mode. `UiKit` does not own application state, retain widget objects, or replace ordinary ImGui controls. It centralizes policies that are easy to get wrong when repeated inline:
+
+- responsive breakpoints and shared dimensions in `UiMetrics`
+- pure layout decisions that can be unit tested
+- row-height and cursor placement mechanics for responsive toolbars
+- scope safety for ImGui push/pop and disabled blocks
+- repeated table layout behavior for property controls
+
+Domain components live one level above `UiKit`. They render reusable XpressFormula UI surfaces and return explicit action structs for one-shot commands. Panels and `Application` remain responsible for workflows, vector mutation, file/clipboard actions, export processing, and persistent state.
 
 ## Formula Rendering Modes
 

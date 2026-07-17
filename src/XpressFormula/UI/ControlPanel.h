@@ -21,6 +21,7 @@ public:
                                const std::string& exportStatus);
 
 private:
+    bool m_advancedViewExpanded = false;
     bool m_displaySectionExpanded = false;
 };
 

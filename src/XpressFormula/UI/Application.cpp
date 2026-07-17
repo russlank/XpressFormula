@@ -4,6 +4,10 @@
 #include "../Core/UpdateVersionUtils.h"
 #include "../Version.h"
 #include "../resource.h"
+#include "ExportMetadata.h"
+#include "Components/PlotToolbar.h"
+#include "UiKit/Splitter.h"
+#include "UiKit/UiMetrics.h"
 
 #include "imgui.h"
 #include "imgui_impl_win32.h"
@@ -25,14 +29,17 @@
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <cwchar>
 #include <cwctype>
 #include <exception>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <sstream>
 #include <string>
+#include <system_error>
 
 #pragma comment(lib, "windowscodecs.lib")
 #pragma comment(lib, "shell32.lib")
@@ -144,6 +151,28 @@ bool copyUnicodeTextToClipboard(HWND owner, const std::wstring& text) {
     }
     ::CloseClipboard();
     return true;
+}
+
+const char* xyRenderModePreferenceLabel(XpressFormula::UI::XYRenderModePreference preference) {
+    using XpressFormula::UI::XYRenderModePreference;
+    switch (preference) {
+        case XYRenderModePreference::Auto: return "Auto";
+        case XYRenderModePreference::Force3D: return "3D";
+        case XYRenderModePreference::Force2D: return "2D";
+        default: return "Auto";
+    }
+}
+
+const char* formulaRenderKindLabel(XpressFormula::UI::FormulaRenderKind kind) {
+    using XpressFormula::UI::FormulaRenderKind;
+    switch (kind) {
+        case FormulaRenderKind::Curve2D: return "Curve2D";
+        case FormulaRenderKind::Surface3D: return "Surface3D";
+        case FormulaRenderKind::Implicit2D: return "Implicit2D";
+        case FormulaRenderKind::ScalarField3D: return "ScalarField3D";
+        case FormulaRenderKind::Invalid: return "Invalid";
+        default: return "Invalid";
+    }
 }
 
 // Background worker: query GitHub Releases API, parse the latest tag/url, and compare against the
@@ -275,6 +304,12 @@ static std::wstring shortCommitWide(const char* commit) {
     return commitWide;
 }
 
+static std::wstring normalizePathForRecentComparison(std::wstring value) {
+    std::transform(value.begin(), value.end(), value.begin(),
+                   [](wchar_t ch) { return static_cast<wchar_t>(std::towlower(ch)); });
+    return value;
+}
+
 static LRESULT WINAPI WndProc(HWND hWnd, UINT msg,
                                WPARAM wParam, LPARAM lParam) {
     if (ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam))
@@ -291,6 +326,13 @@ static LRESULT WINAPI WndProc(HWND hWnd, UINT msg,
         case WM_SYSCOMMAND:
             if ((wParam & 0xFFF0) == SC_KEYMENU) return 0;
             break;
+        case WM_CLOSE:
+            if (g_app) {
+                g_app->requestClose();
+                return 0;
+            }
+            ::DestroyWindow(hWnd);
+            return 0;
         case WM_DESTROY:
             ::PostQuitMessage(0);
             return 0;
@@ -302,6 +344,536 @@ namespace XpressFormula::UI {
 
 Application::Application()  = default;
 Application::~Application() = default;
+
+void Application::resetToDefaultProject() {
+    m_formulas.clear();
+
+    FormulaEntry defaultEntry;
+    strncpy_s(defaultEntry.inputBuffer, sizeof(defaultEntry.inputBuffer),
+              "sin(sqrt(x^2+y^2))", _TRUNCATE);
+    std::memcpy(defaultEntry.color, kDefaultPalette[0], sizeof(defaultEntry.color));
+    defaultEntry.parse();
+    m_formulas.push_back(std::move(defaultEntry));
+
+    m_viewTransform.reset();
+    m_plotSettings = PlotSettings{};
+    m_plotSettings.applyCoordinateOverlayPolicy();
+    m_formulaPanel.resetColorCycle(1);
+    m_exportDialogSettings = ExportDialogSettings{};
+    m_exportDialogSizeInitialized = false;
+    markExportPreviewOutOfDate();
+}
+
+ProjectSession Application::currentProjectSession() const {
+    return makeProjectSession(m_formulas, m_viewTransform, m_plotSettings);
+}
+
+void Application::markProjectClean() {
+    m_savedProjectSnapshot = serializeProjectSession(currentProjectSession());
+    m_projectDirty = false;
+}
+
+void Application::refreshProjectDirtyState() {
+    if (m_savedProjectSnapshot.empty()) {
+        markProjectClean();
+        return;
+    }
+    m_projectDirty = (serializeProjectSession(currentProjectSession()) != m_savedProjectSnapshot);
+}
+
+std::string Application::projectDisplayName() const {
+    std::string name = m_projectPath.empty()
+        ? std::string("Untitled.xfplot")
+        : narrowUtf8(std::filesystem::path(m_projectPath).filename().wstring());
+    if (name.empty()) {
+        name = "Untitled.xfplot";
+    }
+    if (m_projectDirty) {
+        name += " *";
+    }
+    return name;
+}
+
+std::filesystem::path Application::recentProjectStorePath() const {
+    wchar_t* appDataBuffer = nullptr;
+    size_t appDataLength = 0;
+    std::filesystem::path base = std::filesystem::temp_directory_path();
+    if (_wdupenv_s(&appDataBuffer, &appDataLength, L"APPDATA") == 0 &&
+        appDataBuffer && appDataBuffer[0] != L'\0') {
+        base = std::filesystem::path(appDataBuffer);
+    }
+    if (appDataBuffer) {
+        std::free(appDataBuffer);
+    }
+    return base / L"XpressFormula" / L"recent-projects.txt";
+}
+
+void Application::loadRecentProjectPaths() {
+    m_recentProjectPaths.clear();
+    std::ifstream in(recentProjectStorePath(), std::ios::binary);
+    if (!in) {
+        return;
+    }
+
+    bool changed = false;
+    std::string line;
+    while (std::getline(in, line)) {
+        if (line.empty()) {
+            changed = true;
+            continue;
+        }
+        std::wstring path = utf8ToWide(line.c_str());
+        if (path.empty()) {
+            changed = true;
+            continue;
+        }
+
+        std::error_code pathError;
+        std::filesystem::path absolutePath =
+            std::filesystem::absolute(std::filesystem::path(path), pathError);
+        if (pathError) {
+            absolutePath = std::filesystem::path(path);
+        }
+        if (!std::filesystem::exists(absolutePath, pathError)) {
+            changed = true;
+            continue;
+        }
+
+        path = absolutePath.wstring();
+        const std::wstring comparable = normalizePathForRecentComparison(path);
+        const bool exists = std::any_of(
+            m_recentProjectPaths.begin(),
+            m_recentProjectPaths.end(),
+            [&](const std::wstring& existing) {
+                return normalizePathForRecentComparison(existing) == comparable;
+            });
+        if (!exists) {
+            m_recentProjectPaths.push_back(std::move(path));
+        } else {
+            changed = true;
+        }
+        if (m_recentProjectPaths.size() >= 8) {
+            break;
+        }
+    }
+
+    in.close();
+    if (changed) {
+        saveRecentProjectPaths();
+    }
+}
+
+void Application::saveRecentProjectPaths() const {
+    const std::filesystem::path storePath = recentProjectStorePath();
+    std::error_code ignored;
+    std::filesystem::create_directories(storePath.parent_path(), ignored);
+
+    std::ofstream out(storePath, std::ios::binary | std::ios::trunc);
+    if (!out) {
+        return;
+    }
+    for (const std::wstring& path : m_recentProjectPaths) {
+        out << narrowUtf8(path) << '\n';
+    }
+}
+
+void Application::addRecentProjectPath(const std::wstring& path) {
+    if (path.empty()) {
+        return;
+    }
+
+    std::error_code pathError;
+    std::filesystem::path absolutePath =
+        std::filesystem::absolute(std::filesystem::path(path), pathError);
+    std::wstring normalized = (pathError ? std::filesystem::path(path) : absolutePath).wstring();
+    auto samePath = [&](const std::wstring& existing) {
+        return normalizePathForRecentComparison(existing) ==
+            normalizePathForRecentComparison(normalized);
+    };
+
+    m_recentProjectPaths.erase(
+        std::remove_if(m_recentProjectPaths.begin(), m_recentProjectPaths.end(), samePath),
+        m_recentProjectPaths.end());
+    m_recentProjectPaths.insert(m_recentProjectPaths.begin(), std::move(normalized));
+    constexpr std::size_t kMaxRecentProjects = 8;
+    if (m_recentProjectPaths.size() > kMaxRecentProjects) {
+        m_recentProjectPaths.resize(kMaxRecentProjects);
+    }
+    saveRecentProjectPaths();
+}
+
+bool Application::promptOpenProjectPath(std::wstring& path) const {
+    std::array<wchar_t, MAX_PATH> fileName = {};
+    wchar_t filter[] =
+        L"XpressFormula Project (*.xfplot)\0*.xfplot\0"
+        L"JSON Files (*.json)\0*.json\0"
+        L"All Files (*.*)\0*.*\0\0";
+
+    OPENFILENAMEW ofn = {};
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = m_hWnd;
+    ofn.lpstrFilter = filter;
+    ofn.lpstrFile = fileName.data();
+    ofn.nMaxFile = static_cast<DWORD>(fileName.size());
+    ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
+    ofn.lpstrDefExt = L"xfplot";
+
+    if (!::GetOpenFileNameW(&ofn)) {
+        return false;
+    }
+    path = fileName.data();
+    return true;
+}
+
+bool Application::promptSaveProjectPath(std::wstring& path) const {
+    std::array<wchar_t, MAX_PATH> fileName = {};
+    if (!m_projectPath.empty()) {
+        wcsncpy_s(fileName.data(), fileName.size(), m_projectPath.c_str(), _TRUNCATE);
+    } else {
+        wcsncpy_s(fileName.data(), fileName.size(), L"untitled.xfplot", _TRUNCATE);
+    }
+
+    wchar_t filter[] =
+        L"XpressFormula Project (*.xfplot)\0*.xfplot\0"
+        L"JSON Files (*.json)\0*.json\0\0";
+
+    OPENFILENAMEW ofn = {};
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = m_hWnd;
+    ofn.lpstrFilter = filter;
+    ofn.lpstrFile = fileName.data();
+    ofn.nMaxFile = static_cast<DWORD>(fileName.size());
+    ofn.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST;
+    ofn.lpstrDefExt = L"xfplot";
+
+    if (!::GetSaveFileNameW(&ofn)) {
+        return false;
+    }
+
+    path = fileName.data();
+    if (std::filesystem::path(path).extension().empty()) {
+        path += L".xfplot";
+    }
+    return true;
+}
+
+bool Application::saveProjectToPath(const std::wstring& path, std::string& error) {
+    error.clear();
+    const std::filesystem::path projectPath(path);
+    const std::filesystem::path tempPath = std::filesystem::path(path + L".tmp");
+    const std::string json = serializeProjectSession(currentProjectSession());
+
+    {
+        std::ofstream out(tempPath, std::ios::binary | std::ios::trunc);
+        if (!out) {
+            error = "Could not open project temp file.";
+            return false;
+        }
+        out.write(json.data(), static_cast<std::streamsize>(json.size()));
+        out.close();
+        if (!out) {
+            error = "Could not write project temp file.";
+            std::error_code ignored;
+            std::filesystem::remove(tempPath, ignored);
+            return false;
+        }
+    }
+
+    if (!::MoveFileExW(tempPath.wstring().c_str(),
+                       projectPath.wstring().c_str(),
+                       MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+        const DWORD win32Error = ::GetLastError();
+        std::error_code ignored;
+        std::filesystem::remove(tempPath, ignored);
+        error = "Could not replace project file: Win32 error " + std::to_string(win32Error) + ".";
+        return false;
+    }
+
+    m_projectPath = projectPath.wstring();
+    addRecentProjectPath(m_projectPath);
+    markProjectClean();
+    m_projectStatus = "Saved project: " + narrowUtf8(m_projectPath);
+    m_redrawRequested = true;
+    return true;
+}
+
+bool Application::saveProjectAs() {
+    std::wstring path;
+    if (!promptSaveProjectPath(path)) {
+        m_projectStatus = "Save project canceled.";
+        return false;
+    }
+
+    std::string error;
+    if (!saveProjectToPath(path, error)) {
+        m_projectStatus = "Save project failed: " + error;
+        return false;
+    }
+    return true;
+}
+
+bool Application::saveProject() {
+    if (m_projectPath.empty()) {
+        return saveProjectAs();
+    }
+
+    std::string error;
+    if (!saveProjectToPath(m_projectPath, error)) {
+        m_projectStatus = "Save project failed: " + error;
+        return false;
+    }
+    return true;
+}
+
+bool Application::openProjectFromPath(const std::wstring& path, std::string& error) {
+    error.clear();
+    std::ifstream in(std::filesystem::path(path), std::ios::binary);
+    if (!in) {
+        error = "Could not open project file.";
+        return false;
+    }
+    std::ostringstream buffer;
+    buffer << in.rdbuf();
+
+    ProjectSessionParseResult parsed = parseProjectSession(buffer.str());
+    if (!parsed.success) {
+        error = parsed.error;
+        return false;
+    }
+
+    std::vector<std::string> warnings = parsed.warnings;
+    applyProjectSession(parsed.session, m_formulas, m_viewTransform, m_plotSettings, warnings);
+    m_formulaPanel.resetColorCycle(static_cast<int>(m_formulas.size()));
+    m_projectPath = std::filesystem::absolute(std::filesystem::path(path)).wstring();
+    addRecentProjectPath(m_projectPath);
+    markProjectClean();
+    markExportPreviewOutOfDate();
+
+    std::ostringstream status;
+    status << "Opened project: " << narrowUtf8(m_projectPath);
+    if (!warnings.empty()) {
+        status << " (" << warnings.size() << " warning";
+        if (warnings.size() != 1) {
+            status << "s";
+        }
+        status << ": " << warnings.front() << ")";
+    }
+    m_projectStatus = status.str();
+    m_redrawRequested = true;
+    return true;
+}
+
+bool Application::openProjectFromDialog() {
+    std::wstring path;
+    if (!promptOpenProjectPath(path)) {
+        m_projectStatus = "Open project canceled.";
+        return false;
+    }
+
+    std::string error;
+    if (!openProjectFromPath(path, error)) {
+        m_projectStatus = "Open project failed: " + error;
+        return false;
+    }
+    return true;
+}
+
+void Application::executeProjectAction(PendingProjectAction action, const std::wstring& path) {
+    switch (action) {
+        case PendingProjectAction::NewProject:
+            resetToDefaultProject();
+            m_projectPath.clear();
+            markProjectClean();
+            m_projectStatus = "Started a new project.";
+            break;
+        case PendingProjectAction::OpenDialog:
+            openProjectFromDialog();
+            break;
+        case PendingProjectAction::OpenRecent: {
+            std::string error;
+            if (!openProjectFromPath(path, error)) {
+                m_projectStatus = "Open recent project failed: " + error;
+                std::error_code pathError;
+                if (!std::filesystem::exists(std::filesystem::path(path), pathError)) {
+                    const std::wstring comparable = normalizePathForRecentComparison(path);
+                    m_recentProjectPaths.erase(
+                        std::remove_if(
+                            m_recentProjectPaths.begin(),
+                            m_recentProjectPaths.end(),
+                            [&](const std::wstring& existing) {
+                                return normalizePathForRecentComparison(existing) == comparable;
+                            }),
+                        m_recentProjectPaths.end());
+                    saveRecentProjectPaths();
+                }
+            }
+            break;
+        }
+        case PendingProjectAction::CloseApp:
+            m_closeRequestedAfterFrame = true;
+            break;
+        case PendingProjectAction::None:
+        default:
+            break;
+    }
+    m_redrawRequested = true;
+}
+
+void Application::requestProjectAction(PendingProjectAction action, std::wstring path) {
+    refreshProjectDirtyState();
+    if (m_projectDirty) {
+        m_pendingProjectAction = action;
+        m_pendingProjectPath = std::move(path);
+        m_openProjectDiscardPopupNextFrame = true;
+        m_redrawRequested = true;
+        return;
+    }
+
+    executeProjectAction(action, path);
+}
+
+bool Application::requestClose() {
+    refreshProjectDirtyState();
+    if (!m_projectDirty) {
+        m_closeRequestedAfterFrame = true;
+        m_redrawRequested = true;
+        return false;
+    }
+
+    m_pendingProjectAction = PendingProjectAction::CloseApp;
+    m_pendingProjectPath.clear();
+    m_openProjectDiscardPopupNextFrame = true;
+    m_redrawRequested = true;
+    return false;
+}
+
+void Application::renderProjectControls() {
+    ImGui::TextUnformatted("Project");
+    ImGui::Separator();
+    ImGui::TextWrapped("%s", projectDisplayName().c_str());
+    if (!m_projectPath.empty()) {
+        ImGui::SetItemTooltip("%s", narrowUtf8(m_projectPath).c_str());
+    }
+
+    const float buttonWidth = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
+    if (ImGui::Button("New", ImVec2(buttonWidth, 0.0f))) {
+        requestProjectAction(PendingProjectAction::NewProject);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Open...", ImVec2(buttonWidth, 0.0f))) {
+        requestProjectAction(PendingProjectAction::OpenDialog);
+    }
+    if (ImGui::Button("Save", ImVec2(buttonWidth, 0.0f))) {
+        saveProject();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Save As...", ImVec2(buttonWidth, 0.0f))) {
+        saveProjectAs();
+    }
+
+    if (!m_projectStatus.empty()) {
+        ImGui::TextWrapped("%s", m_projectStatus.c_str());
+    }
+
+    if (!m_recentProjectPaths.empty() &&
+        ImGui::CollapsingHeader("Recent Projects", ImGuiTreeNodeFlags_DefaultOpen)) {
+        for (int i = 0; i < static_cast<int>(m_recentProjectPaths.size()); ++i) {
+            ImGui::PushID(i);
+            const std::wstring& path = m_recentProjectPaths[static_cast<std::size_t>(i)];
+            std::string label = narrowUtf8(std::filesystem::path(path).filename().wstring());
+            if (label.empty()) {
+                label = narrowUtf8(path);
+            }
+            std::error_code pathError;
+            const bool pathExists = std::filesystem::exists(std::filesystem::path(path), pathError);
+            if (!pathExists) {
+                ImGui::BeginDisabled();
+            }
+            if (ImGui::SmallButton(label.c_str()) && pathExists) {
+                requestProjectAction(PendingProjectAction::OpenRecent, path);
+            }
+            if (!pathExists) {
+                ImGui::EndDisabled();
+            }
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+                if (pathExists) {
+                    ImGui::SetTooltip("%s", narrowUtf8(path).c_str());
+                } else {
+                    ImGui::SetTooltip("Missing: %s", narrowUtf8(path).c_str());
+                }
+            }
+            ImGui::PopID();
+        }
+    }
+}
+
+void Application::renderProjectDiscardDialog() {
+    static constexpr const char* kDiscardPopupId = "Unsaved Project Changes";
+
+    if (m_openProjectDiscardPopupNextFrame) {
+        ImGui::OpenPopup(kDiscardPopupId);
+        m_openProjectDiscardPopupNextFrame = false;
+    }
+
+    if (ImGui::BeginPopupModal(kDiscardPopupId, nullptr, ImGuiWindowFlags_NoSavedSettings)) {
+        ImGui::TextWrapped("The current project has unsaved changes.");
+        ImGui::TextWrapped("Save before continuing, discard the changes, or cancel.");
+        ImGui::Spacing();
+
+        if (ImGui::Button("Save", ImVec2(96.0f, 0.0f))) {
+            if (saveProject()) {
+                const PendingProjectAction action = m_pendingProjectAction;
+                const std::wstring path = m_pendingProjectPath;
+                m_pendingProjectAction = PendingProjectAction::None;
+                m_pendingProjectPath.clear();
+                ImGui::CloseCurrentPopup();
+                executeProjectAction(action, path);
+            }
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Discard", ImVec2(96.0f, 0.0f))) {
+            const PendingProjectAction action = m_pendingProjectAction;
+            const std::wstring path = m_pendingProjectPath;
+            m_pendingProjectAction = PendingProjectAction::None;
+            m_pendingProjectPath.clear();
+            ImGui::CloseCurrentPopup();
+            executeProjectAction(action, path);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel", ImVec2(96.0f, 0.0f))) {
+            m_pendingProjectAction = PendingProjectAction::None;
+            m_pendingProjectPath.clear();
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
+}
+
+void Application::handleProjectShortcuts() {
+    ImGuiIO& io = ImGui::GetIO();
+    if (io.WantTextInput || ImGui::IsAnyItemActive()) {
+        return;
+    }
+
+    const bool ctrl = io.KeyCtrl;
+    const bool shift = io.KeyShift;
+    const bool alt = io.KeyAlt;
+    if (!ctrl || alt) {
+        return;
+    }
+
+    if (ImGui::IsKeyPressed(ImGuiKey_N)) {
+        requestProjectAction(PendingProjectAction::NewProject);
+    } else if (ImGui::IsKeyPressed(ImGuiKey_O)) {
+        requestProjectAction(PendingProjectAction::OpenDialog);
+    } else if (ImGui::IsKeyPressed(ImGuiKey_S)) {
+        if (shift) {
+            saveProjectAs();
+        } else {
+            saveProject();
+        }
+    }
+}
 
 // ---- initialisation ---------------------------------------------------------
 
@@ -373,15 +945,9 @@ bool Application::initialize(HINSTANCE hInstance, int width, int height) {
     ImGui_ImplWin32_Init(m_hWnd);
     ImGui_ImplDX11_Init(m_device, m_deviceContext);
 
-    // Add a default formula so the plot is not empty
-    FormulaEntry defaultEntry;
-    strncpy_s(defaultEntry.inputBuffer, sizeof(defaultEntry.inputBuffer),
-              // "sin(x)", _TRUNCATE);
-              "sin(sqrt(x^2+y^2))", _TRUNCATE);
-    std::memcpy(defaultEntry.color, kDefaultPalette[0],
-                sizeof(defaultEntry.color));
-    defaultEntry.parse();
-    m_formulas.push_back(std::move(defaultEntry));
+    resetToDefaultProject();
+    markProjectClean();
+    loadRecentProjectPaths();
 
     // Record startup time so we can defer the automatic update check.
     // Delaying the network call avoids triggering antivirus heuristics that flag
@@ -403,6 +969,13 @@ int Application::run() {
                 // Any user/system message may affect layout, hover state, or plot interaction.
                 m_redrawRequested = true;
             }
+            continue;
+        }
+
+        if (m_closeRequestedAfterFrame && m_hWnd) {
+            m_closeRequestedAfterFrame = false;
+            ::DestroyWindow(m_hWnd);
+            m_hWnd = nullptr;
             continue;
         }
 
@@ -467,6 +1040,12 @@ int Application::run() {
         }
 
         renderFrame();
+        if (m_closeRequestedAfterFrame && m_hWnd) {
+            m_closeRequestedAfterFrame = false;
+            ::DestroyWindow(m_hWnd);
+            m_hWnd = nullptr;
+            continue;
+        }
         // Auto-rotate requires continuous redraws; otherwise render on demand when optimization is enabled.
         m_redrawRequested = optimizeRendering ? continuousRender : true;
     }
@@ -519,13 +1098,24 @@ void Application::renderFrame() {
     ImGui_ImplDX11_NewFrame();
     ImGui_ImplWin32_NewFrame();
     ImGui::NewFrame();
+    refreshProjectDirtyState();
+    handleProjectShortcuts();
 
-    // We fill the entire OS window with two fixed ImGui windows (sidebar + plot)
+    // We fill the entire OS window with the sidebar, a splitter, and the plot.
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
     float totalW = viewport->WorkSize.x;
     float totalH = viewport->WorkSize.y;
-    float sidebar = kSidebarWidth;
-    if (sidebar > totalW * 0.45f) sidebar = totalW * 0.45f;
+    const UiKit::UiMetrics& uiMetrics = UiKit::metrics();
+    const float splitterWidth = uiMetrics.splitterWidth;
+    const float availableForSidebar = totalW - splitterWidth - uiMetrics.minimumPlotWidth;
+    const float dynamicMinSidebar =
+        (std::min)(uiMetrics.minimumSidebarWidth, (std::max)(180.0f, totalW * 0.38f));
+    const float maxSidebar = (std::min)(uiMetrics.maximumSidebarWidth,
+        (std::max)(dynamicMinSidebar, availableForSidebar));
+    m_sidebarWidth = std::clamp(m_sidebarWidth, dynamicMinSidebar, maxSidebar);
+    const float sidebar = m_sidebarWidth;
+    const float plotX = viewport->WorkPos.x + sidebar + splitterWidth;
+    const float plotWidth = (std::max)(1.0f, totalW - sidebar - splitterWidth);
 
     // ---- Left sidebar ----
     ImGui::SetNextWindowPos(viewport->WorkPos);
@@ -533,6 +1123,10 @@ void Application::renderFrame() {
     ImGui::Begin("##Sidebar", nullptr,
                  ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
                  ImGuiWindowFlags_NoMove     | ImGuiWindowFlags_NoCollapse);
+    renderProjectControls();
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
     m_formulaPanel.render(m_formulas);
     bool hasSurfaceFormula = false;
     bool has2DFormula = false;
@@ -652,16 +1246,40 @@ void Application::renderFrame() {
     }
     ImGui::End();
 
+    // ---- Sidebar splitter ----
+    ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + sidebar, viewport->WorkPos.y));
+    ImGui::SetNextWindowSize(ImVec2(splitterWidth, totalH));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    ImGui::Begin("##SidebarSplitter", nullptr,
+                 ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                 ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse |
+                 ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings |
+                 ImGuiWindowFlags_NoBackground);
+    if (UiKit::drawVerticalSplitter("##SidebarSplitterHandle",
+                                    totalH,
+                                    m_sidebarWidth,
+                                    dynamicMinSidebar,
+                                    maxSidebar,
+                                    uiMetrics.defaultSidebarWidth,
+                                    splitterWidth)) {
+        m_redrawRequested = true;
+    }
+    ImGui::End();
+    ImGui::PopStyleVar(2);
+
     renderExportDialog(sidebar, totalH);
+    renderProjectDiscardDialog();
 
     // ---- Plot area ----
-    ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + sidebar,
-                                   viewport->WorkPos.y));
-    ImGui::SetNextWindowSize(ImVec2(totalW - sidebar, totalH));
+    ImGui::SetNextWindowPos(ImVec2(plotX, viewport->WorkPos.y));
+    ImGui::SetNextWindowSize(ImVec2(plotWidth, totalH));
     ImGui::Begin("##Plot", nullptr,
                  ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
                  ImGuiWindowFlags_NoMove     | ImGuiWindowFlags_NoCollapse |
                  ImGuiWindowFlags_NoScrollbar);
+    handlePlotShortcuts();
+    renderPlotToolbar(has2DFormula, hasSurfaceFormula);
     PlotRenderOverrides exportOverrides;
     if (m_pendingSavePlotImage || m_pendingCopyPlotImage) {
         exportOverrides.active = true;
@@ -669,7 +1287,10 @@ void Application::renderFrame() {
         exportOverrides.showCoordinates = m_pendingExportSettings.showCoordinates;
         exportOverrides.showWires = m_pendingExportSettings.showWires;
         exportOverrides.showEnvelope = m_pendingExportSettings.showEnvelope;
-        exportOverrides.showAxisTriad = m_pendingExportSettings.showAxisTriad;
+        exportOverrides.showAxisTriad = isAxisTriadVisible(
+            m_pendingExportSettings.showCoordinates,
+            m_pendingExportSettings.showAxisTriad);
+        exportOverrides.showHud = false;
         exportOverrides.showCanvasBorder = false;
         exportOverrides.backgroundColor = resolveExportBackgroundColor(m_pendingExportSettings);
     }
@@ -684,9 +1305,99 @@ void Application::renderFrame() {
     m_deviceContext->ClearRenderTargetView(m_renderTargetView, clearColor);
     ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
     processPendingExportActions();
+    refreshProjectDirtyState();
 
     HRESULT hr = m_swapChain->Present(1, 0); // VSync
     m_swapChainOccluded = (hr == DXGI_STATUS_OCCLUDED);
+}
+
+void Application::renderPlotToolbar(bool has2DFormula, bool hasSurfaceFormula) {
+    const XYRenderMode effectiveRenderMode =
+        m_plotSettings.resolveXYRenderMode(has2DFormula, hasSurfaceFormula);
+    const bool is3DMode = (effectiveRenderMode == XYRenderMode::Surface3D);
+
+    Components::PlotToolbarContext context;
+    context.is3DMode = is3DMode;
+    context.effectiveRenderMode = effectiveRenderMode;
+    context.availableSize = ImGui::GetContentRegionAvail();
+
+    const Components::PlotToolbarActions actions =
+        Components::renderPlotToolbar(m_plotSettings, context);
+    if (actions.requestFit) {
+        fitDefaultView();
+    }
+    if (actions.requestReset) {
+        resetViewAndCamera();
+    }
+    if (actions.requestExport) {
+        m_exportDialogOpenRequested = true;
+        m_redrawRequested = true;
+    }
+    if (actions.applyCameraPreset) {
+        applyCameraPreset(actions.cameraAzimuthDeg, actions.cameraElevationDeg);
+    }
+    if (actions.requestRedraw) {
+        m_redrawRequested = true;
+    }
+}
+
+void Application::handlePlotShortcuts() {
+    ImGuiIO& io = ImGui::GetIO();
+    const bool modifiersDown = io.KeyCtrl || io.KeyAlt || io.KeySuper;
+    const bool canUsePlotShortcuts =
+        !m_exportDialogOpen && !io.WantTextInput && !ImGui::IsAnyItemActive() && !modifiersDown;
+    if (!canUsePlotShortcuts) {
+        return;
+    }
+
+    if (ImGui::IsKeyPressed(ImGuiKey_F, false)) {
+        fitDefaultView();
+    }
+    if (ImGui::IsKeyPressed(ImGuiKey_Home, false)) {
+        resetViewAndCamera();
+    }
+    if (ImGui::IsKeyPressed(ImGuiKey_G, false)) {
+        m_plotSettings.showGrid = !m_plotSettings.showGrid;
+        m_redrawRequested = true;
+    }
+    if (ImGui::IsKeyPressed(ImGuiKey_W, false)) {
+        m_plotSettings.showWires = !m_plotSettings.showWires;
+        m_redrawRequested = true;
+    }
+    if (ImGui::IsKeyPressed(ImGuiKey_E, false)) {
+        m_exportDialogOpenRequested = true;
+        m_redrawRequested = true;
+    }
+}
+
+void Application::fitDefaultView() {
+    constexpr double targetWorldSpan = 20.0;
+    constexpr double marginScale = 0.94;
+    const double fitScaleX = (std::max)(1.0f, m_viewTransform.screenWidth) / targetWorldSpan;
+    const double fitScaleY = (std::max)(1.0f, m_viewTransform.screenHeight) / targetWorldSpan;
+    const double fitScale = (std::max)(0.1, (std::min)(fitScaleX, fitScaleY) * marginScale);
+
+    m_viewTransform.centerX = 0.0;
+    m_viewTransform.centerY = 0.0;
+    m_viewTransform.scaleX = fitScale;
+    m_viewTransform.scaleY = fitScale;
+    m_redrawRequested = true;
+}
+
+void Application::resetViewAndCamera() {
+    m_viewTransform.reset();
+    m_plotSettings.azimuthDeg = kDefaultAzimuthDeg;
+    m_plotSettings.elevationDeg = kDefaultElevationDeg;
+    m_plotSettings.zScale = kDefaultZScale;
+    m_plotSettings.autoRotate = false;
+    m_redrawRequested = true;
+}
+
+void Application::applyCameraPreset(float azimuthDeg, float elevationDeg) {
+    m_plotSettings.azimuthDeg = azimuthDeg;
+    m_plotSettings.elevationDeg = elevationDeg;
+    m_plotSettings.autoRotate = false;
+    m_redrawRequested = true;
 }
 
 void Application::startUpdateCheck(bool manualRequest) {
@@ -795,12 +1506,19 @@ void Application::renderExportDialog(float, float) {
         m_exportDialogPopupOpenNextFrame = true;
         m_exportDialogCenterOnOpen = true;
         m_exportDialogSizeInitialized = false;
-        // Default export visibility follows the current interactive view state.
-        m_exportDialogSettings.showGrid = m_plotSettings.showGrid;
-        m_exportDialogSettings.showCoordinates = m_plotSettings.showCoordinates;
-        m_exportDialogSettings.showWires = m_plotSettings.showWires;
-        m_exportDialogSettings.showEnvelope = m_plotSettings.showSurfaceEnvelope;
-        m_exportDialogSettings.showAxisTriad = m_plotSettings.showAxisTriad;
+        if (m_exportDialogSettings.selectedProfile == ExportProfile::CurrentView) {
+            // The Current View profile mirrors the interactive visibility state at open time.
+            m_exportDialogSettings.showGrid = m_plotSettings.showGrid;
+            m_exportDialogSettings.showCoordinates = m_plotSettings.showCoordinates;
+            m_exportDialogSettings.showWires = m_plotSettings.showWires;
+            m_exportDialogSettings.showEnvelope = m_plotSettings.showSurfaceEnvelope;
+            m_exportDialogSettings.showAxisTriad = m_plotSettings.showAxisTriad;
+        }
+        resolveCoordinateOverlayPolicy(m_exportDialogSettings.showCoordinates,
+                                       m_exportDialogSettings.showAxisTriad);
+        m_exportPreviewZoom = 0.0f;
+        m_exportPreviewPanX = 0.0f;
+        m_exportPreviewPanY = 0.0f;
         m_exportPreviewDirty = true;
         m_exportPreviewRefreshRequested = false;
         m_exportPreviewLastChanged = std::chrono::steady_clock::now();
@@ -840,10 +1558,17 @@ void Application::renderExportDialog(float, float) {
         bool previewChanged = false;
         const int sourceWidth = static_cast<int>(std::lround((std::max)(1.0f, m_viewTransform.screenWidth)));
         const int sourceHeight = static_cast<int>(std::lround((std::max)(1.0f, m_viewTransform.screenHeight)));
+        const ExportWorldBounds sourceBounds{
+            m_viewTransform.worldXMin(), m_viewTransform.worldXMax(),
+            m_viewTransform.worldYMin(), m_viewTransform.worldYMax()
+        };
         auto& settings = m_exportDialogSettings;
         settings.selectedSizePreset = std::clamp(settings.selectedSizePreset, 0,
             static_cast<int>(exportSizePresets().size()) - 1);
         settings.scale = std::clamp(settings.scale, 1, 4);
+        previewChanged = resolveCoordinateOverlayPolicy(settings.showCoordinates,
+                                                        settings.showAxisTriad) ||
+                         previewChanged;
 
         auto applySelectedSizePreset = [&]() {
             const auto& preset = exportSizePresets()[static_cast<size_t>(settings.selectedSizePreset)];
@@ -859,8 +1584,88 @@ void Application::renderExportDialog(float, float) {
             settings.height = clampExportDimension(baseHeight * settings.scale);
         };
 
+        auto markCustomProfile = [&]() {
+            if (settings.selectedProfile != ExportProfile::Custom) {
+                settings.selectedProfile = ExportProfile::Custom;
+                m_redrawRequested = true;
+            }
+        };
+
         auto markCustomSize = [&]() {
             settings.selectedSizePreset = static_cast<int>(exportSizePresets().size()) - 1;
+            markCustomProfile();
+        };
+
+        auto applyExportProfile = [&](ExportProfile profile) {
+            settings.selectedProfile = profile;
+            if (profile == ExportProfile::Custom) {
+                m_exportStatus = "Custom export profile selected.";
+                return;
+            }
+
+            const ExportProfileSettings profileSettings = exportProfileSettings(profile);
+            settings.selectedSizePreset = std::clamp(
+                profileSettings.selectedSizePreset,
+                0,
+                static_cast<int>(exportSizePresets().size()) - 1);
+            settings.scale = std::clamp(profileSettings.scale, 1, 4);
+            settings.lockAspectRatio = profileSettings.lockAspectRatio;
+            settings.grayscaleOutput = profileSettings.grayscaleOutput;
+            settings.showGrid = profileSettings.showGrid;
+            settings.showCoordinates = profileSettings.showCoordinates;
+            settings.showWires = profileSettings.showWires;
+            settings.showEnvelope = profileSettings.showEnvelope;
+            settings.showAxisTriad = profileSettings.showAxisTriad;
+            settings.backgroundMode = profileSettings.backgroundMode;
+            settings.format = profileSettings.format;
+            settings.aspectMode = profileSettings.aspectMode;
+            settings.qualityMode = profileSettings.qualityMode;
+            settings.quality = profileSettings.quality;
+            settings.previewQuality = profileSettings.previewQuality;
+            settings.autoRefreshPreview = profileSettings.autoRefreshPreview;
+            settings.openAfterSave = profileSettings.openAfterSave;
+            settings.showInFolderAfterSave = profileSettings.showInFolderAfterSave;
+            settings.copyPathAfterSave = profileSettings.copyPathAfterSave;
+            settings.saveMetadataSidecar = profileSettings.saveMetadataSidecar;
+
+            if (profile == ExportProfile::CurrentView) {
+                settings.showGrid = m_plotSettings.showGrid;
+                settings.showCoordinates = m_plotSettings.showCoordinates;
+                settings.showWires = m_plotSettings.showWires;
+                settings.showEnvelope = m_plotSettings.showSurfaceEnvelope;
+                settings.showAxisTriad = m_plotSettings.showAxisTriad;
+            }
+            resolveCoordinateOverlayPolicy(settings.showCoordinates, settings.showAxisTriad);
+            applySelectedSizePreset();
+            m_exportStatus = std::string("Applied export profile: ") + exportProfileLabel(profile) + ".";
+        };
+
+        auto resetExportSettings = [&]() {
+            settings = ExportDialogSettings{};
+            m_exportDialogSizeInitialized = false;
+            initialiseExportDialogSize();
+            applyExportProfile(ExportProfile::CurrentView);
+            m_exportPreviewZoom = 0.0f;
+            m_exportPreviewPanX = 0.0f;
+            m_exportPreviewPanY = 0.0f;
+            m_exportStatus = "Export settings reset.";
+            markExportPreviewOutOfDate();
+        };
+
+        auto queueCopyExport = [&]() {
+            m_pendingExportSettings = settings;
+            m_scheduledCopyPlotImage = true;
+            m_scheduledSavePlotImage = false;
+            m_exportStatus = "Clipboard export queued.";
+            m_redrawRequested = true;
+        };
+
+        auto queueSaveExport = [&]() {
+            m_pendingExportSettings = settings;
+            m_scheduledSavePlotImage = true;
+            m_scheduledCopyPlotImage = false;
+            m_exportStatus = "Save export queued.";
+            m_redrawRequested = true;
         };
 
         auto drawCheckerboard = [](ImVec2 min, ImVec2 max) {
@@ -888,10 +1693,34 @@ void Application::renderExportDialog(float, float) {
         };
 
         const ImGuiStyle& style = ImGui::GetStyle();
-        const float contentWidth = ImGui::GetContentRegionAvail().x;
-        const float settingsPaneWidth = std::clamp(contentWidth * 0.42f, 340.0f, 460.0f);
+        const float footerHeight = ImGui::GetFrameHeightWithSpacing() * 2.45f;
+        ImGui::BeginChild("##ExportDialogBody", ImVec2(0.0f, -footerHeight), false);
+        const float bodyWidth = ImGui::GetContentRegionAvail().x;
+        const float bodyHeight = ImGui::GetContentRegionAvail().y;
+        const float splitterWidth = UiKit::metrics().splitterWidth;
+        const float minSettingsWidth = 300.0f;
+        const float minPreviewWidth = 240.0f;
+        const float maxSettingsWidth = (std::max)(minSettingsWidth, bodyWidth - splitterWidth - minPreviewWidth);
+        m_exportSettingsPaneWidth = std::clamp(m_exportSettingsPaneWidth, minSettingsWidth, maxSettingsWidth);
+        const float settingsPaneWidth = m_exportSettingsPaneWidth;
 
         ImGui::BeginChild("##ExportSettingsPane", ImVec2(settingsPaneWidth, 0.0f), true);
+        if (ImGui::BeginCombo("Profile", exportProfileLabel(settings.selectedProfile))) {
+            for (ExportProfile profile : exportProfiles()) {
+                const bool selected = (settings.selectedProfile == profile);
+                if (ImGui::Selectable(exportProfileLabel(profile), selected)) {
+                    applyExportProfile(profile);
+                    previewChanged = (profile != ExportProfile::Custom) || previewChanged;
+                }
+                if (selected) {
+                    ImGui::SetItemDefaultFocus();
+                }
+            }
+            ImGui::EndCombo();
+        }
+        ImGui::SetItemTooltip("Profiles update size, appearance, scene, quality, output, and metadata settings.");
+        ImGui::Separator();
+
         if (ImGui::BeginTabBar("##ExportSettingsTabs")) {
             if (ImGui::BeginTabItem("Size")) {
                 if (sourceWidth > 0 && sourceHeight > 0) {
@@ -903,6 +1732,7 @@ void Application::renderExportDialog(float, float) {
                 if (ImGui::Button("Use Current", ImVec2(ImGui::GetContentRegionAvail().x, 0.0f))) {
                     settings.selectedSizePreset = 0;
                     applySelectedSizePreset();
+                    markCustomProfile();
                     previewChanged = true;
                 }
 
@@ -915,6 +1745,7 @@ void Application::renderExportDialog(float, float) {
                         if (ImGui::Selectable(presets[static_cast<size_t>(i)].label, selected)) {
                             settings.selectedSizePreset = i;
                             applySelectedSizePreset();
+                            markCustomProfile();
                             previewChanged = !presets[static_cast<size_t>(i)].custom || previewChanged;
                         }
                         if (selected) {
@@ -940,6 +1771,7 @@ void Application::renderExportDialog(float, float) {
                             } else {
                                 applySelectedSizePreset();
                             }
+                            markCustomProfile();
                             previewChanged = true;
                         }
                         if (selected) {
@@ -970,7 +1802,44 @@ void Application::renderExportDialog(float, float) {
                     previewChanged = true;
                 }
                 if (ImGui::Checkbox("Lock Aspect Ratio", &settings.lockAspectRatio)) {
+                    markCustomProfile();
                     previewChanged = true;
+                }
+
+                ImGui::Spacing();
+                ImGui::TextUnformatted("Aspect Handling");
+                const ExportAspectMode aspectModes[] = {
+                    ExportAspectMode::PreserveMathematicalScale,
+                    ExportAspectMode::PreserveVisibleBounds,
+                    ExportAspectMode::CropToFill,
+                    ExportAspectMode::StretchToOutput
+                };
+                for (ExportAspectMode mode : aspectModes) {
+                    if (ImGui::RadioButton(exportAspectModeLabel(mode), settings.aspectMode == mode)) {
+                        settings.aspectMode = mode;
+                        markCustomProfile();
+                        previewChanged = true;
+                    }
+                    ImGui::SetItemTooltip("%s", exportAspectModeTooltip(mode));
+                }
+
+                const auto resolvedView =
+                    resolveExportView(settings.width, settings.height, sourceBounds, settings.aspectMode);
+                ImGui::Spacing();
+                ImGui::Text("X: [%.4g, %.4g]",
+                            resolvedView.visibleBounds.xMin, resolvedView.visibleBounds.xMax);
+                ImGui::Text("Y: [%.4g, %.4g]",
+                            resolvedView.visibleBounds.yMin, resolvedView.visibleBounds.yMax);
+                if (resolvedView.uniformScale) {
+                    ImGui::Text("Scale: %.4g px/unit", resolvedView.scaleX);
+                } else {
+                    ImGui::Text("Scale: %.4g x %.4g px/unit",
+                                resolvedView.scaleX, resolvedView.scaleY);
+                }
+                if (resolvedView.marginLeftPx > 0.5 || resolvedView.marginTopPx > 0.5) {
+                    ImGui::Text("Margins: %.0f x %.0f px",
+                                resolvedView.marginLeftPx + resolvedView.marginRightPx,
+                                resolvedView.marginTopPx + resolvedView.marginBottomPx);
                 }
 
                 const ExportSupersampling sampling =
@@ -1003,40 +1872,71 @@ void Application::renderExportDialog(float, float) {
                     if (ImGui::RadioButton(exportBackgroundModeLabel(mode), backgroundMode == modeValue)) {
                         backgroundMode = modeValue;
                         settings.backgroundMode = mode;
+                        markCustomProfile();
                         previewChanged = true;
                     }
                 }
 
                 if (settings.backgroundMode == ExportBackgroundMode::Custom) {
-                    previewChanged = ImGui::ColorEdit3("Custom Color", settings.backgroundColor.data(),
-                                                       ImGuiColorEditFlags_DisplayRGB) || previewChanged;
-                    previewChanged = ImGui::SliderFloat("Opacity", &settings.backgroundColor[3],
-                                                        0.0f, 1.0f, "%.2f") || previewChanged;
+                    if (ImGui::ColorEdit3("Custom Color", settings.backgroundColor.data(),
+                                          ImGuiColorEditFlags_DisplayRGB)) {
+                        markCustomProfile();
+                        previewChanged = true;
+                    }
+                    if (ImGui::SliderFloat("Opacity", &settings.backgroundColor[3],
+                                           0.0f, 1.0f, "%.2f")) {
+                        markCustomProfile();
+                        previewChanged = true;
+                    }
                 } else if (settings.backgroundMode == ExportBackgroundMode::Transparent) {
                     ImGui::TextDisabled("Transparency is best preserved by PNG output.");
+                    if (settings.format == ExportFormat::Bmp) {
+                        ImGui::TextColored(ImVec4(1.0f, 0.68f, 0.22f, 1.0f),
+                                           "BMP export does not preserve alpha transparency.");
+                    }
                 }
 
                 ImGui::Spacing();
                 if (ImGui::RadioButton("Color", !settings.grayscaleOutput)) {
                     settings.grayscaleOutput = false;
+                    markCustomProfile();
                     previewChanged = true;
                 }
                 ImGui::SameLine();
                 if (ImGui::RadioButton("Grayscale", settings.grayscaleOutput)) {
                     settings.grayscaleOutput = true;
+                    markCustomProfile();
                     previewChanged = true;
                 }
                 ImGui::EndTabItem();
             }
 
             if (ImGui::BeginTabItem("Scene")) {
-                previewChanged = ImGui::Checkbox("Grid", &settings.showGrid) || previewChanged;
-                previewChanged = ImGui::Checkbox("Coordinates", &settings.showCoordinates) || previewChanged;
-                previewChanged = ImGui::Checkbox("Wires", &settings.showWires) || previewChanged;
-                previewChanged = ImGui::Checkbox("Envelope", &settings.showEnvelope) || previewChanged;
-                previewChanged = ImGui::Checkbox("Axis Triad", &settings.showAxisTriad) || previewChanged;
-                if (settings.showCoordinates && settings.showAxisTriad) {
-                    ImGui::TextDisabled("Axis triad is hidden while coordinates are enabled.");
+                if (ImGui::Checkbox("Grid", &settings.showGrid)) {
+                    markCustomProfile();
+                    previewChanged = true;
+                }
+                if (ImGui::Checkbox("Coordinates", &settings.showCoordinates)) {
+                    markCustomProfile();
+                    resolveCoordinateOverlayPolicy(settings.showCoordinates, settings.showAxisTriad);
+                    previewChanged = true;
+                }
+                if (ImGui::Checkbox("Wires", &settings.showWires)) {
+                    markCustomProfile();
+                    previewChanged = true;
+                }
+                if (ImGui::Checkbox("Envelope", &settings.showEnvelope)) {
+                    markCustomProfile();
+                    previewChanged = true;
+                }
+                ImGui::BeginDisabled(settings.showCoordinates);
+                if (ImGui::Checkbox("Axis Triad", &settings.showAxisTriad)) {
+                    markCustomProfile();
+                    previewChanged = true;
+                }
+                ImGui::EndDisabled();
+                if (settings.showCoordinates) {
+                    ImGui::SetItemTooltip("Axis triad is disabled while coordinate axes and labels are enabled.");
                 }
 
                 ImGui::Spacing();
@@ -1055,12 +1955,14 @@ void Application::renderExportDialog(float, float) {
                 if (ImGui::Checkbox("Override Interactive Quality", &overrideQuality)) {
                     settings.qualityMode = overrideQuality ? ExportQualityMode::Override
                                                            : ExportQualityMode::Interactive;
+                    markCustomProfile();
                     previewChanged = true;
                 }
                 if (!overrideQuality) {
                     ImGui::TextDisabled("Uses the current plot quality without changing it.");
                 }
 
+                ImGui::BeginDisabled(!overrideQuality);
                 const ExportQualityPreset qualityPresets[] = {
                     ExportQualityPreset::Draft,
                     ExportQualityPreset::Normal,
@@ -1073,6 +1975,7 @@ void Application::renderExportDialog(float, float) {
                         const bool selected = (settings.quality.preset == preset);
                         if (ImGui::Selectable(exportQualityPresetLabel(preset), selected)) {
                             settings.quality = qualitySettingsForPreset(preset);
+                            markCustomProfile();
                             previewChanged = true;
                         }
                         if (selected) {
@@ -1086,6 +1989,7 @@ void Application::renderExportDialog(float, float) {
                 if (ImGui::InputInt("Surface Density", &surfaceResolution, 4, 16)) {
                     settings.quality.surfaceResolution = std::clamp(surfaceResolution, 16, 256);
                     settings.quality.preset = ExportQualityPreset::Custom;
+                    markCustomProfile();
                     previewChanged = true;
                 }
 
@@ -1093,13 +1997,20 @@ void Application::renderExportDialog(float, float) {
                 if (ImGui::InputInt("Implicit Resolution", &implicitResolution, 4, 16)) {
                     settings.quality.implicitSurfaceResolution = std::clamp(implicitResolution, 16, 192);
                     settings.quality.preset = ExportQualityPreset::Custom;
+                    markCustomProfile();
                     previewChanged = true;
                 }
 
+                ImGui::BeginDisabled(!settings.showWires);
                 if (ImGui::SliderFloat("Wire Thickness Scale", &settings.quality.wireThicknessScale,
                                        0.25f, 3.0f, "%.2fx")) {
                     settings.quality.preset = ExportQualityPreset::Custom;
+                    markCustomProfile();
                     previewChanged = true;
+                }
+                ImGui::EndDisabled();
+                if (!settings.showWires) {
+                    ImGui::SetItemTooltip("Wire thickness scale has no effect while wires are excluded.");
                 }
 
                 const ExportSupersampling supersamplingOptions[] = {
@@ -1114,6 +2025,7 @@ void Application::renderExportDialog(float, float) {
                         if (ImGui::Selectable(exportSupersamplingLabel(option), selected)) {
                             settings.quality.supersampling = option;
                             settings.quality.preset = ExportQualityPreset::Custom;
+                            markCustomProfile();
                             previewChanged = true;
                         }
                         if (selected) {
@@ -1122,26 +2034,42 @@ void Application::renderExportDialog(float, float) {
                     }
                     ImGui::EndCombo();
                 }
+                ImGui::EndDisabled();
                 ImGui::EndTabItem();
             }
 
             if (ImGui::BeginTabItem("Output")) {
                 if (ImGui::RadioButton("PNG", settings.format == ExportFormat::Png)) {
                     settings.format = ExportFormat::Png;
+                    markCustomProfile();
+                    previewChanged = true;
                 }
                 ImGui::SameLine();
                 if (ImGui::RadioButton("BMP", settings.format == ExportFormat::Bmp)) {
                     settings.format = ExportFormat::Bmp;
+                    markCustomProfile();
+                    previewChanged = true;
+                }
+                if (settings.format == ExportFormat::Bmp &&
+                    settings.backgroundMode == ExportBackgroundMode::Transparent) {
+                    ImGui::TextColored(ImVec4(1.0f, 0.68f, 0.22f, 1.0f),
+                                       "BMP flattens transparency in many viewers. Use PNG for alpha.");
                 }
 
                 ImGui::Spacing();
-                ImGui::Checkbox("Open Image After Save", &settings.openAfterSave);
-                ImGui::Checkbox("Show In Folder After Save", &settings.showInFolderAfterSave);
-                ImGui::Checkbox("Copy Path After Save", &settings.copyPathAfterSave);
-                ImGui::BeginDisabled();
-                ImGui::Checkbox("Write Metadata Sidecar JSON", &settings.saveMetadataSidecar);
-                ImGui::EndDisabled();
-                ImGui::TextDisabled("Metadata sidecar is planned.");
+                if (ImGui::Checkbox("Open Image After Save", &settings.openAfterSave)) {
+                    markCustomProfile();
+                }
+                if (ImGui::Checkbox("Show In Folder After Save", &settings.showInFolderAfterSave)) {
+                    markCustomProfile();
+                }
+                if (ImGui::Checkbox("Copy Path After Save", &settings.copyPathAfterSave)) {
+                    markCustomProfile();
+                }
+                if (ImGui::Checkbox("Write Metadata Sidecar JSON", &settings.saveMetadataSidecar)) {
+                    markCustomProfile();
+                }
+                ImGui::SetItemTooltip("Writes a versioned .json sidecar next to the exported image.");
 
                 ImGui::Spacing();
                 if (!m_lastExportSavedPath.empty()) {
@@ -1160,35 +2088,20 @@ void Application::renderExportDialog(float, float) {
             }
             ImGui::EndTabBar();
         }
-
-        ImGui::Spacing();
-        if (!m_exportStatus.empty()) {
-            ImGui::TextWrapped("%s", m_exportStatus.c_str());
-        }
-
-        const float buttonWidth = (ImGui::GetContentRegionAvail().x - style.ItemSpacing.x) * 0.5f;
-        if (ImGui::Button("Copy To Clipboard", ImVec2(buttonWidth, 0.0f))) {
-            m_pendingExportSettings = settings;
-            m_scheduledCopyPlotImage = true;
-            m_scheduledSavePlotImage = false;
-            m_exportStatus = "Clipboard export queued.";
-            m_redrawRequested = true;
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Save To File...", ImVec2(buttonWidth, 0.0f))) {
-            m_pendingExportSettings = settings;
-            m_scheduledSavePlotImage = true;
-            m_scheduledCopyPlotImage = false;
-            m_exportStatus = "Save export queued.";
-            m_redrawRequested = true;
-        }
-        if (ImGui::Button("Close", ImVec2(ImGui::GetContentRegionAvail().x, 0.0f))) {
-            ImGui::CloseCurrentPopup();
-            open = false;
-        }
         ImGui::EndChild();
 
-        ImGui::SameLine();
+        ImGui::SameLine(0.0f, 0.0f);
+        if (UiKit::drawVerticalSplitter("##ExportDialogSplitter",
+                                        bodyHeight,
+                                        m_exportSettingsPaneWidth,
+                                        minSettingsWidth,
+                                        maxSettingsWidth,
+                                        bodyWidth * 0.42f,
+                                        splitterWidth)) {
+            m_redrawRequested = true;
+        }
+
+        ImGui::SameLine(0.0f, 0.0f);
         ImGui::BeginChild("##ExportPreviewPane", ImVec2(0.0f, 0.0f), true);
         ImGui::TextUnformatted("Preview");
         ImGui::SameLine();
@@ -1205,10 +2118,35 @@ void Application::renderExportDialog(float, float) {
         bool autoRefresh = settings.autoRefreshPreview;
         if (ImGui::Checkbox("Auto Refresh", &autoRefresh)) {
             settings.autoRefreshPreview = autoRefresh;
+            markCustomProfile();
             if (settings.autoRefreshPreview && m_exportPreviewDirty) {
                 m_exportPreviewLastChanged = std::chrono::steady_clock::now();
             }
             m_redrawRequested = true;
+        }
+        const ExportPreviewQuality previewQualityOptions[] = {
+            ExportPreviewQuality::Draft,
+            ExportPreviewQuality::Normal
+        };
+        if (ImGui::BeginCombo("Preview Quality",
+                              exportPreviewQualityLabel(settings.previewQuality))) {
+            for (ExportPreviewQuality quality : previewQualityOptions) {
+                const bool selected = (settings.previewQuality == quality);
+                if (ImGui::Selectable(exportPreviewQualityLabel(quality), selected)) {
+                    settings.previewQuality = quality;
+                    markCustomProfile();
+                    markExportPreviewOutOfDate();
+                }
+                if (selected) {
+                    ImGui::SetItemDefaultFocus();
+                }
+            }
+            ImGui::EndCombo();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Render Final-Quality Preview")) {
+            m_exportPreviewUseFinalQualityOnce = true;
+            requestExportPreviewRefresh();
         }
 
         const ExportSupersampling effectiveSampling =
@@ -1224,45 +2162,176 @@ void Application::renderExportDialog(float, float) {
             samplingText += std::to_string(actualSamplingFactor);
             samplingText += "x)";
         }
-        ImGui::Text("Output %d x %d  |  %s  |  %s",
+        ImGui::Text("Output %d x %d  |  %s  |  %s  |  %s",
                     settings.width, settings.height,
                     exportFormatLabel(settings.format),
-                    samplingText.c_str());
+                    samplingText.c_str(),
+                    exportProfileLabel(settings.selectedProfile));
+        ImGui::TextDisabled("%s", exportAspectModeLabel(settings.aspectMode));
 
         if (!m_exportPreviewStatus.empty()) {
             ImGui::TextWrapped("%s", m_exportPreviewStatus.c_str());
         }
 
         ImGui::Spacing();
-        const ImVec2 previewStart = ImGui::GetCursorScreenPos();
-        const ImVec2 previewAvail = ImGui::GetContentRegionAvail();
-        const float previewMaxHeight = (std::max)(160.0f, previewAvail.y - style.ItemSpacing.y);
-        float drawW = (std::max)(180.0f, previewAvail.x);
-        float drawH = drawW * static_cast<float>((std::max)(1, settings.height)) /
-                      static_cast<float>((std::max)(1, settings.width));
-        if (drawH > previewMaxHeight) {
-            drawH = previewMaxHeight;
-            drawW = drawH * static_cast<float>((std::max)(1, settings.width)) /
-                    static_cast<float>((std::max)(1, settings.height));
+        if (ImGui::Button("Fit")) {
+            m_exportPreviewZoom = 0.0f;
+            m_exportPreviewPanX = 0.0f;
+            m_exportPreviewPanY = 0.0f;
         }
-        drawW = (std::min)(drawW, previewAvail.x);
-        drawH = drawW * static_cast<float>((std::max)(1, settings.height)) /
-                static_cast<float>((std::max)(1, settings.width));
-        const ImVec2 previewEnd(previewStart.x + drawW, previewStart.y + drawH);
-        drawCheckerboard(previewStart, previewEnd);
-        if (m_exportPreviewSrv && m_exportPreviewWidth > 0 && m_exportPreviewHeight > 0) {
-            ImGui::Image(reinterpret_cast<ImTextureID>(m_exportPreviewSrv), ImVec2(drawW, drawH));
+        ImGui::SameLine();
+        if (ImGui::Button("100%")) {
+            m_exportPreviewZoom = 1.0f;
+            m_exportPreviewPanX = 0.0f;
+            m_exportPreviewPanY = 0.0f;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("-")) {
+            const float baseZoom = (m_exportPreviewZoom > 0.0f) ? m_exportPreviewZoom : 1.0f;
+            m_exportPreviewZoom = std::clamp(baseZoom / 1.25f, 0.05f, 8.0f);
+        }
+        ImGui::SameLine();
+        const char* zoomLabel = (m_exportPreviewZoom > 0.0f) ? "Zoom %.0f%%" : "Zoom Fit";
+        if (m_exportPreviewZoom > 0.0f) {
+            ImGui::Text(zoomLabel, m_exportPreviewZoom * 100.0f);
         } else {
-            ImGui::Dummy(ImVec2(drawW, drawH));
+            ImGui::TextUnformatted("Zoom Fit");
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("+")) {
+            const float baseZoom = (m_exportPreviewZoom > 0.0f) ? m_exportPreviewZoom : 1.0f;
+            m_exportPreviewZoom = std::clamp(baseZoom * 1.25f, 0.05f, 8.0f);
+        }
+        ImGui::SameLine();
+        ImGui::Checkbox("Checkerboard", &m_exportPreviewCheckerboard);
+
+        const ImVec2 previewStart = ImGui::GetCursorScreenPos();
+        ImVec2 canvasSize = ImGui::GetContentRegionAvail();
+        canvasSize.x = (std::max)(180.0f, canvasSize.x);
+        canvasSize.y = (std::max)(160.0f, canvasSize.y);
+        ImGui::InvisibleButton("##ExportPreviewCanvas", canvasSize,
+                               ImGuiButtonFlags_MouseButtonLeft);
+        const bool previewHovered = ImGui::IsItemHovered();
+        const bool previewActive = ImGui::IsItemActive();
+        const bool hasPreviewTexture =
+            m_exportPreviewSrv && m_exportPreviewWidth > 0 && m_exportPreviewHeight > 0;
+        const ImVec2 previewEnd(previewStart.x + canvasSize.x, previewStart.y + canvasSize.y);
+        ImDrawList* previewDrawList = ImGui::GetWindowDrawList();
+        if (m_exportPreviewCheckerboard) {
+            drawCheckerboard(previewStart, previewEnd);
+        } else {
+            previewDrawList->AddRectFilled(previewStart, previewEnd, IM_COL32(44, 44, 50, 255));
+        }
+
+        if (hasPreviewTexture) {
+            const float textureW = static_cast<float>(m_exportPreviewWidth);
+            const float textureH = static_cast<float>(m_exportPreviewHeight);
+            const float fitZoom = (std::min)(canvasSize.x / textureW, canvasSize.y / textureH);
+            if (previewHovered && ImGui::GetIO().MouseWheel != 0.0f) {
+                const float baseZoom = (m_exportPreviewZoom > 0.0f) ? m_exportPreviewZoom : fitZoom;
+                const float factor = ImGui::GetIO().MouseWheel > 0.0f ? 1.15f : (1.0f / 1.15f);
+                m_exportPreviewZoom = std::clamp(baseZoom * factor, 0.05f, 8.0f);
+            }
+            if (previewHovered && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+                m_exportPreviewZoom = 0.0f;
+                m_exportPreviewPanX = 0.0f;
+                m_exportPreviewPanY = 0.0f;
+            }
+
+            const float drawZoom = (m_exportPreviewZoom > 0.0f) ? m_exportPreviewZoom : fitZoom;
+            const float drawW = textureW * drawZoom;
+            const float drawH = textureH * drawZoom;
+            const float maxPanX = (std::max)(0.0f, (drawW - canvasSize.x) * 0.5f);
+            const float maxPanY = (std::max)(0.0f, (drawH - canvasSize.y) * 0.5f);
+            if (previewActive && ImGui::IsMouseDragging(ImGuiMouseButton_Left) &&
+                (maxPanX > 0.0f || maxPanY > 0.0f)) {
+                const ImVec2 delta = ImGui::GetIO().MouseDelta;
+                m_exportPreviewPanX += delta.x;
+                m_exportPreviewPanY += delta.y;
+            }
+            m_exportPreviewPanX = std::clamp(m_exportPreviewPanX, -maxPanX, maxPanX);
+            m_exportPreviewPanY = std::clamp(m_exportPreviewPanY, -maxPanY, maxPanY);
+
+            const ImVec2 imageMin(
+                previewStart.x + (canvasSize.x - drawW) * 0.5f + m_exportPreviewPanX,
+                previewStart.y + (canvasSize.y - drawH) * 0.5f + m_exportPreviewPanY);
+            const ImVec2 imageMax(imageMin.x + drawW, imageMin.y + drawH);
+            previewDrawList->PushClipRect(previewStart, previewEnd, true);
+            previewDrawList->AddImage(reinterpret_cast<ImTextureID>(m_exportPreviewSrv),
+                                      imageMin, imageMax);
+            previewDrawList->PopClipRect();
+        } else {
             const ImVec2 textSize = ImGui::CalcTextSize("No preview");
-            ImGui::GetWindowDrawList()->AddText(
-                ImVec2(previewStart.x + (drawW - textSize.x) * 0.5f,
-                       previewStart.y + (drawH - textSize.y) * 0.5f),
+            previewDrawList->AddText(
+                ImVec2(previewStart.x + (canvasSize.x - textSize.x) * 0.5f,
+                       previewStart.y + (canvasSize.y - textSize.y) * 0.5f),
                 IM_COL32(220, 220, 225, 220),
                 "No preview");
         }
-        ImGui::GetWindowDrawList()->AddRect(previewStart, previewEnd, IM_COL32(145, 145, 155, 190));
+        previewDrawList->AddRect(previewStart, previewEnd, IM_COL32(145, 145, 155, 190));
         ImGui::EndChild();
+        ImGui::EndChild();
+
+        ImGui::Separator();
+        const bool exportBusy =
+            m_scheduledSavePlotImage || m_scheduledCopyPlotImage ||
+            m_pendingSavePlotImage || m_pendingCopyPlotImage ||
+            m_exportPreviewRefreshRequested;
+        const ExportSupersampling footerSampling =
+            settings.qualityMode == ExportQualityMode::Override
+                ? settings.quality.supersampling
+                : ExportSupersampling::Off;
+        const double footerMiB = bytesToMiB(
+            estimateRgbaBufferBytes(settings.width, settings.height, footerSampling));
+        const char* footerPreviewState = m_exportPreviewRefreshRequested ? "Preview rendering"
+            : (m_exportPreviewDirty ? "Preview out of date"
+                                    : (m_exportPreviewSrv ? "Preview ready" : "Preview not rendered"));
+        ImGui::Text("%s | %s | %d x %d | %s | %s | %.1f MiB | %s",
+                    footerPreviewState,
+                    exportProfileLabel(settings.selectedProfile),
+                    settings.width,
+                    settings.height,
+                    exportFormatLabel(settings.format),
+                    exportSupersamplingLabel(footerSampling),
+                    footerMiB,
+                    exportAspectModeLabel(settings.aspectMode));
+        if (!m_exportStatus.empty()) {
+            ImGui::SameLine();
+            ImGui::TextDisabled("| %s", m_exportStatus.c_str());
+        }
+
+        if (!exportBusy && ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) &&
+            !ImGui::IsAnyItemActive() && ImGui::IsKeyPressed(ImGuiKey_Enter)) {
+            queueSaveExport();
+        }
+
+        if (ImGui::Button("Reset Settings", ImVec2(124.0f, 0.0f))) {
+            resetExportSettings();
+        }
+        const float copyWidth = 74.0f;
+        const float saveWidth = 104.0f;
+        const float closeWidth = 74.0f;
+        const float actionWidth = copyWidth + saveWidth + closeWidth + style.ItemSpacing.x * 2.0f;
+        const float rightStart = ImGui::GetWindowWidth() - style.WindowPadding.x - actionWidth;
+        if (rightStart > ImGui::GetCursorPosX() + style.ItemSpacing.x) {
+            ImGui::SameLine(rightStart);
+        } else {
+            ImGui::SameLine();
+        }
+        ImGui::BeginDisabled(exportBusy);
+        if (ImGui::Button("Copy", ImVec2(copyWidth, 0.0f))) {
+            queueCopyExport();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Save As...", ImVec2(saveWidth, 0.0f))) {
+            queueSaveExport();
+        }
+        ImGui::EndDisabled();
+        ImGui::SameLine();
+        if (ImGui::Button("Close", ImVec2(closeWidth, 0.0f))) {
+            ImGui::CloseCurrentPopup();
+            open = false;
+        }
 
         if (previewChanged) {
             markExportPreviewOutOfDate();
@@ -1414,22 +2483,28 @@ bool Application::refreshExportPreviewTexture() {
         return false;
     }
 
-    const int srcW = (std::max)(16, m_exportDialogSettings.width);
-    const int srcH = (std::max)(16, m_exportDialogSettings.height);
-    const double aspect = std::clamp(static_cast<double>(srcW) / static_cast<double>(srcH),
-                                     1.0 / 8.0, 8.0);
-    int previewW = 720;
-    int previewH = static_cast<int>(std::lround(previewW / aspect));
-    if (previewH > 520) {
-        previewH = 520;
-        previewW = static_cast<int>(std::lround(previewH * aspect));
-    }
-    previewW = std::clamp(previewW, 180, 960);
-    previewH = std::clamp(previewH, 120, 540);
+    const ExportPreviewQuality requestedPreviewQuality = m_exportPreviewUseFinalQualityOnce
+        ? ExportPreviewQuality::Final
+        : m_exportDialogSettings.previewQuality;
+    m_exportPreviewUseFinalQualityOnce = false;
+    const ExportPreviewSize previewSize =
+        resolveExportPreviewSize(m_exportDialogSettings.width,
+                                 m_exportDialogSettings.height,
+                                 requestedPreviewQuality);
+    const int previewW = previewSize.width;
+    const int previewH = previewSize.height;
 
     ExportDialogSettings previewSettings = m_exportDialogSettings;
     previewSettings.width = previewW;
     previewSettings.height = previewH;
+    if (requestedPreviewQuality != ExportPreviewQuality::Final) {
+        previewSettings.qualityMode = ExportQualityMode::Override;
+        previewSettings.quality = qualitySettingsForPreset(
+            requestedPreviewQuality == ExportPreviewQuality::Draft
+                ? ExportQualityPreset::Draft
+                : ExportQualityPreset::Normal);
+        previewSettings.quality.supersampling = ExportSupersampling::Off;
+    }
 
     std::vector<std::uint8_t> pixels;
     int renderedW = 0;
@@ -1500,7 +2575,13 @@ bool Application::refreshExportPreviewTexture() {
     }
 
     m_exportPreviewStatus = "Preview ready (" + std::to_string(renderedW) + "x" +
-        std::to_string(renderedH) + ").";
+        std::to_string(renderedH) + ", " +
+        exportPreviewQualityLabel(requestedPreviewQuality) + ", " +
+        exportAspectModeLabel(m_exportDialogSettings.aspectMode);
+    if (previewSize.reducedFromOutput) {
+        m_exportPreviewStatus += ", reduced";
+    }
+    m_exportPreviewStatus += ").";
     return true;
 }
 
@@ -1853,6 +2934,12 @@ bool Application::renderPlotPixelsOffscreen(const Application::ExportDialogSetti
         : 1;
     const int targetWidth = clampExportDimension(outputWidth * samplingFactor);
     const int targetHeight = clampExportDimension(outputHeight * samplingFactor);
+    const ExportWorldBounds sourceBounds{
+        m_viewTransform.worldXMin(), m_viewTransform.worldXMax(),
+        m_viewTransform.worldYMin(), m_viewTransform.worldYMax()
+    };
+    const ExportResolvedView resolvedView =
+        resolveExportView(targetWidth, targetHeight, sourceBounds, settings.aspectMode);
 
     D3D11_TEXTURE2D_DESC texDesc = {};
     texDesc.Width = static_cast<UINT>(targetWidth);
@@ -1918,6 +3005,17 @@ bool Application::renderPlotPixelsOffscreen(const Application::ExportDialogSetti
                      ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse |
                      ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings |
                      ImGuiWindowFlags_NoInputs)) {
+        const std::array<float, 4> backgroundColor = resolveExportBackgroundColor(settings);
+        const ImVec2 windowPos = ImGui::GetWindowPos();
+        ImDrawList* drawList = ImGui::GetWindowDrawList();
+        drawList->AddRectFilled(
+            windowPos,
+            ImVec2(windowPos.x + static_cast<float>(targetWidth),
+                   windowPos.y + static_cast<float>(targetHeight)),
+            ImGui::ColorConvertFloat4ToU32(
+                ImVec4(backgroundColor[0], backgroundColor[1],
+                       backgroundColor[2], backgroundColor[3])));
+
         Core::ViewTransform exportView = m_viewTransform;
         PlotSettings exportSettings = m_plotSettings;
         exportSettings.autoRotate = false;
@@ -1926,20 +3024,16 @@ bool Application::renderPlotPixelsOffscreen(const Application::ExportDialogSetti
             exportSettings.surfaceResolution = std::clamp(settings.quality.surfaceResolution, 16, 256);
             exportSettings.implicitSurfaceResolution =
                 std::clamp(settings.quality.implicitSurfaceResolution, 16, 192);
-            exportSettings.wireThickness = (std::max)(
-                0.05f, exportSettings.wireThickness * settings.quality.wireThicknessScale);
+            if (exportSettings.wireThickness > 0.0f) {
+                exportSettings.wireThickness = (std::max)(
+                    0.05f, exportSettings.wireThickness * settings.quality.wireThicknessScale);
+            }
         }
 
-        // Preserve the same visible world-domain as the interactive plot. Export/preview size
-        // should change resolution, not crop the graph.
-        const double worldW = m_viewTransform.worldXMax() - m_viewTransform.worldXMin();
-        const double worldH = m_viewTransform.worldYMax() - m_viewTransform.worldYMin();
-        if (worldW > 1e-12) {
-            exportView.scaleX = static_cast<double>(targetWidth) / worldW;
-        }
-        if (worldH > 1e-12) {
-            exportView.scaleY = static_cast<double>(targetHeight) / worldH;
-        }
+        exportView.centerX = (resolvedView.visibleBounds.xMin + resolvedView.visibleBounds.xMax) * 0.5;
+        exportView.centerY = (resolvedView.visibleBounds.yMin + resolvedView.visibleBounds.yMax) * 0.5;
+        exportView.scaleX = resolvedView.scaleX;
+        exportView.scaleY = resolvedView.scaleY;
 
         PlotRenderOverrides exportOverrides;
         exportOverrides.active = true;
@@ -1947,11 +3041,32 @@ bool Application::renderPlotPixelsOffscreen(const Application::ExportDialogSetti
         exportOverrides.showCoordinates = settings.showCoordinates;
         exportOverrides.showWires = settings.showWires;
         exportOverrides.showEnvelope = settings.showEnvelope;
-        exportOverrides.showAxisTriad = settings.showAxisTriad;
+        exportOverrides.showAxisTriad =
+            isAxisTriadVisible(settings.showCoordinates, settings.showAxisTriad);
+        exportOverrides.showHud = false;
         exportOverrides.showCanvasBorder = false;
-        exportOverrides.backgroundColor = resolveExportBackgroundColor(settings);
+        exportOverrides.backgroundColor = backgroundColor;
 
-        m_plotPanel.render(m_formulas, exportView, exportSettings, &exportOverrides);
+        ImGui::SetCursorScreenPos(
+            ImVec2(windowPos.x + static_cast<float>(resolvedView.marginLeftPx),
+                   windowPos.y + static_cast<float>(resolvedView.marginTopPx)));
+        const ImVec2 contentSize(
+            static_cast<float>(resolvedView.contentWidthPx),
+            static_cast<float>(resolvedView.contentHeightPx));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+        if (ImGui::BeginChild("##ExportPlotOffscreenContent", contentSize, ImGuiChildFlags_None,
+                              ImGuiWindowFlags_NoScrollbar |
+                              ImGuiWindowFlags_NoScrollWithMouse |
+                              ImGuiWindowFlags_NoSavedSettings |
+                              ImGuiWindowFlags_NoInputs |
+                              ImGuiWindowFlags_NoBackground)) {
+            m_plotPanel.render(m_formulas, exportView, exportSettings, &exportOverrides);
+        }
+        ImGui::EndChild();
+        ImGui::PopStyleColor();
+        ImGui::PopStyleVar(2);
     }
     ImGui::End();
     ImGui::PopStyleColor();
@@ -1989,6 +3104,197 @@ bool Application::saveImageToPath(const std::wstring& path,
         return saveBmpToPath(path, pixels, width, height, error);
     }
     return savePngToPath(path, pixels, width, height, error);
+}
+
+std::string Application::buildExportMetadataJson(const ExportDialogSettings& settings,
+                                                 const std::wstring& imagePath,
+                                                 int width,
+                                                 int height) const {
+    auto q = [](std::string_view text) {
+        return std::string("\"") + jsonEscape(text) + "\"";
+    };
+    auto colorArray = [](const auto& color) {
+        std::ostringstream out;
+        out << '[' << color[0] << ", " << color[1] << ", " << color[2] << ", " << color[3] << ']';
+        return out.str();
+    };
+
+    const int presetIndex = std::clamp(
+        settings.selectedSizePreset, 0, static_cast<int>(exportSizePresets().size()) - 1);
+    const auto& sizePreset = exportSizePresets()[static_cast<size_t>(presetIndex)];
+    const std::array<float, 4> resolvedBackground = resolveExportBackgroundColor(settings);
+    const std::string imagePathUtf8 = narrowUtf8(imagePath);
+    std::filesystem::path imageFsPath(imagePath);
+    std::string actualFormat = exportFormatLabel(settings.format);
+    std::wstring extension = imageFsPath.extension().wstring();
+    std::transform(extension.begin(), extension.end(), extension.begin(),
+                   [](wchar_t ch) { return static_cast<wchar_t>(std::towlower(ch)); });
+    if (extension == L".bmp") {
+        actualFormat = "BMP";
+    } else if (extension == L".png") {
+        actualFormat = "PNG";
+    }
+
+    std::ostringstream out;
+    out << std::setprecision(9);
+    out << "{\n";
+    out << "  \"schemaVersion\": " << kExportMetadataSchemaVersion << ",\n";
+    out << "  \"application\": {\n";
+    out << "    \"name\": \"XpressFormula\",\n";
+    out << "    \"version\": " << q(XF_BUILD_VERSION) << ",\n";
+    out << "    \"repoUrl\": " << q(XF_BUILD_REPO_URL) << ",\n";
+    out << "    \"branch\": " << q(XF_BUILD_BRANCH) << ",\n";
+    out << "    \"commit\": " << q(XF_BUILD_COMMIT) << "\n";
+    out << "  },\n";
+    out << "  \"image\": {\n";
+    out << "    \"path\": " << q(imagePathUtf8) << ",\n";
+    out << "    \"width\": " << width << ",\n";
+    out << "    \"height\": " << height << ",\n";
+    out << "    \"format\": " << q(actualFormat) << "\n";
+    out << "  },\n";
+    out << "  \"formulas\": [\n";
+    for (size_t i = 0; i < m_formulas.size(); ++i) {
+        const FormulaEntry& formula = m_formulas[i];
+        out << "    {\n";
+        out << "      \"index\": " << (i + 1) << ",\n";
+        out << "      \"expression\": " << q(std::string(formula.inputBuffer)) << ",\n";
+        out << "      \"visible\": " << jsonBool(formula.visible) << ",\n";
+        out << "      \"color\": " << colorArray(formula.color) << ",\n";
+        out << "      \"valid\": " << jsonBool(formula.isValid()) << ",\n";
+        out << "      \"type\": " << q(formula.typeLabel()) << ",\n";
+        out << "      \"renderKind\": " << q(formulaRenderKindLabel(formula.renderKind)) << ",\n";
+        out << "      \"equation\": " << jsonBool(formula.isEquation) << ",\n";
+        out << "      \"variableCount\": " << formula.variableCount << ",\n";
+        out << "      \"variables\": [";
+        size_t variableIndex = 0;
+        for (const std::string& variable : formula.variables) {
+            if (variableIndex++ > 0) {
+                out << ", ";
+            }
+            out << q(variable);
+        }
+        out << "],\n";
+        out << "      \"zSlice\": " << formula.zSlice << ",\n";
+        out << "      \"error\": " << q(formula.error) << "\n";
+        out << "    }" << ((i + 1 < m_formulas.size()) ? "," : "") << "\n";
+    }
+    out << "  ],\n";
+    out << "  \"view\": {\n";
+    out << "    \"center\": { \"x\": " << m_viewTransform.centerX
+        << ", \"y\": " << m_viewTransform.centerY << " },\n";
+    out << "    \"scale\": { \"x\": " << m_viewTransform.scaleX
+        << ", \"y\": " << m_viewTransform.scaleY << " },\n";
+    out << "    \"screen\": { \"width\": " << m_viewTransform.screenWidth
+        << ", \"height\": " << m_viewTransform.screenHeight
+        << ", \"originX\": " << m_viewTransform.screenOriginX
+        << ", \"originY\": " << m_viewTransform.screenOriginY << " },\n";
+    out << "    \"worldBounds\": { \"xMin\": " << m_viewTransform.worldXMin()
+        << ", \"xMax\": " << m_viewTransform.worldXMax()
+        << ", \"yMin\": " << m_viewTransform.worldYMin()
+        << ", \"yMax\": " << m_viewTransform.worldYMax() << " }\n";
+    out << "  },\n";
+    out << "  \"camera\": {\n";
+    out << "    \"azimuthDeg\": " << m_plotSettings.azimuthDeg << ",\n";
+    out << "    \"elevationDeg\": " << m_plotSettings.elevationDeg << ",\n";
+    out << "    \"zScale\": " << m_plotSettings.zScale << ",\n";
+    out << "    \"autoRotate\": " << jsonBool(m_plotSettings.autoRotate) << ",\n";
+    out << "    \"autoRotateSpeedDegPerSec\": " << m_plotSettings.autoRotateSpeedDegPerSec << "\n";
+    out << "  },\n";
+    out << "  \"display\": {\n";
+    out << "    \"xyRenderModePreference\": " << q(xyRenderModePreferenceLabel(m_plotSettings.xyRenderModePreference)) << ",\n";
+    out << "    \"hudMode\": " << q(plotHudModeLabel(m_plotSettings.hudMode)) << ",\n";
+    out << "    \"optimizeRendering\": " << jsonBool(m_plotSettings.optimizeRendering) << ",\n";
+    out << "    \"showGrid\": " << jsonBool(m_plotSettings.showGrid) << ",\n";
+    out << "    \"showCoordinates\": " << jsonBool(m_plotSettings.showCoordinates) << ",\n";
+    out << "    \"showWires\": " << jsonBool(m_plotSettings.showWires) << ",\n";
+    out << "    \"showSurfaceEnvelope\": " << jsonBool(m_plotSettings.showSurfaceEnvelope) << ",\n";
+    out << "    \"showAxisTriad\": " << jsonBool(m_plotSettings.showAxisTriad) << ",\n";
+    out << "    \"effectiveShowAxisTriad\": " << jsonBool(m_plotSettings.effectiveShowAxisTriad()) << ",\n";
+    out << "    \"surfaceResolution\": " << m_plotSettings.surfaceResolution << ",\n";
+    out << "    \"implicitSurfaceResolution\": " << m_plotSettings.implicitSurfaceResolution << ",\n";
+    out << "    \"surfaceOpacity\": " << m_plotSettings.surfaceOpacity << ",\n";
+    out << "    \"wireOpacity\": " << m_plotSettings.wireOpacity << ",\n";
+    out << "    \"wireThickness\": " << m_plotSettings.wireThickness << ",\n";
+    out << "    \"wireStride\": " << m_plotSettings.wireStride << ",\n";
+    out << "    \"envelopeThickness\": " << m_plotSettings.envelopeThickness << ",\n";
+    out << "    \"heatmapOpacity\": " << m_plotSettings.heatmapOpacity << "\n";
+    out << "  },\n";
+    out << "  \"export\": {\n";
+    out << "    \"profile\": " << q(exportProfileLabel(settings.selectedProfile)) << ",\n";
+    out << "    \"requestedWidth\": " << settings.width << ",\n";
+    out << "    \"requestedHeight\": " << settings.height << ",\n";
+    out << "    \"outputWidth\": " << width << ",\n";
+    out << "    \"outputHeight\": " << height << ",\n";
+    out << "    \"scale\": " << settings.scale << ",\n";
+    out << "    \"sizePreset\": " << q(sizePreset.label) << ",\n";
+    out << "    \"lockAspectRatio\": " << jsonBool(settings.lockAspectRatio) << ",\n";
+    out << "    \"format\": " << q(exportFormatLabel(settings.format)) << ",\n";
+    out << "    \"backgroundMode\": " << q(exportBackgroundModeLabel(settings.backgroundMode)) << ",\n";
+    out << "    \"customBackgroundColor\": " << colorArray(settings.backgroundColor) << ",\n";
+    out << "    \"resolvedBackgroundColor\": " << colorArray(resolvedBackground) << ",\n";
+    out << "    \"grayscaleOutput\": " << jsonBool(settings.grayscaleOutput) << ",\n";
+    out << "    \"aspectMode\": " << q(exportAspectModeLabel(settings.aspectMode)) << ",\n";
+    out << "    \"showGrid\": " << jsonBool(settings.showGrid) << ",\n";
+    out << "    \"showCoordinates\": " << jsonBool(settings.showCoordinates) << ",\n";
+    out << "    \"showWires\": " << jsonBool(settings.showWires) << ",\n";
+    out << "    \"showEnvelope\": " << jsonBool(settings.showEnvelope) << ",\n";
+    out << "    \"showAxisTriad\": " << jsonBool(settings.showAxisTriad) << ",\n";
+    out << "    \"effectiveShowAxisTriad\": "
+        << jsonBool(isAxisTriadVisible(settings.showCoordinates, settings.showAxisTriad)) << ",\n";
+    out << "    \"qualityMode\": " << q(exportQualityModeLabel(settings.qualityMode)) << ",\n";
+    out << "    \"qualityPreset\": " << q(exportQualityPresetLabel(settings.quality.preset)) << ",\n";
+    out << "    \"surfaceResolution\": " << settings.quality.surfaceResolution << ",\n";
+    out << "    \"implicitSurfaceResolution\": " << settings.quality.implicitSurfaceResolution << ",\n";
+    out << "    \"wireThicknessScale\": " << settings.quality.wireThicknessScale << ",\n";
+    out << "    \"supersampling\": " << q(exportSupersamplingLabel(settings.quality.supersampling)) << ",\n";
+    out << "    \"previewQuality\": " << q(exportPreviewQualityLabel(settings.previewQuality)) << ",\n";
+    out << "    \"autoRefreshPreview\": " << jsonBool(settings.autoRefreshPreview) << ",\n";
+    out << "    \"openAfterSave\": " << jsonBool(settings.openAfterSave) << ",\n";
+    out << "    \"showInFolderAfterSave\": " << jsonBool(settings.showInFolderAfterSave) << ",\n";
+    out << "    \"copyPathAfterSave\": " << jsonBool(settings.copyPathAfterSave) << ",\n";
+    out << "    \"saveMetadataSidecar\": " << jsonBool(settings.saveMetadataSidecar) << "\n";
+    out << "  }\n";
+    out << "}\n";
+    return out.str();
+}
+
+bool Application::writeExportMetadataSidecar(const ExportDialogSettings& settings,
+                                             const std::wstring& imagePath,
+                                             int width,
+                                             int height,
+                                             std::string& error) const {
+    error.clear();
+    const std::filesystem::path sidecarPath = exportMetadataSidecarPath(std::filesystem::path(imagePath));
+    const std::filesystem::path tempPath = exportMetadataTempPath(sidecarPath);
+    const std::string json = buildExportMetadataJson(settings, imagePath, width, height);
+
+    {
+        std::ofstream out(tempPath, std::ios::binary | std::ios::trunc);
+        if (!out) {
+            error = "Could not open metadata sidecar temp file: " + narrowUtf8(tempPath.wstring());
+            return false;
+        }
+        out.write(json.data(), static_cast<std::streamsize>(json.size()));
+        out.close();
+        if (!out) {
+            error = "Could not write metadata sidecar temp file: " + narrowUtf8(tempPath.wstring());
+            std::error_code ignored;
+            std::filesystem::remove(tempPath, ignored);
+            return false;
+        }
+    }
+
+    if (!::MoveFileExW(tempPath.wstring().c_str(),
+                       sidecarPath.wstring().c_str(),
+                       MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+        const DWORD win32Error = ::GetLastError();
+        std::error_code ignored;
+        std::filesystem::remove(tempPath, ignored);
+        error = "Could not replace metadata sidecar: Win32 error " + std::to_string(win32Error) + ".";
+        return false;
+    }
+
+    return true;
 }
 
 bool Application::savePngToPath(const std::wstring& path,
@@ -2240,6 +3546,20 @@ void Application::processPendingExportActions() {
             if (saveImageToPath(path, outputPixels, outputWidth, outputHeight, error)) {
                 m_lastExportSavedPath = path;
                 messages.emplace_back("Saved plot image to: " + narrowUtf8(path));
+                if (m_pendingExportSettings.saveMetadataSidecar) {
+                    std::string metadataError;
+                    if (writeExportMetadataSidecar(m_pendingExportSettings,
+                                                   path,
+                                                   outputWidth,
+                                                   outputHeight,
+                                                   metadataError)) {
+                        const std::filesystem::path sidecarPath =
+                            exportMetadataSidecarPath(std::filesystem::path(path));
+                        messages.emplace_back("Saved metadata sidecar: " + narrowUtf8(sidecarPath.wstring()));
+                    } else {
+                        messages.emplace_back("Metadata sidecar failed: " + metadataError);
+                    }
+                }
                 if (m_pendingExportSettings.openAfterSave) {
                     messages.emplace_back(openPathWithShell(path)
                         ? "Opened saved image."

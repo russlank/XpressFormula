@@ -16,6 +16,7 @@ struct PlotRenderOverrides {
     bool showWires = true;
     bool showEnvelope = true;
     bool showAxisTriad = true;
+    bool showHud = true;
     bool showCanvasBorder = true;
     std::array<float, 4> backgroundColor = { 0.098f, 0.098f, 0.118f, 1.0f };
 };
@@ -26,6 +27,9 @@ public:
     void render(std::vector<FormulaEntry>& formulas, Core::ViewTransform& vt,
                 PlotSettings& settings,
                 const PlotRenderOverrides* overrides = nullptr);
+
+private:
+    double m_lastHudInteractionTime = -1000.0;
 };
 
 } // namespace XpressFormula::UI

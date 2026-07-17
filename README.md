@@ -18,7 +18,9 @@ The app supports:
 - `f(x,y,z)` scalar-field cross-sections at configurable `z` slices
 - `F(x,y,z)=0` implicit 3D surfaces (e.g. spheres and torus equations)
 - Auto/Force 2D/3D rendering preference with projected 3D grid-plane interleaving (`z=0`) for clearer depth ordering
-- Plot export dialog with size presets/scales, background modes including transparency, scene toggles, export-only quality/supersampling, `.png`/`.bmp` save, clipboard copy, and post-save actions
+- Resizable ImGui sidebar with aligned 3D camera/display property rows, per-control resets, and a compact plot toolbar for common view/export actions
+- Versioned `.xfplot` project files with New/Open/Save/Save As, recent projects, dirty-state tracking, and unsaved-change protection
+- Plot export profiles, aspect-safe framing, preview quality controls, transparent output, quality overrides, and optional JSON metadata sidecars
 - Startup/manual update checks against GitHub releases with quick link to the releases page
 - Versioned binary metadata and installer packaging (`.msi` + setup `.exe`)
 

@@ -912,17 +912,71 @@ void PlotRenderer::drawSurface3D(ImDrawList* dl, const Core::ViewTransform& vt,
             static_cast<int>(b * 255),
             static_cast<int>(std::clamp(options.opacity, 0.1f, 1.0f) * 255));
 
-        const ImU32 edge = IM_COL32(
-            static_cast<int>(std::clamp(r * 0.6f, 0.0f, 1.0f) * 255),
-            static_cast<int>(std::clamp(g * 0.6f, 0.0f, 1.0f) * 255),
-            static_cast<int>(std::clamp(b * 0.6f, 0.0f, 1.0f) * 255),
-            200);
-
         dl->AddTriangleFilled(face.p0, face.p1, face.p2, fill);
-        if (options.wireThickness > 0.0f) {
-            dl->AddLine(face.p0, face.p1, edge, options.wireThickness);
-            dl->AddLine(face.p1, face.p2, edge, options.wireThickness);
-            dl->AddLine(face.p2, face.p0, edge, options.wireThickness);
+    }
+
+    const float edgeThickness = std::clamp(options.wireThickness, 0.0f, 4.0f);
+    const float wireOpacity = std::clamp(options.wireOpacity, 0.0f, 1.0f);
+    const int wireStride = std::clamp(options.wireStride, 1, 16);
+    if (edgeThickness > 0.0f && wireOpacity > 0.0f) {
+        const ImU32 edge = IM_COL32(
+            static_cast<int>(std::clamp(color[0] * 0.45f + 0.05f, 0.0f, 1.0f) * 255.0f),
+            static_cast<int>(std::clamp(color[1] * 0.45f + 0.05f, 0.0f, 1.0f) * 255.0f),
+            static_cast<int>(std::clamp(color[2] * 0.45f + 0.05f, 0.0f, 1.0f) * 255.0f),
+            static_cast<int>(wireOpacity * 255.0f));
+
+        auto drawWireSegment = [&](const ScreenVertex& a, const ScreenVertex& b) {
+            if (!a.valid || !b.valid) {
+                return;
+            }
+
+            ClipVertex pa{ a.x, a.y, a.depth, a.value };
+            ClipVertex pb{ b.x, b.y, b.depth, b.value };
+            if (usePlaneSplitPass) {
+                const bool aInside = (options.planePass == SurfacePlanePass3D::BelowGridPlane)
+                    ? (pa.value <= planeZ)
+                    : (pa.value >= planeZ);
+                const bool bInside = (options.planePass == SurfacePlanePass3D::BelowGridPlane)
+                    ? (pb.value <= planeZ)
+                    : (pb.value >= planeZ);
+                if (!aInside && !bInside) {
+                    return;
+                }
+                if (aInside != bInside) {
+                    const ClipVertex intersection = clipIntersect(pa, pb);
+                    if (!aInside) {
+                        pa = intersection;
+                    } else {
+                        pb = intersection;
+                    }
+                }
+            }
+
+            dl->AddLine(ImVec2(pa.x, pa.y), ImVec2(pb.x, pb.y), edge, edgeThickness);
+        };
+
+        auto includeWireIndex = [wireStride](int value, int maxValue) {
+            return value == 0 || value == maxValue || (value % wireStride) == 0;
+        };
+
+        for (int iy = 0; iy <= ny; ++iy) {
+            if (!includeWireIndex(iy, ny)) {
+                continue;
+            }
+            for (int ix = 0; ix < nx; ++ix) {
+                drawWireSegment(screenVerts[iy * (nx + 1) + ix],
+                                screenVerts[iy * (nx + 1) + ix + 1]);
+            }
+        }
+
+        for (int ix = 0; ix <= nx; ++ix) {
+            if (!includeWireIndex(ix, nx)) {
+                continue;
+            }
+            for (int iy = 0; iy < ny; ++iy) {
+                drawWireSegment(screenVerts[iy * (nx + 1) + ix],
+                                screenVerts[(iy + 1) * (nx + 1) + ix]);
+            }
         }
     }
 
@@ -1052,6 +1106,7 @@ void PlotRenderer::drawImplicitSurface3D(ImDrawList* dl, const Core::ViewTransfo
         double depth;
         double zAvg;
         float shade;
+        size_t wireOrdinal;
     };
     struct ClipProjectedVertex {
         double xProj;
@@ -1555,7 +1610,8 @@ void PlotRenderer::drawImplicitSurface3D(ImDrawList* dl, const Core::ViewTransfo
     auto pushScreenFaceRaw = [&](const ClipProjectedVertex& a,
                                  const ClipProjectedVertex& b,
                                  const ClipProjectedVertex& c,
-                                 float shade) {
+                                 float shade,
+                                 size_t wireOrdinal) {
         screenFaces.push_back({
             ImVec2(sxCenter + static_cast<float>(a.xProj * scale),
                    syCenter - static_cast<float>(a.yProj * scale)),
@@ -1565,7 +1621,8 @@ void PlotRenderer::drawImplicitSurface3D(ImDrawList* dl, const Core::ViewTransfo
                    syCenter - static_cast<float>(c.yProj * scale)),
             (a.depth + b.depth + c.depth) / 3.0,
             (a.wz + b.wz + c.wz) / 3.0,
-            shade
+            shade,
+            wireOrdinal
         });
     };
 
@@ -1585,13 +1642,14 @@ void PlotRenderer::drawImplicitSurface3D(ImDrawList* dl, const Core::ViewTransfo
         };
     };
 
-    auto pushProjectedFace = [&](const ProjectedFace& f) {
+    auto pushProjectedFace = [&](const ProjectedFace& f, size_t wireOrdinal) {
         if (!usePlaneSplitPass) {
             pushScreenFaceRaw(
                 ClipProjectedVertex{ f.v0.xProj, f.v0.yProj, f.v0.depth, f.v0.wz },
                 ClipProjectedVertex{ f.v1.xProj, f.v1.yProj, f.v1.depth, f.v1.wz },
                 ClipProjectedVertex{ f.v2.xProj, f.v2.yProj, f.v2.depth, f.v2.wz },
-                f.shade);
+                f.shade,
+                wireOrdinal);
             return;
         }
 
@@ -1633,12 +1691,12 @@ void PlotRenderer::drawImplicitSurface3D(ImDrawList* dl, const Core::ViewTransfo
         }
 
         for (int i = 1; i + 1 < outputCount; ++i) {
-            pushScreenFaceRaw(output[0], output[i], output[i + 1], f.shade);
+            pushScreenFaceRaw(output[0], output[i], output[i + 1], f.shade, wireOrdinal);
         }
     };
 
-    for (const ProjectedFace& f : projectedFaces) {
-        pushProjectedFace(f);
+    for (size_t i = 0; i < projectedFaces.size(); ++i) {
+        pushProjectedFace(projectedFaces[i], i);
     }
 
     // ImGui draw lists have no depth buffer, so we painter-sort triangles back-to-front.
@@ -1659,6 +1717,8 @@ void PlotRenderer::drawImplicitSurface3D(ImDrawList* dl, const Core::ViewTransfo
     const double zRange = std::max(1e-6, surfZMax - surfZMin);
     const float baseOpacity = std::clamp(options.opacity, 0.12f, 1.0f);
     const float edgeThickness = std::clamp(options.wireThickness, 0.0f, 4.0f);
+    const float wireOpacity = std::clamp(options.wireOpacity, 0.0f, 1.0f);
+    const int wireStride = std::clamp(options.wireStride, 1, 16);
 
     for (const ScreenFace& face : screenFaces) {
         const double t = std::clamp((face.zAvg - surfZMin) / zRange, 0.0, 1.0);
@@ -1684,10 +1744,12 @@ void PlotRenderer::drawImplicitSurface3D(ImDrawList* dl, const Core::ViewTransfo
             static_cast<int>(std::clamp(r * 0.55f, 0.0f, 1.0f) * 255.0f),
             static_cast<int>(std::clamp(g * 0.55f, 0.0f, 1.0f) * 255.0f),
             static_cast<int>(std::clamp(b * 0.55f, 0.0f, 1.0f) * 255.0f),
-            200);
+            static_cast<int>(wireOpacity * 255.0f));
 
         dl->AddTriangleFilled(face.p0, face.p1, face.p2, fill);
-        if (edgeThickness > 0.0f) {
+        if (edgeThickness > 0.0f &&
+            wireOpacity > 0.0f &&
+            (face.wireOrdinal % static_cast<size_t>(wireStride)) == 0u) {
             dl->AddLine(face.p0, face.p1, edge, edgeThickness);
             dl->AddLine(face.p1, face.p2, edge, edgeThickness);
             dl->AddLine(face.p2, face.p0, edge, edgeThickness);

@@ -454,6 +454,12 @@ Then triangles are:
 2. sorted by depth
 3. drawn with fill color and optional wireframe
 
+Wire density is separate from mesh resolution:
+
+- explicit `z=f(x,y)` surfaces draw wire rows/columns using `Wire Stride`
+- implicit meshes draw a stride-filtered subset of mesh edges
+- changing stride affects readability and draw cost, but does not resample the surface
+
 Important alignment detail (recent fix):
 
 - 3D projected geometry is anchored to the same world origin (`0,0`) used by the 2D grid/axes.

@@ -18,18 +18,24 @@ public:
     /// Draw the panel contents (call between ImGui::Begin / End).
     void render(std::vector<FormulaEntry>& formulas);
 
+    void resetColorCycle(int nextIndex = 0) { m_nextColorIndex = nextIndex; }
+
 private:
     void openEditor(const FormulaEntry& formula, int formulaIndex);
     void loadEditorFormula(const char* expression);
     void renderEditorDialog(std::vector<FormulaEntry>& formulas);
     void renderFunctionHelpDialog();
     void renderExampleHelpDialog();
+    void requestDeleteFormula(int formulaIndex);
+    void renderDeleteConfirmationDialog(std::vector<FormulaEntry>& formulas);
 
     int m_nextColorIndex = 0;
     bool m_openEditorPopupNextFrame = false;
     bool m_focusEditorInput = false;
     int  m_editorFormulaIndex = -1;
     char m_editorBuffer[2048] = {};
+    int  m_pendingDeleteFormulaIndex = -1;
+    bool m_openDeleteConfirmPopupNextFrame = false;
 
     const Core::FunctionInfo* m_selectedFunctionHelp = nullptr;
     bool m_openFunctionHelpPopupNextFrame = false;

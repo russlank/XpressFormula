@@ -1,6 +1,8 @@
 // PlotSettings.h - Shared plotting settings for 2D and 3D render modes.
 #pragma once
 
+#include <algorithm>
+
 namespace XpressFormula::UI {
 
 enum class XYRenderMode {
@@ -14,8 +16,65 @@ enum class XYRenderModePreference {
     Force2D
 };
 
+enum class PlotHudMode {
+    Off,
+    Minimal,
+    Detailed,
+    OnlyWhileInteracting
+};
+
+inline constexpr float kDefaultAzimuthDeg = 30.0f;
+inline constexpr float kDefaultElevationDeg = -60.0f;
+inline constexpr float kDefaultZScale = 1.5f;
+inline constexpr int   kDefaultSurfaceResolution = 50;
+inline constexpr int   kDefaultImplicitSurfaceResolution = 64;
+inline constexpr float kDefaultSurfaceOpacity = 1.00f;
+inline constexpr float kDefaultWireOpacity = 0.25f;
+inline constexpr float kDefaultWireThickness = 1.0f;
+inline constexpr int   kDefaultWireStride = 2;
+inline constexpr float kDefaultEnvelopeThickness = 2.0f;
+inline constexpr float kDefaultAutoRotateSpeedDegPerSec = 20.0f;
+inline constexpr float kDefaultHeatmapOpacity = 0.62f;
+
+[[nodiscard]] inline bool isAxisTriadVisible(bool showCoordinates, bool showAxisTriad) {
+    return showAxisTriad && !showCoordinates;
+}
+
+inline bool resolveCoordinateOverlayPolicy(bool showCoordinates, bool& showAxisTriad) {
+    if (!showCoordinates || !showAxisTriad) {
+        return false;
+    }
+
+    showAxisTriad = false;
+    return true;
+}
+
+[[nodiscard]] inline const char* plotHudModeLabel(PlotHudMode mode) {
+    switch (mode) {
+        case PlotHudMode::Off:
+            return "Off";
+        case PlotHudMode::Minimal:
+            return "Minimal";
+        case PlotHudMode::Detailed:
+            return "Detailed";
+        case PlotHudMode::OnlyWhileInteracting:
+            return "Only While Interacting";
+        default:
+            return "Minimal";
+    }
+}
+
+[[nodiscard]] inline float clampWireOpacity(float value) {
+    return std::clamp(value, 0.0f, 1.0f);
+}
+
+[[nodiscard]] inline int clampWireStride(int value) {
+    return std::clamp(value, 1, 16);
+}
+
 struct PlotSettings {
     XYRenderModePreference xyRenderModePreference = XYRenderModePreference::Auto;
+    PlotHudMode hudMode = PlotHudMode::Minimal;
     bool optimizeRendering = true;
     bool showGrid = true;
     bool showCoordinates = true;
@@ -38,6 +97,14 @@ struct PlotSettings {
         }
     }
 
+    [[nodiscard]] bool effectiveShowAxisTriad() const {
+        return isAxisTriadVisible(showCoordinates, showAxisTriad);
+    }
+
+    bool applyCoordinateOverlayPolicy() {
+        return resolveCoordinateOverlayPolicy(showCoordinates, showAxisTriad);
+    }
+
     // 3D camera controls for z=f(x,y).
     //float azimuthDeg = 40.0f;
     //float elevationDeg = 30.0f;
@@ -47,25 +114,27 @@ struct PlotSettings {
     //float wireThickness = 1.0f;
     //bool  showSurfaceEnvelope = true;
     //float envelopeThickness = 1.25f;
-    //bool  showAxisTriad = true;
+    //bool  showAxisTriad = false;
     //bool  autoRotate = false;
     //float autoRotateSpeedDegPerSec = 20.0f;
 
-    float azimuthDeg = 30.0f;
-    float elevationDeg = -60.0f;
-    float zScale = 1.5f;
-    int   surfaceResolution = 50;
-    int   implicitSurfaceResolution = 64;
-    float surfaceOpacity = 0.80f;
-    float wireThickness = 2.0f;
+    float azimuthDeg = kDefaultAzimuthDeg;
+    float elevationDeg = kDefaultElevationDeg;
+    float zScale = kDefaultZScale;
+    int   surfaceResolution = kDefaultSurfaceResolution;
+    int   implicitSurfaceResolution = kDefaultImplicitSurfaceResolution;
+    float surfaceOpacity = kDefaultSurfaceOpacity;
+    float wireOpacity = kDefaultWireOpacity;
+    float wireThickness = kDefaultWireThickness;
+    int   wireStride = kDefaultWireStride;
     bool  showSurfaceEnvelope = true;
-    float envelopeThickness = 2.00f;
-    bool  showAxisTriad = true;
+    float envelopeThickness = kDefaultEnvelopeThickness;
+    bool  showAxisTriad = false;
     bool  autoRotate = false;
-    float autoRotateSpeedDegPerSec = 20.0f;
+    float autoRotateSpeedDegPerSec = kDefaultAutoRotateSpeedDegPerSec;
 
     // Heatmap and scalar-field alpha.
-    float heatmapOpacity = 0.62f;
+    float heatmapOpacity = kDefaultHeatmapOpacity;
 };
 
 } // namespace XpressFormula::UI

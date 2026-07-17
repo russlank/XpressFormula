@@ -144,6 +144,8 @@
     <ClCompile Include="..\XpressFormula\Core\FunctionRegistry.cpp" />
     <ClCompile Include="..\XpressFormula\Core\ExampleFormulaCatalog.cpp" />
     <ClCompile Include="..\XpressFormula\Core\ViewTransform.cpp" />
+    <ClCompile Include="..\XpressFormula\UI\UiKit\ResponsiveLayout.cpp" />
+    <ClCompile Include="..\XpressFormula\UI\UiKit\UiMetrics.cpp" />
     <ClCompile Include="TokenizerTests.cpp" />
     <ClCompile Include="ParserTests.cpp" />
     <ClCompile Include="EvaluatorTests.cpp" />
@@ -151,6 +153,10 @@
     <ClCompile Include="FormulaEntryTests.cpp" />
     <ClCompile Include="UpdateVersionUtilsTests.cpp" />
     <ClCompile Include="ExportSettingsTests.cpp" />
+    <ClCompile Include="ProjectSessionTests.cpp" />
+    <ClCompile Include="PlotSettingsTests.cpp" />
+    <ClCompile Include="FormulaListActionsTests.cpp" />
+    <ClCompile Include="UiKitLayoutTests.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />

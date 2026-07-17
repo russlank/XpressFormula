@@ -119,34 +119,93 @@ Run tests:
 .\src\x64\Debug\XpressFormula.Tests.exe
 ```
 
+The test runner includes pure UI layout coverage for toolbar breakpoints, responsive formula-card modes, splitter clamping, and modal sizing. These tests are useful after changing files under `src\XpressFormula\UI\UiKit` or `src\XpressFormula\UI\Components`.
+
 Win32 outputs (if built with `Platform=Win32`):
 
 - App: `.\src\Debug\XpressFormula.exe`
 - Tests: `.\src\Debug\XpressFormula.Tests.exe`
 
+## Projects and `.xfplot` Files
+
+The sidebar **Project** section manages versioned `.xfplot` session files:
+
+- **New** starts a fresh default project.
+- **Open...** loads an existing `.xfplot` or compatible JSON project file.
+- **Save** writes the current project to its existing path, or prompts for a path if the project has not been saved yet.
+- **Save As...** writes the current project to a new path.
+- **Recent Projects** lists the latest saved/opened projects. Missing files are cleaned up on startup and disabled if they disappear while the app is running.
+
+Project shortcuts are available when text entry and modal dialogs are inactive:
+
+```text
+Ctrl+N          New project
+Ctrl+O          Open project
+Ctrl+S          Save project
+Ctrl+Shift+S    Save project as
+```
+
+A `*` after the project name means the current state has unsaved changes. New/Open/Close prompts dirty projects with **Save**, **Discard**, or **Cancel**. Save failures and Save As cancellation keep the current project open.
+
+`.xfplot` files store:
+
+- formulas, formula visibility, RGBA colors, and per-formula `z` slice
+- view center and X/Y scale
+- Auto/Force 2D/3D render preference
+- grid, coordinate, wire, envelope, axis-triad, HUD, and optimization settings
+- camera azimuth/elevation, Z scale, auto-rotate state, and 3D surface/wire settings
+
+Compatibility notes:
+
+- Project files are schema-versioned.
+- Unsupported future schema versions are rejected instead of guessed.
+- Unknown fields in schema version 1 are ignored for forward compatibility.
+- Invalid formulas are retained where possible so they can be edited, and load warnings report what happened.
+
 ## Using 2D and 3D Plot Modes
 
 After launch:
 
-1. Add a formula in the sidebar (`+ Add Formula`).
+1. Add a formula in the sidebar (`+ Add Formula`). The formula list uses compact cards with visibility, color, edit, actions, and delete controls.
+   - Double-click a formula expression, click **Edit**, or use the card actions menu to open the editor.
+   - Right-click an expression or open the card actions menu to duplicate, copy, hide others, move up/down, or delete.
+   - Delete asks for confirmation before removing the formula.
+   - Long expressions are clipped in the card and shown in full in the tooltip.
 2. Enter one of these forms:
    - `sin(x)` for a 2D curve (`y=f(x)`)
    - `x^2+y^2` or `z=sin(x)*cos(y)` for a 3D surface (`z=f(x,y)`)
    - `x^2+y^2=100` for an implicit equation contour (`F(x,y)=0`)
    - `x^2+y^2+z^2=16` for an implicit 3D surface (`F(x,y,z)=0`)
    - `(x^2+y^2+z^2+21)^2 - 100*(x^2+y^2) = 0` for a torus-like implicit 3D surface
-3. In the **View Controls** section:
+3. In the **View** section:
+   - Drag the vertical splitter between the sidebar and plot to resize the controls area; double-click the splitter to restore the default width.
+   - Use **Zoom / scale** for uniform X/Y zoom in pixels per world unit.
+   - Expand **Advanced View Controls** when you need X-only or Y-only zoom buttons, or button-based panning.
    - In **2D / 3D Formula Rendering**, choose one of:
      - **Auto**: mixed visible 2D+3D formulas render in 2D; only visible 3D-capable formulas render in 3D.
      - **Force 3D Surfaces / Implicit**: always render 3D-capable formulas as 3D surfaces/meshes.
      - **Force 2D Heatmap / Cross-Section**: render `z=f(x,y)` and implicit `F(x,y,z)=0` in 2D representations.
-   - Open the **Display** accordion to toggle **Show Grid**, **Show Coordinates**, **Show Wires**, and 3D display helpers such as **Show Envelope Box**, **Show XYZ Dimension Arrows**, and **Auto Rotate**.
-   - Tune azimuth, elevation, z-scale, surface density, implicit surface quality, and opacity in the **3D Camera** section.
+   - Open the **Display** accordion to toggle **Show Grid**, **Show Coordinates**, **Show Wires**, and the plot **HUD** mode (`Off`, `Minimal`, `Detailed`, or `Only While Interacting`).
+   - In 3D mode, tune **Wire Opacity**, **Wire Thickness**, **Wire Stride**, and helpers such as **Show Envelope Box**, **Show Axis Triad (X/Y/Z)**, and **Auto Rotate**. **Surface Density** changes the sampled mesh; **Wire Stride** only changes how many wire rows/columns are drawn.
+   - Tune azimuth, elevation, **Z Scale**, **Surface Density**, **Implicit Resolution**, and **Surface Opacity** in the aligned **3D Camera** property rows. Each row shows the current value in the slider, includes a reset button, and exposes a tooltip for technical controls.
    - In 3D mode, **Show Grid** draws a projected XY plane with translucent fill and thick frame. Surface rendering is split around `z=0` so the plane is visually interleaved between below-plane and above-plane geometry.
-   - The **XYZ Dimension Arrows** gizmo is shown near the lower-left of the plot viewport only when coordinates are hidden (mutually exclusive with **Show Coordinates**).
+   - **Show Axis Triad (X/Y/Z)** is disabled while **Show Coordinates** is enabled.
    - Keep **Optimize Rendering** enabled for lower idle GPU usage and smoother 3D dragging/zooming (temporary interaction-time quality reduction for heavy implicit meshes).
    - For implicit 3D equations, keep the formula `z slice / center` near the shape center (often `0`) and make sure the visible `X/Y` range contains the shape (for example, a sphere `x^2+y^2+z^2=16` needs roughly `[-4,4]` in both `X` and `Y`).
-4. Use mouse drag to pan and mouse wheel to zoom domain coordinates.
+4. Use the compact toolbar above the plot for common actions:
+   - **Fit** fits the view to the standard `[-10, 10]` math domain.
+   - **Reset** restores the default view and 3D camera.
+   - **Mode** mirrors the sidebar Auto/Force 3D/Force 2D render preference.
+   - **Grid**, **Wires**, and **Coordinates** mirror the sidebar display toggles where space permits; narrow widths move these into **More...**.
+   - **Export** opens the export dialog.
+   - In 3D mode, **Camera** presets include **Front**, **Back**, **Left**, **Right**, **Top**, **Bottom**, and **Isometric**; narrow widths use a preset dropdown.
+5. Keyboard shortcuts are available when text entry and modal dialogs are inactive:
+   - `F`: fit view.
+   - `Home`: reset view and 3D camera.
+   - `G`: toggle grid.
+   - `W`: toggle wire overlays.
+   - `E`: open export dialog.
+6. Use mouse drag to pan and mouse wheel to zoom domain coordinates. Hold `Shift` or `Ctrl` while scrolling to constrain zoom to X or Y.
 
 ## Export Plot Image
 
@@ -154,25 +213,35 @@ Use the sidebar **Export** section:
 
 1. Click **Open Export Dialog...**.
 2. Configure export options in the tabbed settings pane:
-   - **Size**: choose the current viewport, a common preset, scale `1x`-`4x`, or custom `Width` / `Height`.
+   - **Profile**: choose **Current View**, **Presentation**, **Transparent Illustration**, **Print Grayscale**, **High-Quality 3D**, or **Custom**.
+   - **Size**: choose the current viewport, a common preset, scale `1x`-`4x`, custom `Width` / `Height`, and **Aspect Handling**.
    - **Appearance**: choose current, transparent, white, black, or custom background, and color vs grayscale output.
    - **Scene**: include/exclude grid, coordinates, wires, envelope, and the axis triad.
    - **Quality**: optionally override interactive quality for the export render only, including surface density, implicit-surface resolution, wire thickness scale, and supersampling.
-   - **Output**: choose `.png` or `.bmp` (PNG is the default) and optional post-save actions such as opening the image, showing it in Explorer, or copying the saved path.
+   - **Output**: choose `.png` or `.bmp` (PNG is the default), enable optional JSON metadata, and choose post-save actions such as opening the image, showing it in Explorer, or copying the saved path.
 3. Use the right-side preview pane:
    - click **Refresh Preview** for a manual preview render.
    - enable **Auto Refresh** to refresh after a short debounce while changing settings.
+   - choose **Draft** or **Normal** preview quality, or click **Render Final-Quality Preview** for an exact expensive preview.
+   - use **Fit**, **100%**, zoom buttons, mouse-wheel zoom, and left-drag panning to inspect the preview.
    - transparent exports are shown over a checkerboard background.
-4. Click **Copy To Clipboard** to copy the exported plot image.
-5. Click **Save To File...** to save the exported plot as `.png` or `.bmp`.
+4. Use the footer actions:
+   - **Reset Settings** restores documented export defaults for the current view.
+   - **Copy** copies the exported plot image.
+   - **Save As...** saves the exported plot as `.png` or `.bmp`.
 
 Notes:
 
 - Export uses the current formulas and current view/zoom.
-- Background/grid/coordinate/wire/envelope export options are applied only to an offscreen export render pass (the on-screen plot is not used as the export source).
+- **Preserve proportions** is the default aspect mode and keeps equal X/Y world units visually equal, expanding the exported world range when needed.
+- **Preserve visible bounds** keeps the current world bounds and adds centered margins if the output aspect differs.
+- **Crop to fill** keeps proportions but crops one axis to fill the output.
+- **Stretch to output** matches the old behavior and can distort mathematical proportions.
+- Background/grid/coordinate/wire/envelope export options are applied only to an offscreen export render pass (the on-screen plot is not used as the export source). Interactive wire opacity, thickness, and stride carry through to preview/export rendering.
 - Export size is the final image size. Supersampling, when enabled, renders a larger offscreen buffer and downsamples to the selected output size.
-- Quality overrides are applied only to preview/export rendering and do not mutate the interactive plot quality settings.
+- Quality overrides are applied only to preview/export rendering and do not mutate the interactive plot quality settings. Draft/Normal previews may use cheaper preview-only settings; final export still uses the configured final settings.
 - Transparent backgrounds are supported in PNG export. Some viewers may display fully transparent pixels as black because the RGB value of fully transparent pixels is not visually meaningful.
+- When **Save metadata sidecar** is enabled in Output settings, the app writes `<image-name>.<extension>.json` next to the image. The sidecar records formulas, view, camera, display, build, and export settings for reproducibility.
 
 ## Version Details / Build Metadata
 
