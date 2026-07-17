@@ -304,6 +304,12 @@ static std::wstring shortCommitWide(const char* commit) {
     return commitWide;
 }
 
+static std::wstring normalizePathForRecentComparison(std::wstring value) {
+    std::transform(value.begin(), value.end(), value.begin(),
+                   [](wchar_t ch) { return static_cast<wchar_t>(std::towlower(ch)); });
+    return value;
+}
+
 static LRESULT WINAPI WndProc(HWND hWnd, UINT msg,
                                WPARAM wParam, LPARAM lParam) {
     if (ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam))
@@ -321,7 +327,8 @@ static LRESULT WINAPI WndProc(HWND hWnd, UINT msg,
             if ((wParam & 0xFFF0) == SC_KEYMENU) return 0;
             break;
         case WM_CLOSE:
-            if (g_app && !g_app->requestClose()) {
+            if (g_app) {
+                g_app->requestClose();
                 return 0;
             }
             ::DestroyWindow(hWnd);
@@ -408,35 +415,51 @@ void Application::loadRecentProjectPaths() {
         return;
     }
 
-    auto normalizeForCompare = [](std::wstring value) {
-        std::transform(value.begin(), value.end(), value.begin(),
-                       [](wchar_t ch) { return static_cast<wchar_t>(std::towlower(ch)); });
-        return value;
-    };
-
+    bool changed = false;
     std::string line;
     while (std::getline(in, line)) {
         if (line.empty()) {
+            changed = true;
             continue;
         }
         std::wstring path = utf8ToWide(line.c_str());
         if (path.empty()) {
+            changed = true;
             continue;
         }
-        path = std::filesystem::absolute(std::filesystem::path(path)).wstring();
-        const std::wstring comparable = normalizeForCompare(path);
+
+        std::error_code pathError;
+        std::filesystem::path absolutePath =
+            std::filesystem::absolute(std::filesystem::path(path), pathError);
+        if (pathError) {
+            absolutePath = std::filesystem::path(path);
+        }
+        if (!std::filesystem::exists(absolutePath, pathError)) {
+            changed = true;
+            continue;
+        }
+
+        path = absolutePath.wstring();
+        const std::wstring comparable = normalizePathForRecentComparison(path);
         const bool exists = std::any_of(
             m_recentProjectPaths.begin(),
             m_recentProjectPaths.end(),
             [&](const std::wstring& existing) {
-                return normalizeForCompare(existing) == comparable;
+                return normalizePathForRecentComparison(existing) == comparable;
             });
         if (!exists) {
             m_recentProjectPaths.push_back(std::move(path));
+        } else {
+            changed = true;
         }
         if (m_recentProjectPaths.size() >= 8) {
             break;
         }
+    }
+
+    in.close();
+    if (changed) {
+        saveRecentProjectPaths();
     }
 }
 
@@ -459,15 +482,13 @@ void Application::addRecentProjectPath(const std::wstring& path) {
         return;
     }
 
-    std::wstring normalized = std::filesystem::absolute(std::filesystem::path(path)).wstring();
+    std::error_code pathError;
+    std::filesystem::path absolutePath =
+        std::filesystem::absolute(std::filesystem::path(path), pathError);
+    std::wstring normalized = (pathError ? std::filesystem::path(path) : absolutePath).wstring();
     auto samePath = [&](const std::wstring& existing) {
-        std::wstring left = existing;
-        std::wstring right = normalized;
-        std::transform(left.begin(), left.end(), left.begin(),
-                       [](wchar_t ch) { return static_cast<wchar_t>(std::towlower(ch)); });
-        std::transform(right.begin(), right.end(), right.begin(),
-                       [](wchar_t ch) { return static_cast<wchar_t>(std::towlower(ch)); });
-        return left == right;
+        return normalizePathForRecentComparison(existing) ==
+            normalizePathForRecentComparison(normalized);
     };
 
     m_recentProjectPaths.erase(
@@ -672,13 +693,24 @@ void Application::executeProjectAction(PendingProjectAction action, const std::w
             std::string error;
             if (!openProjectFromPath(path, error)) {
                 m_projectStatus = "Open recent project failed: " + error;
+                std::error_code pathError;
+                if (!std::filesystem::exists(std::filesystem::path(path), pathError)) {
+                    const std::wstring comparable = normalizePathForRecentComparison(path);
+                    m_recentProjectPaths.erase(
+                        std::remove_if(
+                            m_recentProjectPaths.begin(),
+                            m_recentProjectPaths.end(),
+                            [&](const std::wstring& existing) {
+                                return normalizePathForRecentComparison(existing) == comparable;
+                            }),
+                        m_recentProjectPaths.end());
+                    saveRecentProjectPaths();
+                }
             }
             break;
         }
         case PendingProjectAction::CloseApp:
-            if (m_hWnd) {
-                ::DestroyWindow(m_hWnd);
-            }
+            m_closeRequestedAfterFrame = true;
             break;
         case PendingProjectAction::None:
         default:
@@ -703,7 +735,9 @@ void Application::requestProjectAction(PendingProjectAction action, std::wstring
 bool Application::requestClose() {
     refreshProjectDirtyState();
     if (!m_projectDirty) {
-        return true;
+        m_closeRequestedAfterFrame = true;
+        m_redrawRequested = true;
+        return false;
     }
 
     m_pendingProjectAction = PendingProjectAction::CloseApp;
@@ -750,10 +784,24 @@ void Application::renderProjectControls() {
             if (label.empty()) {
                 label = narrowUtf8(path);
             }
-            if (ImGui::SmallButton(label.c_str())) {
+            std::error_code pathError;
+            const bool pathExists = std::filesystem::exists(std::filesystem::path(path), pathError);
+            if (!pathExists) {
+                ImGui::BeginDisabled();
+            }
+            if (ImGui::SmallButton(label.c_str()) && pathExists) {
                 requestProjectAction(PendingProjectAction::OpenRecent, path);
             }
-            ImGui::SetItemTooltip("%s", narrowUtf8(path).c_str());
+            if (!pathExists) {
+                ImGui::EndDisabled();
+            }
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+                if (pathExists) {
+                    ImGui::SetTooltip("%s", narrowUtf8(path).c_str());
+                } else {
+                    ImGui::SetTooltip("Missing: %s", narrowUtf8(path).c_str());
+                }
+            }
             ImGui::PopID();
         }
     }
@@ -924,6 +972,13 @@ int Application::run() {
             continue;
         }
 
+        if (m_closeRequestedAfterFrame && m_hWnd) {
+            m_closeRequestedAfterFrame = false;
+            ::DestroyWindow(m_hWnd);
+            m_hWnd = nullptr;
+            continue;
+        }
+
         bool hasSurfaceFormula = false;
         bool has2DFormula = false;
         for (const FormulaEntry& formula : m_formulas) {
@@ -985,6 +1040,12 @@ int Application::run() {
         }
 
         renderFrame();
+        if (m_closeRequestedAfterFrame && m_hWnd) {
+            m_closeRequestedAfterFrame = false;
+            ::DestroyWindow(m_hWnd);
+            m_hWnd = nullptr;
+            continue;
+        }
         // Auto-rotate requires continuous redraws; otherwise render on demand when optimization is enabled.
         m_redrawRequested = optimizeRendering ? continuousRender : true;
     }

@@ -126,6 +126,42 @@ Win32 outputs (if built with `Platform=Win32`):
 - App: `.\src\Debug\XpressFormula.exe`
 - Tests: `.\src\Debug\XpressFormula.Tests.exe`
 
+## Projects and `.xfplot` Files
+
+The sidebar **Project** section manages versioned `.xfplot` session files:
+
+- **New** starts a fresh default project.
+- **Open...** loads an existing `.xfplot` or compatible JSON project file.
+- **Save** writes the current project to its existing path, or prompts for a path if the project has not been saved yet.
+- **Save As...** writes the current project to a new path.
+- **Recent Projects** lists the latest saved/opened projects. Missing files are cleaned up on startup and disabled if they disappear while the app is running.
+
+Project shortcuts are available when text entry and modal dialogs are inactive:
+
+```text
+Ctrl+N          New project
+Ctrl+O          Open project
+Ctrl+S          Save project
+Ctrl+Shift+S    Save project as
+```
+
+A `*` after the project name means the current state has unsaved changes. New/Open/Close prompts dirty projects with **Save**, **Discard**, or **Cancel**. Save failures and Save As cancellation keep the current project open.
+
+`.xfplot` files store:
+
+- formulas, formula visibility, RGBA colors, and per-formula `z` slice
+- view center and X/Y scale
+- Auto/Force 2D/3D render preference
+- grid, coordinate, wire, envelope, axis-triad, HUD, and optimization settings
+- camera azimuth/elevation, Z scale, auto-rotate state, and 3D surface/wire settings
+
+Compatibility notes:
+
+- Project files are schema-versioned.
+- Unsupported future schema versions are rejected instead of guessed.
+- Unknown fields in schema version 1 are ignored for forward compatibility.
+- Invalid formulas are retained where possible so they can be edited, and load warnings report what happened.
+
 ## Using 2D and 3D Plot Modes
 
 After launch:
@@ -177,11 +213,12 @@ Use the sidebar **Export** section:
 
 1. Click **Open Export Dialog...**.
 2. Configure export options in the tabbed settings pane:
+   - **Profile**: choose **Current View**, **Presentation**, **Transparent Illustration**, **Print Grayscale**, **High-Quality 3D**, or **Custom**.
    - **Size**: choose the current viewport, a common preset, scale `1x`-`4x`, custom `Width` / `Height`, and **Aspect Handling**.
    - **Appearance**: choose current, transparent, white, black, or custom background, and color vs grayscale output.
    - **Scene**: include/exclude grid, coordinates, wires, envelope, and the axis triad.
    - **Quality**: optionally override interactive quality for the export render only, including surface density, implicit-surface resolution, wire thickness scale, and supersampling.
-   - **Output**: choose `.png` or `.bmp` (PNG is the default) and optional post-save actions such as opening the image, showing it in Explorer, or copying the saved path.
+   - **Output**: choose `.png` or `.bmp` (PNG is the default), enable optional JSON metadata, and choose post-save actions such as opening the image, showing it in Explorer, or copying the saved path.
 3. Use the right-side preview pane:
    - click **Refresh Preview** for a manual preview render.
    - enable **Auto Refresh** to refresh after a short debounce while changing settings.
@@ -204,6 +241,7 @@ Notes:
 - Export size is the final image size. Supersampling, when enabled, renders a larger offscreen buffer and downsamples to the selected output size.
 - Quality overrides are applied only to preview/export rendering and do not mutate the interactive plot quality settings. Draft/Normal previews may use cheaper preview-only settings; final export still uses the configured final settings.
 - Transparent backgrounds are supported in PNG export. Some viewers may display fully transparent pixels as black because the RGB value of fully transparent pixels is not visually meaningful.
+- When **Save metadata sidecar** is enabled in Output settings, the app writes `<image-name>.<extension>.json` next to the image. The sidecar records formulas, view, camera, display, build, and export settings for reproducibility.
 
 ## Version Details / Build Metadata
 

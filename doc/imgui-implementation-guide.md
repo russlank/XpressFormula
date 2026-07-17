@@ -40,6 +40,8 @@ The UI is split into focused panels:
   - plot canvas region, mouse interaction, renderer dispatch
 - [`src/XpressFormula/UI/PlotSettings.h`](../src/XpressFormula/UI/PlotSettings.h)
   - shared settings for rendering and camera behavior
+- [`src/XpressFormula/UI/ProjectSession.h`](../src/XpressFormula/UI/ProjectSession.h)
+  - versioned `.xfplot` records, JSON serialization/parsing, and safe session application helpers
 
 Why this split works well:
 
@@ -180,6 +182,7 @@ In XpressFormula:
 - camera/view state in `m_viewTransform`
 - render settings in `m_plotSettings`
 - transient export requests in booleans/action flags
+- project path, dirty state, recent projects, and unsaved-change prompts in `Application`
 
 Panels receive references to these objects and render widgets directly from them.
 
@@ -193,6 +196,22 @@ ImGui::SliderFloat("Opacity", &settings.surfaceOpacity, 0.25f, 1.0f);
 This is the recommended mental model:
 
 - UI is just a view/editor for your application state
+
+### Project Persistence State
+
+Project files are deliberately outside the widget layer:
+
+- `Application` owns live state and project workflow commands.
+- `ProjectSession` converts live state to/from plain records.
+- Serializers do not know about ImGui IDs, popups, panels, or layout.
+- Open parses the full file before replacing active formulas, view, and plot settings.
+- Invalid loaded formulas are copied into edit buffers, reparsed, and surfaced as warnings instead of being silently dropped.
+- Dirty state is based on serialized state comparison with the last clean snapshot.
+- Save writes to a temporary file, then replaces the target path.
+
+The unsaved-change modal may request a close, but it must not destroy the Win32 window while ImGui is still rendering. It sets a deferred close flag; `Application::run()` processes that flag after the current frame is complete.
+
+`ProjectSession.h` currently contains both the schema and JSON parser/serializer. Keep it as the persistence boundary unless the format grows enough to justify splitting schema records from parsing code.
 
 ## 8. Panel Communication Pattern
 

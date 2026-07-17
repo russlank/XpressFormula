@@ -130,6 +130,35 @@ $expectedTag = "v$version"
 Write-Host "Expected release tag: $expectedTag"
 ```
 
+## v1.6.0 Release Verification Record
+
+Last updated: 2026-07-18
+
+Automated verification completed locally with Visual Studio MSBuild 18.8.2:
+
+- [x] Debug x64 app build succeeds:
+  `MSBuild src\XpressFormula\XpressFormula.vcxproj /p:Configuration=Debug /p:Platform=x64 /p:SolutionDir="C:\MyData\Projects\Digixoil\XpressFormula\src\" /m`
+- [x] Release x64 app build succeeds:
+  `MSBuild src\XpressFormula\XpressFormula.vcxproj /p:Configuration=Release /p:Platform=x64 /p:SolutionDir="C:\MyData\Projects\Digixoil\XpressFormula\src\" /m`
+- [x] Debug x64 test project builds:
+  `MSBuild src\XpressFormula.Tests\XpressFormula.Tests.vcxproj /p:Configuration=Debug /p:Platform=x64 /m`
+- [x] Release x64 test project builds:
+  `MSBuild src\XpressFormula.Tests\XpressFormula.Tests.vcxproj /p:Configuration=Release /p:Platform=x64 /m`
+- [x] No new compiler warnings in the above builds (`0 Warning(s)`).
+- [x] Automated tests pass: `src\XpressFormula.Tests\x64\Debug\XpressFormula.Tests.exe` reported `359/359 tests passed`.
+- [x] Release test executable also reported `359/359 tests passed`.
+- [x] Existing core tests pass.
+- [x] New project-session tests pass.
+- [x] Export settings and metadata tests pass.
+- [x] UI layout-plan tests pass.
+- [x] Formula-list action tests pass.
+
+Manual verification still required before tagging:
+
+- [ ] Project workflows: New, Open valid `.xfplot`, Save, Save As, Recent reopen, dirty marker set/clear, Save/Discard/Cancel before New/Open/Close, unsupported schema error, malformed file error, invalid formula warning, Unicode formula round trip, multiple save/load cycles retaining values.
+- [ ] Export workflows: every export profile, transparent PNG, grayscale export, metadata sidecar output, metadata JSON opens in a parser/editor, preview/final export parity, offscreen fallback behavior if reproducible.
+- [ ] Responsive UI: wide/medium/compact/extra-compact toolbar, minimum/default/maximum sidebar width, narrow/short windows, formula cards at narrow widths, and 100%, 125%, 150%, and 200% Windows scaling where available.
+
 ## How to Change Versions
 
 1. Application version:

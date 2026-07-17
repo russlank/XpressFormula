@@ -9,11 +9,16 @@
 
 #include <algorithm>
 #include <array>
+#include <cerrno>
 #include <cctype>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <iomanip>
+#include <limits>
+#include <locale>
 #include <map>
 #include <sstream>
 #include <string>
@@ -238,6 +243,86 @@ private:
         return -1;
     }
 
+    bool parseHexQuad(std::uint32_t& codeUnit) {
+        if (m_pos + 4 > m_input.size()) {
+            m_error = "Incomplete JSON unicode escape.";
+            return false;
+        }
+
+        codeUnit = 0;
+        for (int i = 0; i < 4; ++i) {
+            const int value = hexValue(m_input[m_pos++]);
+            if (value < 0) {
+                m_error = "Invalid JSON unicode escape.";
+                return false;
+            }
+            codeUnit = (codeUnit << 4) | static_cast<std::uint32_t>(value);
+        }
+        return true;
+    }
+
+    bool appendUtf8(std::string& text, std::uint32_t codePoint) {
+        if (codePoint > 0x10FFFF ||
+            (codePoint >= 0xD800 && codePoint <= 0xDFFF)) {
+            m_error = "Invalid JSON unicode code point.";
+            return false;
+        }
+
+        if (codePoint <= 0x7F) {
+            text.push_back(static_cast<char>(codePoint));
+        } else if (codePoint <= 0x7FF) {
+            text.push_back(static_cast<char>(0xC0 | (codePoint >> 6)));
+            text.push_back(static_cast<char>(0x80 | (codePoint & 0x3F)));
+        } else if (codePoint <= 0xFFFF) {
+            text.push_back(static_cast<char>(0xE0 | (codePoint >> 12)));
+            text.push_back(static_cast<char>(0x80 | ((codePoint >> 6) & 0x3F)));
+            text.push_back(static_cast<char>(0x80 | (codePoint & 0x3F)));
+        } else {
+            text.push_back(static_cast<char>(0xF0 | (codePoint >> 18)));
+            text.push_back(static_cast<char>(0x80 | ((codePoint >> 12) & 0x3F)));
+            text.push_back(static_cast<char>(0x80 | ((codePoint >> 6) & 0x3F)));
+            text.push_back(static_cast<char>(0x80 | (codePoint & 0x3F)));
+        }
+        return true;
+    }
+
+    bool parseUnicodeEscape(std::string& text) {
+        std::uint32_t first = 0;
+        if (!parseHexQuad(first)) {
+            return false;
+        }
+
+        if (first >= 0xD800 && first <= 0xDBFF) {
+            if (m_pos + 2 > m_input.size() ||
+                m_input[m_pos] != '\\' ||
+                m_input[m_pos + 1] != 'u') {
+                m_error = "Malformed JSON unicode surrogate pair.";
+                return false;
+            }
+            m_pos += 2;
+
+            std::uint32_t second = 0;
+            if (!parseHexQuad(second)) {
+                return false;
+            }
+            if (second < 0xDC00 || second > 0xDFFF) {
+                m_error = "Malformed JSON unicode surrogate pair.";
+                return false;
+            }
+
+            const std::uint32_t codePoint =
+                0x10000u + ((first - 0xD800u) << 10) + (second - 0xDC00u);
+            return appendUtf8(text, codePoint);
+        }
+
+        if (first >= 0xDC00 && first <= 0xDFFF) {
+            m_error = "Isolated JSON unicode low surrogate.";
+            return false;
+        }
+
+        return appendUtf8(text, first);
+    }
+
     bool parseString(std::string& text) {
         skipWhitespace();
         if (m_pos >= m_input.size() || m_input[m_pos] != '"') {
@@ -252,6 +337,10 @@ private:
                 return true;
             }
             if (ch != '\\') {
+                if (static_cast<unsigned char>(ch) < 0x20) {
+                    m_error = "Invalid unescaped control character in JSON string.";
+                    return false;
+                }
                 text.push_back(ch);
                 continue;
             }
@@ -269,25 +358,11 @@ private:
                 case 'n': text.push_back('\n'); break;
                 case 'r': text.push_back('\r'); break;
                 case 't': text.push_back('\t'); break;
-                case 'u': {
-                    if (m_pos + 4 > m_input.size()) {
-                        m_error = "Incomplete JSON unicode escape.";
+                case 'u':
+                    if (!parseUnicodeEscape(text)) {
                         return false;
                     }
-                    int codepoint = 0;
-                    for (int i = 0; i < 4; ++i) {
-                        const int value = hexValue(m_input[m_pos++]);
-                        if (value < 0) {
-                            m_error = "Invalid JSON unicode escape.";
-                            return false;
-                        }
-                        codepoint = (codepoint << 4) | value;
-                    }
-                    text.push_back(codepoint >= 0 && codepoint <= 0x7F
-                        ? static_cast<char>(codepoint)
-                        : '?');
                     break;
-                }
                 default:
                     m_error = "Invalid JSON escape.";
                     return false;
@@ -299,19 +374,70 @@ private:
     }
 
     bool parseNumber(double& number) {
-        const char* begin = m_input.data() + m_pos;
+        const std::size_t start = m_pos;
+        if (m_pos < m_input.size() && m_input[m_pos] == '-') {
+            ++m_pos;
+        }
+
+        if (m_pos >= m_input.size() ||
+            std::isdigit(static_cast<unsigned char>(m_input[m_pos])) == 0) {
+            m_error = "Invalid JSON number.";
+            return false;
+        }
+
+        if (m_input[m_pos] == '0') {
+            ++m_pos;
+            if (m_pos < m_input.size() &&
+                std::isdigit(static_cast<unsigned char>(m_input[m_pos])) != 0) {
+                m_error = "Invalid JSON number: leading zero.";
+                return false;
+            }
+        } else {
+            while (m_pos < m_input.size() &&
+                   std::isdigit(static_cast<unsigned char>(m_input[m_pos])) != 0) {
+                ++m_pos;
+            }
+        }
+
+        if (m_pos < m_input.size() && m_input[m_pos] == '.') {
+            ++m_pos;
+            const std::size_t digitsStart = m_pos;
+            while (m_pos < m_input.size() &&
+                   std::isdigit(static_cast<unsigned char>(m_input[m_pos])) != 0) {
+                ++m_pos;
+            }
+            if (digitsStart == m_pos) {
+                m_error = "Invalid JSON number: expected digit after decimal point.";
+                return false;
+            }
+        }
+
+        if (m_pos < m_input.size() &&
+            (m_input[m_pos] == 'e' || m_input[m_pos] == 'E')) {
+            ++m_pos;
+            if (m_pos < m_input.size() &&
+                (m_input[m_pos] == '+' || m_input[m_pos] == '-')) {
+                ++m_pos;
+            }
+            const std::size_t digitsStart = m_pos;
+            while (m_pos < m_input.size() &&
+                   std::isdigit(static_cast<unsigned char>(m_input[m_pos])) != 0) {
+                ++m_pos;
+            }
+            if (digitsStart == m_pos) {
+                m_error = "Invalid JSON number: expected exponent digit.";
+                return false;
+            }
+        }
+
+        const std::string token(m_input.substr(start, m_pos - start));
         char* end = nullptr;
-        number = std::strtod(begin, &end);
-        if (end == begin) {
+        errno = 0;
+        number = std::strtod(token.c_str(), &end);
+        if (end != token.c_str() + token.size() || errno == ERANGE || !std::isfinite(number)) {
             m_error = "Invalid JSON number.";
             return false;
         }
-        const std::size_t consumed = static_cast<std::size_t>(end - begin);
-        if (m_pos + consumed > m_input.size()) {
-            m_error = "Invalid JSON number.";
-            return false;
-        }
-        m_pos += consumed;
         return true;
     }
 
@@ -332,8 +458,20 @@ inline std::string quote(std::string_view text) {
     return std::string("\"") + jsonEscape(text) + "\"";
 }
 
+inline double finiteJsonNumber(double value, double fallback = 0.0) {
+    return std::isfinite(value) ? value : fallback;
+}
+
+inline float finiteJsonNumber(float value, float fallback = 0.0f) {
+    return std::isfinite(value) ? value : fallback;
+}
+
 inline void appendColor(std::ostringstream& out, const std::array<float, 4>& color) {
-    out << '[' << color[0] << ", " << color[1] << ", " << color[2] << ", " << color[3] << ']';
+    out << '['
+        << finiteJsonNumber(color[0]) << ", "
+        << finiteJsonNumber(color[1]) << ", "
+        << finiteJsonNumber(color[2]) << ", "
+        << finiteJsonNumber(color[3]) << ']';
 }
 
 inline bool readString(const JsonValue& object, std::string_view key, std::string& value) {
@@ -372,14 +510,19 @@ inline void readOptionalNumber(const JsonValue& object, std::string_view key, do
 
 inline void readOptionalFloat(const JsonValue& object, std::string_view key, float& value) {
     double parsed = value;
-    if (readNumber(object, key, parsed)) {
+    if (readNumber(object, key, parsed) &&
+        parsed >= -static_cast<double>(std::numeric_limits<float>::max()) &&
+        parsed <= static_cast<double>(std::numeric_limits<float>::max())) {
         value = static_cast<float>(parsed);
     }
 }
 
 inline void readOptionalInt(const JsonValue& object, std::string_view key, int& value) {
     double parsed = value;
-    if (readNumber(object, key, parsed)) {
+    if (readNumber(object, key, parsed) &&
+        std::floor(parsed) == parsed &&
+        parsed >= static_cast<double>((std::numeric_limits<int>::min)()) &&
+        parsed <= static_cast<double>((std::numeric_limits<int>::max)())) {
         value = static_cast<int>(std::lround(parsed));
     }
 }
@@ -501,6 +644,8 @@ inline std::string serializeProjectSession(const ProjectSession& session) {
     using namespace ProjectSessionDetail;
 
     std::ostringstream out;
+    out.imbue(std::locale::classic());
+    out << std::setprecision(std::numeric_limits<double>::max_digits10);
     out << "{\n";
     out << "  \"schemaVersion\": " << kProjectSessionSchemaVersion << ",\n";
     out << "  \"fileType\": " << quote(kProjectSessionFileType) << ",\n";
@@ -513,15 +658,15 @@ inline std::string serializeProjectSession(const ProjectSession& session) {
         out << "      \"color\": ";
         appendColor(out, formula.color);
         out << ",\n";
-        out << "      \"zSlice\": " << formula.zSlice << "\n";
+        out << "      \"zSlice\": " << finiteJsonNumber(formula.zSlice) << "\n";
         out << "    }" << ((i + 1 < session.formulas.size()) ? "," : "") << "\n";
     }
     out << "  ],\n";
     out << "  \"view\": {\n";
-    out << "    \"centerX\": " << session.view.centerX << ",\n";
-    out << "    \"centerY\": " << session.view.centerY << ",\n";
-    out << "    \"scaleX\": " << session.view.scaleX << ",\n";
-    out << "    \"scaleY\": " << session.view.scaleY << "\n";
+    out << "    \"centerX\": " << finiteJsonNumber(session.view.centerX) << ",\n";
+    out << "    \"centerY\": " << finiteJsonNumber(session.view.centerY) << ",\n";
+    out << "    \"scaleX\": " << finiteJsonNumber(session.view.scaleX, 60.0) << ",\n";
+    out << "    \"scaleY\": " << finiteJsonNumber(session.view.scaleY, 60.0) << "\n";
     out << "  },\n";
     out << "  \"display\": {\n";
     out << "    \"xyRenderModePreference\": "
@@ -535,19 +680,21 @@ inline std::string serializeProjectSession(const ProjectSession& session) {
     out << "    \"showAxisTriad\": " << jsonBool(session.plot.showAxisTriad) << ",\n";
     out << "    \"surfaceResolution\": " << session.plot.surfaceResolution << ",\n";
     out << "    \"implicitSurfaceResolution\": " << session.plot.implicitSurfaceResolution << ",\n";
-    out << "    \"surfaceOpacity\": " << session.plot.surfaceOpacity << ",\n";
-    out << "    \"wireOpacity\": " << session.plot.wireOpacity << ",\n";
-    out << "    \"wireThickness\": " << session.plot.wireThickness << ",\n";
+    out << "    \"surfaceOpacity\": " << finiteJsonNumber(session.plot.surfaceOpacity, kDefaultSurfaceOpacity) << ",\n";
+    out << "    \"wireOpacity\": " << finiteJsonNumber(session.plot.wireOpacity, kDefaultWireOpacity) << ",\n";
+    out << "    \"wireThickness\": " << finiteJsonNumber(session.plot.wireThickness, kDefaultWireThickness) << ",\n";
     out << "    \"wireStride\": " << session.plot.wireStride << ",\n";
-    out << "    \"envelopeThickness\": " << session.plot.envelopeThickness << ",\n";
-    out << "    \"heatmapOpacity\": " << session.plot.heatmapOpacity << "\n";
+    out << "    \"envelopeThickness\": " << finiteJsonNumber(session.plot.envelopeThickness, kDefaultEnvelopeThickness) << ",\n";
+    out << "    \"heatmapOpacity\": " << finiteJsonNumber(session.plot.heatmapOpacity, kDefaultHeatmapOpacity) << "\n";
     out << "  },\n";
     out << "  \"camera\": {\n";
-    out << "    \"azimuthDeg\": " << session.plot.azimuthDeg << ",\n";
-    out << "    \"elevationDeg\": " << session.plot.elevationDeg << ",\n";
-    out << "    \"zScale\": " << session.plot.zScale << ",\n";
+    out << "    \"azimuthDeg\": " << finiteJsonNumber(session.plot.azimuthDeg, kDefaultAzimuthDeg) << ",\n";
+    out << "    \"elevationDeg\": " << finiteJsonNumber(session.plot.elevationDeg, kDefaultElevationDeg) << ",\n";
+    out << "    \"zScale\": " << finiteJsonNumber(session.plot.zScale, kDefaultZScale) << ",\n";
     out << "    \"autoRotate\": " << jsonBool(session.plot.autoRotate) << ",\n";
-    out << "    \"autoRotateSpeedDegPerSec\": " << session.plot.autoRotateSpeedDegPerSec << "\n";
+    out << "    \"autoRotateSpeedDegPerSec\": "
+        << finiteJsonNumber(session.plot.autoRotateSpeedDegPerSec,
+                            kDefaultAutoRotateSpeedDegPerSec) << "\n";
     out << "  }\n";
     out << "}\n";
     return out.str();
@@ -572,15 +719,23 @@ inline ProjectSessionParseResult parseProjectSession(std::string_view json) {
         result.error = "Project file is missing schemaVersion.";
         return result;
     }
-    if (static_cast<int>(std::lround(schemaVersion)) != kProjectSessionSchemaVersion) {
+    if (schemaVersion < 0.0 ||
+        std::floor(schemaVersion) != schemaVersion ||
+        schemaVersion > static_cast<double>((std::numeric_limits<int>::max)())) {
+        result.error = "Project file schemaVersion must be a non-negative integer.";
+        return result;
+    }
+    if (static_cast<int>(schemaVersion) != kProjectSessionSchemaVersion) {
         result.error = "Unsupported .xfplot schema version.";
         return result;
     }
 
-    std::string fileType;
-    if (readString(root, "fileType", fileType) && fileType != kProjectSessionFileType) {
-        result.error = "File is not an XpressFormula project.";
-        return result;
+    if (const JsonValue* fileType = root.find("fileType")) {
+        if (fileType->type != JsonValue::Type::String ||
+            fileType->text != kProjectSessionFileType) {
+            result.error = "File is not an XpressFormula project.";
+            return result;
+        }
     }
 
     const JsonValue* formulas = root.find("formulas");
@@ -705,12 +860,37 @@ inline void applyProjectSession(const ProjectSession& session,
     plot = session.plot;
     plot.surfaceResolution = std::clamp(plot.surfaceResolution, 16, 256);
     plot.implicitSurfaceResolution = std::clamp(plot.implicitSurfaceResolution, 16, 192);
-    plot.surfaceOpacity = std::clamp(plot.surfaceOpacity, 0.0f, 1.0f);
-    plot.wireOpacity = clampWireOpacity(plot.wireOpacity);
-    plot.wireThickness = std::clamp(plot.wireThickness, 0.05f, 8.0f);
+    plot.surfaceOpacity = std::clamp(
+        std::isfinite(plot.surfaceOpacity) ? plot.surfaceOpacity : kDefaultSurfaceOpacity,
+        0.0f,
+        1.0f);
+    plot.wireOpacity = clampWireOpacity(
+        std::isfinite(plot.wireOpacity) ? plot.wireOpacity : kDefaultWireOpacity);
+    plot.wireThickness = std::clamp(
+        std::isfinite(plot.wireThickness) ? plot.wireThickness : kDefaultWireThickness,
+        0.05f,
+        8.0f);
     plot.wireStride = clampWireStride(plot.wireStride);
-    plot.envelopeThickness = std::clamp(plot.envelopeThickness, 0.05f, 8.0f);
-    plot.heatmapOpacity = std::clamp(plot.heatmapOpacity, 0.0f, 1.0f);
+    plot.envelopeThickness = std::clamp(
+        std::isfinite(plot.envelopeThickness) ? plot.envelopeThickness : kDefaultEnvelopeThickness,
+        0.05f,
+        8.0f);
+    plot.heatmapOpacity = std::clamp(
+        std::isfinite(plot.heatmapOpacity) ? plot.heatmapOpacity : kDefaultHeatmapOpacity,
+        0.0f,
+        1.0f);
+    plot.azimuthDeg = std::clamp(std::isfinite(plot.azimuthDeg) ? plot.azimuthDeg : kDefaultAzimuthDeg,
+                                 -180.0f, 180.0f);
+    plot.elevationDeg = std::clamp(std::isfinite(plot.elevationDeg) ? plot.elevationDeg : kDefaultElevationDeg,
+                                   -85.0f, 85.0f);
+    plot.zScale = std::clamp(std::isfinite(plot.zScale) ? plot.zScale : kDefaultZScale,
+                             0.1f, 8.0f);
+    plot.autoRotateSpeedDegPerSec = std::clamp(
+        std::isfinite(plot.autoRotateSpeedDegPerSec)
+            ? plot.autoRotateSpeedDegPerSec
+            : kDefaultAutoRotateSpeedDegPerSec,
+        2.0f,
+        90.0f);
     plot.applyCoordinateOverlayPolicy();
 }
 

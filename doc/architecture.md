@@ -33,6 +33,8 @@ XpressFormula is organized into three primary layers:
   - Global 2D view controls, display toggles (grid/coordinates/wires), reusable property-grid rows for 3D/heatmap controls, and export dialog launch action.
 - [`src/XpressFormula/UI/PlotPanel.h`](../src/XpressFormula/UI/PlotPanel.h) and [`src/XpressFormula/UI/PlotPanel.cpp`](../src/XpressFormula/UI/PlotPanel.cpp)
   - Interactive plotting area, mouse interactions, and export-time plot render overrides (background/grid/coordinates/wires).
+- [`src/XpressFormula/UI/ProjectSession.h`](../src/XpressFormula/UI/ProjectSession.h)
+  - Versioned `.xfplot` persistence boundary: plain session records, JSON serialization/parsing, schema validation, and safe application of loaded values.
 - [`src/XpressFormula/Version.h`](../src/XpressFormula/Version.h)
   - Centralized semantic version metadata used by window title, resources, and packaging.
 - [`src/XpressFormula/Plotting/PlotRenderer.h`](../src/XpressFormula/Plotting/PlotRenderer.h) and [`src/XpressFormula/Plotting/PlotRenderer.cpp`](../src/XpressFormula/Plotting/PlotRenderer.cpp)
@@ -48,6 +50,23 @@ XpressFormula is organized into three primary layers:
 6. `PlotRenderer` evaluates formulas through `Core::Evaluator` and draws based on variable dimensionality and equation form.
 7. `Application` also polls a background GitHub release check future and updates sidebar notification state when a result arrives.
 8. Export requests resolve aspect/framing settings, trigger a plot-only offscreen render pass (temporary D3D11 render target) with export-specific overrides, then post-processing (pixel-format normalization, optional resize/grayscale) before file/clipboard output.
+9. Project New/Open/Save/Save As workflows stay in `Application`; `.xfplot` parsing completes before active formulas, view, or plot settings are mutated.
+
+## Project Persistence Boundary
+
+`ProjectSession` is the versioned boundary for `.xfplot` files. `Application` still owns live state (`FormulaEntry`, `ViewTransform`, `PlotSettings`, project path, dirty flag, and recent list), while the serializer works on plain records that do not depend on ImGui widgets.
+
+Important rules:
+
+- Build a `ProjectSession` snapshot from application state before saving.
+- Parse and validate a full project file before mutating active application state.
+- Retain invalid loaded formulas where possible and report load warnings after reparsing.
+- Clamp or ignore unsafe numeric values before applying them to the live view and plot settings.
+- Keep unknown fields tolerated for schema version 1 so future writers can add data without breaking older builds.
+- Write project files through a temporary file followed by replacement so failed writes do not leave a partial target file.
+- Treat dirty state as a serialized-state comparison against the last clean snapshot.
+
+`ProjectSession.h` currently contains both the schema records and the small JSON parser/serializer. That can be split later if the format grows, but file size alone is not a reason to refactor it.
 
 ## UI Toolkit Boundary
 

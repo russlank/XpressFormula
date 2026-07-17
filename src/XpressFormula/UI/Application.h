@@ -78,7 +78,7 @@ public:
     /// Tear everything down.
     void shutdown();
 
-    /// Return false when the app should keep running while a discard prompt is shown.
+    /// Queue or prompt a close request; callers should not destroy the HWND directly.
     bool requestClose();
 
     // --- D3D11 helpers (also used by the global WndProc) ---
@@ -186,6 +186,7 @@ private:
     bool                      m_swapChainOccluded   = false;
     bool                      m_comInitialized      = false;
     bool                      m_redrawRequested     = true;
+    bool                      m_closeRequestedAfterFrame = false;
 
     // Application state
     std::vector<FormulaEntry> m_formulas;
