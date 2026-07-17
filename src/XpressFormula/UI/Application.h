@@ -9,12 +9,14 @@
 #include "ExportSettings.h"
 #include "PlotPanel.h"
 #include "PlotSettings.h"
+#include "ProjectSession.h"
 #include "../Core/ViewTransform.h"
 
 #include <chrono>
 #include <cstdint>
 #include <d3d11.h>
 #include <array>
+#include <filesystem>
 #include <future>
 #include <string>
 #include <vector>
@@ -76,6 +78,9 @@ public:
     /// Tear everything down.
     void shutdown();
 
+    /// Return false when the app should keep running while a discard prompt is shown.
+    bool requestClose();
+
     // --- D3D11 helpers (also used by the global WndProc) ---
     void createRenderTarget();
     void cleanupRenderTarget();
@@ -84,9 +89,38 @@ public:
     UINT resizeHeight = 0;
 
 private:
+    enum class PendingProjectAction {
+        None,
+        NewProject,
+        OpenDialog,
+        OpenRecent,
+        CloseApp
+    };
+
     bool createDeviceD3D(HWND hWnd);
     void cleanupDeviceD3D();
     void renderFrame();
+    void renderProjectControls();
+    void renderProjectDiscardDialog();
+    void handleProjectShortcuts();
+    void requestProjectAction(PendingProjectAction action, std::wstring path = {});
+    void executeProjectAction(PendingProjectAction action, const std::wstring& path);
+    void resetToDefaultProject();
+    ProjectSession currentProjectSession() const;
+    void refreshProjectDirtyState();
+    void markProjectClean();
+    bool promptOpenProjectPath(std::wstring& path) const;
+    bool promptSaveProjectPath(std::wstring& path) const;
+    bool saveProject();
+    bool saveProjectAs();
+    bool saveProjectToPath(const std::wstring& path, std::string& error);
+    bool openProjectFromDialog();
+    bool openProjectFromPath(const std::wstring& path, std::string& error);
+    void addRecentProjectPath(const std::wstring& path);
+    void loadRecentProjectPaths();
+    void saveRecentProjectPaths() const;
+    std::filesystem::path recentProjectStorePath() const;
+    std::string projectDisplayName() const;
     void renderPlotToolbar(bool has2DFormula, bool hasSurfaceFormula);
     void handlePlotShortcuts();
     void fitDefaultView();
@@ -157,6 +191,14 @@ private:
     std::vector<FormulaEntry> m_formulas;
     Core::ViewTransform       m_viewTransform;
     PlotSettings              m_plotSettings;
+    std::wstring              m_projectPath;
+    bool                      m_projectDirty = false;
+    std::string               m_savedProjectSnapshot;
+    std::string               m_projectStatus;
+    std::vector<std::wstring> m_recentProjectPaths;
+    PendingProjectAction      m_pendingProjectAction = PendingProjectAction::None;
+    std::wstring              m_pendingProjectPath;
+    bool                      m_openProjectDiscardPopupNextFrame = false;
     float                     m_sidebarWidth = 360.0f;
     bool                      m_exportDialogOpen = false;
     bool                      m_exportDialogOpenRequested = false;

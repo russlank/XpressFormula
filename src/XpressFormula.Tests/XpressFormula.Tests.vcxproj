@@ -153,6 +153,7 @@
     <ClCompile Include="FormulaEntryTests.cpp" />
     <ClCompile Include="UpdateVersionUtilsTests.cpp" />
     <ClCompile Include="ExportSettingsTests.cpp" />
+    <ClCompile Include="ProjectSessionTests.cpp" />
     <ClCompile Include="PlotSettingsTests.cpp" />
     <ClCompile Include="FormulaListActionsTests.cpp" />
     <ClCompile Include="UiKitLayoutTests.cpp" />

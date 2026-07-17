@@ -155,6 +155,9 @@
     <ClInclude Include="UI\PlotSettings.h">
       <Filter>UI</Filter>
     </ClInclude>
+    <ClInclude Include="UI\ProjectSession.h">
+      <Filter>UI</Filter>
+    </ClInclude>
     <ClInclude Include="UI\UiKit\PropertyGrid.h">
       <Filter>UI\UiKit</Filter>
     </ClInclude>

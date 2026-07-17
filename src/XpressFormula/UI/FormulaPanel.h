@@ -18,6 +18,8 @@ public:
     /// Draw the panel contents (call between ImGui::Begin / End).
     void render(std::vector<FormulaEntry>& formulas);
 
+    void resetColorCycle(int nextIndex = 0) { m_nextColorIndex = nextIndex; }
+
 private:
     void openEditor(const FormulaEntry& formula, int formulaIndex);
     void loadEditorFormula(const char* expression);

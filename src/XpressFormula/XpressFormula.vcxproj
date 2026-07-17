@@ -202,6 +202,7 @@
     <ClInclude Include="UI\ControlPanel.h" />
     <ClInclude Include="UI\PlotPanel.h" />
     <ClInclude Include="UI\PlotSettings.h" />
+    <ClInclude Include="UI\ProjectSession.h" />
     <ClInclude Include="UI\UiKit\PropertyGrid.h" />
     <ClInclude Include="UI\UiKit\ResponsiveLayout.h" />
     <ClInclude Include="UI\UiKit\ResponsiveRows.h" />

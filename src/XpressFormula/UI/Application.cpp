@@ -29,6 +29,7 @@
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <cwchar>
 #include <cwctype>
@@ -319,6 +320,12 @@ static LRESULT WINAPI WndProc(HWND hWnd, UINT msg,
         case WM_SYSCOMMAND:
             if ((wParam & 0xFFF0) == SC_KEYMENU) return 0;
             break;
+        case WM_CLOSE:
+            if (g_app && !g_app->requestClose()) {
+                return 0;
+            }
+            ::DestroyWindow(hWnd);
+            return 0;
         case WM_DESTROY:
             ::PostQuitMessage(0);
             return 0;
@@ -330,6 +337,495 @@ namespace XpressFormula::UI {
 
 Application::Application()  = default;
 Application::~Application() = default;
+
+void Application::resetToDefaultProject() {
+    m_formulas.clear();
+
+    FormulaEntry defaultEntry;
+    strncpy_s(defaultEntry.inputBuffer, sizeof(defaultEntry.inputBuffer),
+              "sin(sqrt(x^2+y^2))", _TRUNCATE);
+    std::memcpy(defaultEntry.color, kDefaultPalette[0], sizeof(defaultEntry.color));
+    defaultEntry.parse();
+    m_formulas.push_back(std::move(defaultEntry));
+
+    m_viewTransform.reset();
+    m_plotSettings = PlotSettings{};
+    m_plotSettings.applyCoordinateOverlayPolicy();
+    m_formulaPanel.resetColorCycle(1);
+    m_exportDialogSettings = ExportDialogSettings{};
+    m_exportDialogSizeInitialized = false;
+    markExportPreviewOutOfDate();
+}
+
+ProjectSession Application::currentProjectSession() const {
+    return makeProjectSession(m_formulas, m_viewTransform, m_plotSettings);
+}
+
+void Application::markProjectClean() {
+    m_savedProjectSnapshot = serializeProjectSession(currentProjectSession());
+    m_projectDirty = false;
+}
+
+void Application::refreshProjectDirtyState() {
+    if (m_savedProjectSnapshot.empty()) {
+        markProjectClean();
+        return;
+    }
+    m_projectDirty = (serializeProjectSession(currentProjectSession()) != m_savedProjectSnapshot);
+}
+
+std::string Application::projectDisplayName() const {
+    std::string name = m_projectPath.empty()
+        ? std::string("Untitled.xfplot")
+        : narrowUtf8(std::filesystem::path(m_projectPath).filename().wstring());
+    if (name.empty()) {
+        name = "Untitled.xfplot";
+    }
+    if (m_projectDirty) {
+        name += " *";
+    }
+    return name;
+}
+
+std::filesystem::path Application::recentProjectStorePath() const {
+    wchar_t* appDataBuffer = nullptr;
+    size_t appDataLength = 0;
+    std::filesystem::path base = std::filesystem::temp_directory_path();
+    if (_wdupenv_s(&appDataBuffer, &appDataLength, L"APPDATA") == 0 &&
+        appDataBuffer && appDataBuffer[0] != L'\0') {
+        base = std::filesystem::path(appDataBuffer);
+    }
+    if (appDataBuffer) {
+        std::free(appDataBuffer);
+    }
+    return base / L"XpressFormula" / L"recent-projects.txt";
+}
+
+void Application::loadRecentProjectPaths() {
+    m_recentProjectPaths.clear();
+    std::ifstream in(recentProjectStorePath(), std::ios::binary);
+    if (!in) {
+        return;
+    }
+
+    auto normalizeForCompare = [](std::wstring value) {
+        std::transform(value.begin(), value.end(), value.begin(),
+                       [](wchar_t ch) { return static_cast<wchar_t>(std::towlower(ch)); });
+        return value;
+    };
+
+    std::string line;
+    while (std::getline(in, line)) {
+        if (line.empty()) {
+            continue;
+        }
+        std::wstring path = utf8ToWide(line.c_str());
+        if (path.empty()) {
+            continue;
+        }
+        path = std::filesystem::absolute(std::filesystem::path(path)).wstring();
+        const std::wstring comparable = normalizeForCompare(path);
+        const bool exists = std::any_of(
+            m_recentProjectPaths.begin(),
+            m_recentProjectPaths.end(),
+            [&](const std::wstring& existing) {
+                return normalizeForCompare(existing) == comparable;
+            });
+        if (!exists) {
+            m_recentProjectPaths.push_back(std::move(path));
+        }
+        if (m_recentProjectPaths.size() >= 8) {
+            break;
+        }
+    }
+}
+
+void Application::saveRecentProjectPaths() const {
+    const std::filesystem::path storePath = recentProjectStorePath();
+    std::error_code ignored;
+    std::filesystem::create_directories(storePath.parent_path(), ignored);
+
+    std::ofstream out(storePath, std::ios::binary | std::ios::trunc);
+    if (!out) {
+        return;
+    }
+    for (const std::wstring& path : m_recentProjectPaths) {
+        out << narrowUtf8(path) << '\n';
+    }
+}
+
+void Application::addRecentProjectPath(const std::wstring& path) {
+    if (path.empty()) {
+        return;
+    }
+
+    std::wstring normalized = std::filesystem::absolute(std::filesystem::path(path)).wstring();
+    auto samePath = [&](const std::wstring& existing) {
+        std::wstring left = existing;
+        std::wstring right = normalized;
+        std::transform(left.begin(), left.end(), left.begin(),
+                       [](wchar_t ch) { return static_cast<wchar_t>(std::towlower(ch)); });
+        std::transform(right.begin(), right.end(), right.begin(),
+                       [](wchar_t ch) { return static_cast<wchar_t>(std::towlower(ch)); });
+        return left == right;
+    };
+
+    m_recentProjectPaths.erase(
+        std::remove_if(m_recentProjectPaths.begin(), m_recentProjectPaths.end(), samePath),
+        m_recentProjectPaths.end());
+    m_recentProjectPaths.insert(m_recentProjectPaths.begin(), std::move(normalized));
+    constexpr std::size_t kMaxRecentProjects = 8;
+    if (m_recentProjectPaths.size() > kMaxRecentProjects) {
+        m_recentProjectPaths.resize(kMaxRecentProjects);
+    }
+    saveRecentProjectPaths();
+}
+
+bool Application::promptOpenProjectPath(std::wstring& path) const {
+    std::array<wchar_t, MAX_PATH> fileName = {};
+    wchar_t filter[] =
+        L"XpressFormula Project (*.xfplot)\0*.xfplot\0"
+        L"JSON Files (*.json)\0*.json\0"
+        L"All Files (*.*)\0*.*\0\0";
+
+    OPENFILENAMEW ofn = {};
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = m_hWnd;
+    ofn.lpstrFilter = filter;
+    ofn.lpstrFile = fileName.data();
+    ofn.nMaxFile = static_cast<DWORD>(fileName.size());
+    ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
+    ofn.lpstrDefExt = L"xfplot";
+
+    if (!::GetOpenFileNameW(&ofn)) {
+        return false;
+    }
+    path = fileName.data();
+    return true;
+}
+
+bool Application::promptSaveProjectPath(std::wstring& path) const {
+    std::array<wchar_t, MAX_PATH> fileName = {};
+    if (!m_projectPath.empty()) {
+        wcsncpy_s(fileName.data(), fileName.size(), m_projectPath.c_str(), _TRUNCATE);
+    } else {
+        wcsncpy_s(fileName.data(), fileName.size(), L"untitled.xfplot", _TRUNCATE);
+    }
+
+    wchar_t filter[] =
+        L"XpressFormula Project (*.xfplot)\0*.xfplot\0"
+        L"JSON Files (*.json)\0*.json\0\0";
+
+    OPENFILENAMEW ofn = {};
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = m_hWnd;
+    ofn.lpstrFilter = filter;
+    ofn.lpstrFile = fileName.data();
+    ofn.nMaxFile = static_cast<DWORD>(fileName.size());
+    ofn.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST;
+    ofn.lpstrDefExt = L"xfplot";
+
+    if (!::GetSaveFileNameW(&ofn)) {
+        return false;
+    }
+
+    path = fileName.data();
+    if (std::filesystem::path(path).extension().empty()) {
+        path += L".xfplot";
+    }
+    return true;
+}
+
+bool Application::saveProjectToPath(const std::wstring& path, std::string& error) {
+    error.clear();
+    const std::filesystem::path projectPath(path);
+    const std::filesystem::path tempPath = std::filesystem::path(path + L".tmp");
+    const std::string json = serializeProjectSession(currentProjectSession());
+
+    {
+        std::ofstream out(tempPath, std::ios::binary | std::ios::trunc);
+        if (!out) {
+            error = "Could not open project temp file.";
+            return false;
+        }
+        out.write(json.data(), static_cast<std::streamsize>(json.size()));
+        out.close();
+        if (!out) {
+            error = "Could not write project temp file.";
+            std::error_code ignored;
+            std::filesystem::remove(tempPath, ignored);
+            return false;
+        }
+    }
+
+    if (!::MoveFileExW(tempPath.wstring().c_str(),
+                       projectPath.wstring().c_str(),
+                       MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+        const DWORD win32Error = ::GetLastError();
+        std::error_code ignored;
+        std::filesystem::remove(tempPath, ignored);
+        error = "Could not replace project file: Win32 error " + std::to_string(win32Error) + ".";
+        return false;
+    }
+
+    m_projectPath = projectPath.wstring();
+    addRecentProjectPath(m_projectPath);
+    markProjectClean();
+    m_projectStatus = "Saved project: " + narrowUtf8(m_projectPath);
+    m_redrawRequested = true;
+    return true;
+}
+
+bool Application::saveProjectAs() {
+    std::wstring path;
+    if (!promptSaveProjectPath(path)) {
+        m_projectStatus = "Save project canceled.";
+        return false;
+    }
+
+    std::string error;
+    if (!saveProjectToPath(path, error)) {
+        m_projectStatus = "Save project failed: " + error;
+        return false;
+    }
+    return true;
+}
+
+bool Application::saveProject() {
+    if (m_projectPath.empty()) {
+        return saveProjectAs();
+    }
+
+    std::string error;
+    if (!saveProjectToPath(m_projectPath, error)) {
+        m_projectStatus = "Save project failed: " + error;
+        return false;
+    }
+    return true;
+}
+
+bool Application::openProjectFromPath(const std::wstring& path, std::string& error) {
+    error.clear();
+    std::ifstream in(std::filesystem::path(path), std::ios::binary);
+    if (!in) {
+        error = "Could not open project file.";
+        return false;
+    }
+    std::ostringstream buffer;
+    buffer << in.rdbuf();
+
+    ProjectSessionParseResult parsed = parseProjectSession(buffer.str());
+    if (!parsed.success) {
+        error = parsed.error;
+        return false;
+    }
+
+    std::vector<std::string> warnings = parsed.warnings;
+    applyProjectSession(parsed.session, m_formulas, m_viewTransform, m_plotSettings, warnings);
+    m_formulaPanel.resetColorCycle(static_cast<int>(m_formulas.size()));
+    m_projectPath = std::filesystem::absolute(std::filesystem::path(path)).wstring();
+    addRecentProjectPath(m_projectPath);
+    markProjectClean();
+    markExportPreviewOutOfDate();
+
+    std::ostringstream status;
+    status << "Opened project: " << narrowUtf8(m_projectPath);
+    if (!warnings.empty()) {
+        status << " (" << warnings.size() << " warning";
+        if (warnings.size() != 1) {
+            status << "s";
+        }
+        status << ": " << warnings.front() << ")";
+    }
+    m_projectStatus = status.str();
+    m_redrawRequested = true;
+    return true;
+}
+
+bool Application::openProjectFromDialog() {
+    std::wstring path;
+    if (!promptOpenProjectPath(path)) {
+        m_projectStatus = "Open project canceled.";
+        return false;
+    }
+
+    std::string error;
+    if (!openProjectFromPath(path, error)) {
+        m_projectStatus = "Open project failed: " + error;
+        return false;
+    }
+    return true;
+}
+
+void Application::executeProjectAction(PendingProjectAction action, const std::wstring& path) {
+    switch (action) {
+        case PendingProjectAction::NewProject:
+            resetToDefaultProject();
+            m_projectPath.clear();
+            markProjectClean();
+            m_projectStatus = "Started a new project.";
+            break;
+        case PendingProjectAction::OpenDialog:
+            openProjectFromDialog();
+            break;
+        case PendingProjectAction::OpenRecent: {
+            std::string error;
+            if (!openProjectFromPath(path, error)) {
+                m_projectStatus = "Open recent project failed: " + error;
+            }
+            break;
+        }
+        case PendingProjectAction::CloseApp:
+            if (m_hWnd) {
+                ::DestroyWindow(m_hWnd);
+            }
+            break;
+        case PendingProjectAction::None:
+        default:
+            break;
+    }
+    m_redrawRequested = true;
+}
+
+void Application::requestProjectAction(PendingProjectAction action, std::wstring path) {
+    refreshProjectDirtyState();
+    if (m_projectDirty) {
+        m_pendingProjectAction = action;
+        m_pendingProjectPath = std::move(path);
+        m_openProjectDiscardPopupNextFrame = true;
+        m_redrawRequested = true;
+        return;
+    }
+
+    executeProjectAction(action, path);
+}
+
+bool Application::requestClose() {
+    refreshProjectDirtyState();
+    if (!m_projectDirty) {
+        return true;
+    }
+
+    m_pendingProjectAction = PendingProjectAction::CloseApp;
+    m_pendingProjectPath.clear();
+    m_openProjectDiscardPopupNextFrame = true;
+    m_redrawRequested = true;
+    return false;
+}
+
+void Application::renderProjectControls() {
+    ImGui::TextUnformatted("Project");
+    ImGui::Separator();
+    ImGui::TextWrapped("%s", projectDisplayName().c_str());
+    if (!m_projectPath.empty()) {
+        ImGui::SetItemTooltip("%s", narrowUtf8(m_projectPath).c_str());
+    }
+
+    const float buttonWidth = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
+    if (ImGui::Button("New", ImVec2(buttonWidth, 0.0f))) {
+        requestProjectAction(PendingProjectAction::NewProject);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Open...", ImVec2(buttonWidth, 0.0f))) {
+        requestProjectAction(PendingProjectAction::OpenDialog);
+    }
+    if (ImGui::Button("Save", ImVec2(buttonWidth, 0.0f))) {
+        saveProject();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Save As...", ImVec2(buttonWidth, 0.0f))) {
+        saveProjectAs();
+    }
+
+    if (!m_projectStatus.empty()) {
+        ImGui::TextWrapped("%s", m_projectStatus.c_str());
+    }
+
+    if (!m_recentProjectPaths.empty() &&
+        ImGui::CollapsingHeader("Recent Projects", ImGuiTreeNodeFlags_DefaultOpen)) {
+        for (int i = 0; i < static_cast<int>(m_recentProjectPaths.size()); ++i) {
+            ImGui::PushID(i);
+            const std::wstring& path = m_recentProjectPaths[static_cast<std::size_t>(i)];
+            std::string label = narrowUtf8(std::filesystem::path(path).filename().wstring());
+            if (label.empty()) {
+                label = narrowUtf8(path);
+            }
+            if (ImGui::SmallButton(label.c_str())) {
+                requestProjectAction(PendingProjectAction::OpenRecent, path);
+            }
+            ImGui::SetItemTooltip("%s", narrowUtf8(path).c_str());
+            ImGui::PopID();
+        }
+    }
+}
+
+void Application::renderProjectDiscardDialog() {
+    static constexpr const char* kDiscardPopupId = "Unsaved Project Changes";
+
+    if (m_openProjectDiscardPopupNextFrame) {
+        ImGui::OpenPopup(kDiscardPopupId);
+        m_openProjectDiscardPopupNextFrame = false;
+    }
+
+    if (ImGui::BeginPopupModal(kDiscardPopupId, nullptr, ImGuiWindowFlags_NoSavedSettings)) {
+        ImGui::TextWrapped("The current project has unsaved changes.");
+        ImGui::TextWrapped("Save before continuing, discard the changes, or cancel.");
+        ImGui::Spacing();
+
+        if (ImGui::Button("Save", ImVec2(96.0f, 0.0f))) {
+            if (saveProject()) {
+                const PendingProjectAction action = m_pendingProjectAction;
+                const std::wstring path = m_pendingProjectPath;
+                m_pendingProjectAction = PendingProjectAction::None;
+                m_pendingProjectPath.clear();
+                ImGui::CloseCurrentPopup();
+                executeProjectAction(action, path);
+            }
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Discard", ImVec2(96.0f, 0.0f))) {
+            const PendingProjectAction action = m_pendingProjectAction;
+            const std::wstring path = m_pendingProjectPath;
+            m_pendingProjectAction = PendingProjectAction::None;
+            m_pendingProjectPath.clear();
+            ImGui::CloseCurrentPopup();
+            executeProjectAction(action, path);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel", ImVec2(96.0f, 0.0f))) {
+            m_pendingProjectAction = PendingProjectAction::None;
+            m_pendingProjectPath.clear();
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
+}
+
+void Application::handleProjectShortcuts() {
+    ImGuiIO& io = ImGui::GetIO();
+    if (io.WantTextInput || ImGui::IsAnyItemActive()) {
+        return;
+    }
+
+    const bool ctrl = io.KeyCtrl;
+    const bool shift = io.KeyShift;
+    const bool alt = io.KeyAlt;
+    if (!ctrl || alt) {
+        return;
+    }
+
+    if (ImGui::IsKeyPressed(ImGuiKey_N)) {
+        requestProjectAction(PendingProjectAction::NewProject);
+    } else if (ImGui::IsKeyPressed(ImGuiKey_O)) {
+        requestProjectAction(PendingProjectAction::OpenDialog);
+    } else if (ImGui::IsKeyPressed(ImGuiKey_S)) {
+        if (shift) {
+            saveProjectAs();
+        } else {
+            saveProject();
+        }
+    }
+}
 
 // ---- initialisation ---------------------------------------------------------
 
@@ -401,15 +897,9 @@ bool Application::initialize(HINSTANCE hInstance, int width, int height) {
     ImGui_ImplWin32_Init(m_hWnd);
     ImGui_ImplDX11_Init(m_device, m_deviceContext);
 
-    // Add a default formula so the plot is not empty
-    FormulaEntry defaultEntry;
-    strncpy_s(defaultEntry.inputBuffer, sizeof(defaultEntry.inputBuffer),
-              // "sin(x)", _TRUNCATE);
-              "sin(sqrt(x^2+y^2))", _TRUNCATE);
-    std::memcpy(defaultEntry.color, kDefaultPalette[0],
-                sizeof(defaultEntry.color));
-    defaultEntry.parse();
-    m_formulas.push_back(std::move(defaultEntry));
+    resetToDefaultProject();
+    markProjectClean();
+    loadRecentProjectPaths();
 
     // Record startup time so we can defer the automatic update check.
     // Delaying the network call avoids triggering antivirus heuristics that flag
@@ -547,6 +1037,8 @@ void Application::renderFrame() {
     ImGui_ImplDX11_NewFrame();
     ImGui_ImplWin32_NewFrame();
     ImGui::NewFrame();
+    refreshProjectDirtyState();
+    handleProjectShortcuts();
 
     // We fill the entire OS window with the sidebar, a splitter, and the plot.
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
@@ -570,6 +1062,10 @@ void Application::renderFrame() {
     ImGui::Begin("##Sidebar", nullptr,
                  ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
                  ImGuiWindowFlags_NoMove     | ImGuiWindowFlags_NoCollapse);
+    renderProjectControls();
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
     m_formulaPanel.render(m_formulas);
     bool hasSurfaceFormula = false;
     bool has2DFormula = false;
@@ -712,6 +1208,7 @@ void Application::renderFrame() {
     ImGui::PopStyleVar(2);
 
     renderExportDialog(sidebar, totalH);
+    renderProjectDiscardDialog();
 
     // ---- Plot area ----
     ImGui::SetNextWindowPos(ImVec2(plotX, viewport->WorkPos.y));
@@ -747,6 +1244,7 @@ void Application::renderFrame() {
     m_deviceContext->ClearRenderTargetView(m_renderTargetView, clearColor);
     ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
     processPendingExportActions();
+    refreshProjectDirtyState();
 
     HRESULT hr = m_swapChain->Present(1, 0); // VSync
     m_swapChainOccluded = (hr == DXGI_STATUS_OCCLUDED);
