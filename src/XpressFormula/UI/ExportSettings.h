@@ -58,6 +58,15 @@ enum class ExportPreviewQuality {
     Final
 };
 
+enum class ExportProfile {
+    CurrentView,
+    Presentation,
+    TransparentIllustration,
+    PrintGrayscale,
+    HighQuality3D,
+    Custom
+};
+
 struct ExportSizePreset {
     const char* label;
     int width;
@@ -72,6 +81,29 @@ struct ExportQualitySettings {
     int implicitSurfaceResolution = 64;
     float wireThicknessScale = 1.0f;
     ExportSupersampling supersampling = ExportSupersampling::Off;
+};
+
+struct ExportProfileSettings {
+    int selectedSizePreset = 0;
+    int scale = 1;
+    bool lockAspectRatio = true;
+    bool grayscaleOutput = false;
+    bool showGrid = true;
+    bool showCoordinates = true;
+    bool showWires = true;
+    bool showEnvelope = true;
+    bool showAxisTriad = false;
+    ExportBackgroundMode backgroundMode = ExportBackgroundMode::Current;
+    ExportFormat format = ExportFormat::Png;
+    ExportAspectMode aspectMode = ExportAspectMode::PreserveMathematicalScale;
+    ExportQualityMode qualityMode = ExportQualityMode::Interactive;
+    ExportQualitySettings quality;
+    ExportPreviewQuality previewQuality = ExportPreviewQuality::Normal;
+    bool autoRefreshPreview = false;
+    bool openAfterSave = false;
+    bool showInFolderAfterSave = false;
+    bool copyPathAfterSave = false;
+    bool saveMetadataSidecar = false;
 };
 
 struct ExportWorldBounds {
@@ -311,6 +343,15 @@ inline ExportPreviewSize resolveExportPreviewSize(int outputWidth,
     return resolved;
 }
 
+inline constexpr int kExportSizePresetCurrent = 0;
+inline constexpr int kExportSizePreset1280x720 = 1;
+inline constexpr int kExportSizePreset1920x1080 = 2;
+inline constexpr int kExportSizePreset2560x1440 = 3;
+inline constexpr int kExportSizePreset3840x2160 = 4;
+inline constexpr int kExportSizePreset1024x1024 = 5;
+inline constexpr int kExportSizePreset2048x2048 = 6;
+inline constexpr int kExportSizePresetCustom = 7;
+
 inline const std::array<ExportSizePreset, 8>& exportSizePresets() {
     static constexpr std::array<ExportSizePreset, 8> presets = {{
         { "Current", 0, 0, true, false },
@@ -323,6 +364,18 @@ inline const std::array<ExportSizePreset, 8>& exportSizePresets() {
         { "Custom", 0, 0, false, true },
     }};
     return presets;
+}
+
+inline const std::array<ExportProfile, 6>& exportProfiles() {
+    static constexpr std::array<ExportProfile, 6> profiles = {{
+        ExportProfile::CurrentView,
+        ExportProfile::Presentation,
+        ExportProfile::TransparentIllustration,
+        ExportProfile::PrintGrayscale,
+        ExportProfile::HighQuality3D,
+        ExportProfile::Custom
+    }};
+    return profiles;
 }
 
 inline const std::array<int, 4>& exportScaleOptions() {
@@ -346,6 +399,75 @@ inline ExportQualitySettings qualitySettingsForPreset(ExportQualityPreset preset
     }
 }
 
+inline ExportProfileSettings exportProfileSettings(ExportProfile profile) {
+    ExportProfileSettings settings;
+    switch (profile) {
+        case ExportProfile::Presentation:
+            settings.selectedSizePreset = kExportSizePreset1920x1080;
+            settings.qualityMode = ExportQualityMode::Override;
+            settings.quality = qualitySettingsForPreset(ExportQualityPreset::High);
+            settings.saveMetadataSidecar = false;
+            return settings;
+        case ExportProfile::TransparentIllustration:
+            settings.selectedSizePreset = kExportSizePreset2048x2048;
+            settings.showGrid = false;
+            settings.showCoordinates = false;
+            settings.showWires = true;
+            settings.showEnvelope = true;
+            settings.backgroundMode = ExportBackgroundMode::Transparent;
+            settings.qualityMode = ExportQualityMode::Override;
+            settings.quality = qualitySettingsForPreset(ExportQualityPreset::High);
+            settings.saveMetadataSidecar = true;
+            return settings;
+        case ExportProfile::PrintGrayscale:
+            settings.selectedSizePreset = kExportSizePreset2048x2048;
+            settings.grayscaleOutput = true;
+            settings.showGrid = true;
+            settings.showCoordinates = true;
+            settings.showWires = false;
+            settings.showEnvelope = false;
+            settings.backgroundMode = ExportBackgroundMode::White;
+            settings.aspectMode = ExportAspectMode::PreserveVisibleBounds;
+            settings.qualityMode = ExportQualityMode::Override;
+            settings.quality = qualitySettingsForPreset(ExportQualityPreset::High);
+            settings.saveMetadataSidecar = true;
+            return settings;
+        case ExportProfile::HighQuality3D:
+            settings.selectedSizePreset = kExportSizePreset3840x2160;
+            settings.showGrid = true;
+            settings.showCoordinates = false;
+            settings.showWires = true;
+            settings.showEnvelope = true;
+            settings.showAxisTriad = true;
+            settings.qualityMode = ExportQualityMode::Override;
+            settings.quality = qualitySettingsForPreset(ExportQualityPreset::Ultra);
+            settings.previewQuality = ExportPreviewQuality::Draft;
+            settings.saveMetadataSidecar = true;
+            return settings;
+        case ExportProfile::Custom:
+            settings.selectedSizePreset = kExportSizePresetCustom;
+            settings.quality = qualitySettingsForPreset(ExportQualityPreset::Normal);
+            return settings;
+        case ExportProfile::CurrentView:
+        default:
+            settings.selectedSizePreset = kExportSizePresetCurrent;
+            settings.quality = qualitySettingsForPreset(ExportQualityPreset::Normal);
+            return settings;
+    }
+}
+
+inline const char* exportProfileLabel(ExportProfile profile) {
+    switch (profile) {
+        case ExportProfile::CurrentView: return "Current View";
+        case ExportProfile::Presentation: return "Presentation";
+        case ExportProfile::TransparentIllustration: return "Transparent Illustration";
+        case ExportProfile::PrintGrayscale: return "Print Grayscale";
+        case ExportProfile::HighQuality3D: return "High-Quality 3D";
+        case ExportProfile::Custom: return "Custom";
+        default: return "Current View";
+    }
+}
+
 inline const char* exportBackgroundModeLabel(ExportBackgroundMode mode) {
     switch (mode) {
         case ExportBackgroundMode::Current: return "Use current";
@@ -362,6 +484,14 @@ inline const char* exportFormatLabel(ExportFormat format) {
         case ExportFormat::Png: return "PNG";
         case ExportFormat::Bmp: return "BMP";
         default: return "PNG";
+    }
+}
+
+inline const char* exportQualityModeLabel(ExportQualityMode mode) {
+    switch (mode) {
+        case ExportQualityMode::Interactive: return "Interactive";
+        case ExportQualityMode::Override: return "Override";
+        default: return "Interactive";
     }
 }
 

@@ -33,6 +33,7 @@ public:
         int height = 0;
         int scale = 1;
         int selectedSizePreset = 0;
+        ExportProfile selectedProfile = ExportProfile::CurrentView;
         bool lockAspectRatio = true;
         bool grayscaleOutput = false;
         bool showGrid = true;
@@ -122,6 +123,13 @@ private:
     bool saveImageToPath(const std::wstring& path,
                          const std::vector<std::uint8_t>& pixels,
                          int width, int height, std::string& error);
+    std::string buildExportMetadataJson(const ExportDialogSettings& settings,
+                                        const std::wstring& imagePath,
+                                        int width, int height) const;
+    bool writeExportMetadataSidecar(const ExportDialogSettings& settings,
+                                    const std::wstring& imagePath,
+                                    int width, int height,
+                                    std::string& error) const;
     bool savePngToPath(const std::wstring& path,
                        const std::vector<std::uint8_t>& pixels,
                        int width, int height, std::string& error);

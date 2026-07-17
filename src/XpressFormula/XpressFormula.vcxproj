@@ -194,6 +194,7 @@
     <ClInclude Include="UI\Application.h" />
     <ClInclude Include="UI\Components\FormulaCard.h" />
     <ClInclude Include="UI\Components\PlotToolbar.h" />
+    <ClInclude Include="UI\ExportMetadata.h" />
     <ClInclude Include="UI\ExportSettings.h" />
     <ClInclude Include="UI\FormulaExamples.h" />
     <ClInclude Include="UI\FormulaEntry.h" />

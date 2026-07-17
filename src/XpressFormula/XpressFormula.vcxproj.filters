@@ -131,6 +131,9 @@
     <ClInclude Include="UI\Components\PlotToolbar.h">
       <Filter>UI\Components</Filter>
     </ClInclude>
+    <ClInclude Include="UI\ExportMetadata.h">
+      <Filter>UI</Filter>
+    </ClInclude>
     <ClInclude Include="UI\ExportSettings.h">
       <Filter>UI</Filter>
     </ClInclude>
