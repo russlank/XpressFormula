@@ -9,6 +9,36 @@ XpressFormula is organized into three primary layers:
 - `UI`: ImGui panels and application orchestration
 - `Plotting`: draw routines for grid/axes/curves/heat maps/implicit contours and 3D surfaces (explicit + implicit)
 
+The architecture modernization now adds build-enforced production library boundaries around the existing source layout. See [`architecture-dependencies.md`](architecture-dependencies.md) for the current project graph, forbidden dependencies, and migration exceptions.
+
+## Production Project Boundaries
+
+Current production projects:
+
+- `XpressFormula.Expression`: expression tokenization, parsing, evaluation, function metadata, examples, and version parsing helpers.
+- `XpressFormula.Model`: durable model-side sources, currently anchored by `ViewTransform` while settings models are still header-only.
+- `XpressFormula.Plotting`: plotting renderer implementation.
+- `XpressFormula.Infrastructure`: temporary boundary for header-only persistence/export infrastructure until JSON/file/project sources are extracted.
+- `XpressFormula.UI`: ImGui panels, components, UiKit, and Dear ImGui core sources.
+- `XpressFormula.App`: current application orchestration and Win32/DX11 ImGui backend sources.
+- `XpressFormula`: executable host containing `main.cpp`, resources, and project references.
+- `XpressFormula.Tests`: tests linked against the production libraries.
+
+Intended dependency direction:
+
+```text
+Expression -> standard library
+Model -> Expression when needed
+Plotting -> Model + Expression
+Infrastructure -> Model + Expression when needed
+UI -> Model + Plotting + Expression + Infrastructure + ImGui
+App -> UI + Infrastructure + Plotting + Model + Expression + platform APIs
+Executable -> App and production libraries
+Tests -> production libraries
+```
+
+This first boundary step references existing files from new static-library projects. File moves are deferred until later modernization phases establish stable models and pure helpers.
+
 ## Module Breakdown
 
 - [`src/XpressFormula/Core/Tokenizer.h`](../src/XpressFormula/Core/Tokenizer.h) and [`src/XpressFormula/Core/Tokenizer.cpp`](../src/XpressFormula/Core/Tokenizer.cpp)

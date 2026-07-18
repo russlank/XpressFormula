@@ -1,87 +1,17 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
-    <Filter Include="Core">
-      <UniqueIdentifier>{A1B2C3D4-0001-0001-0001-000000000001}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="UI">
-      <UniqueIdentifier>{A1B2C3D4-0002-0002-0002-000000000002}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="UI\Components">
-      <UniqueIdentifier>{A1B2C3D4-0006-0006-0006-000000000006}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="UI\UiKit">
-      <UniqueIdentifier>{A1B2C3D4-0007-0007-0007-000000000007}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Plotting">
-      <UniqueIdentifier>{A1B2C3D4-0003-0003-0003-000000000003}</UniqueIdentifier>
-    </Filter>
     <Filter Include="Resources">
       <UniqueIdentifier>{A1B2C3D4-0005-0005-0005-000000000005}</UniqueIdentifier>
     </Filter>
+    <Filter Include="ApplicationHost">
+      <UniqueIdentifier>{A1B2C3D4-0008-0008-0008-000000000008}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="main.cpp" />
-    <ClCompile Include="Core\Tokenizer.cpp">
-      <Filter>Core</Filter>
+    <ClCompile Include="main.cpp">
+      <Filter>ApplicationHost</Filter>
     </ClCompile>
-    <ClCompile Include="Core\Parser.cpp">
-      <Filter>Core</Filter>
-    </ClCompile>
-    <ClCompile Include="Core\Evaluator.cpp">
-      <Filter>Core</Filter>
-    </ClCompile>
-    <ClCompile Include="Core\FunctionRegistry.cpp">
-      <Filter>Core</Filter>
-    </ClCompile>
-    <ClCompile Include="Core\ExampleFormulaCatalog.cpp">
-      <Filter>Core</Filter>
-    </ClCompile>
-    <ClCompile Include="Core\ViewTransform.cpp">
-      <Filter>Core</Filter>
-    </ClCompile>
-    <ClCompile Include="UI\Application.cpp">
-      <Filter>UI</Filter>
-    </ClCompile>
-    <ClCompile Include="UI\Components\FormulaCard.cpp">
-      <Filter>UI\Components</Filter>
-    </ClCompile>
-    <ClCompile Include="UI\Components\PlotToolbar.cpp">
-      <Filter>UI\Components</Filter>
-    </ClCompile>
-    <ClCompile Include="UI\FormulaPanel.cpp">
-      <Filter>UI</Filter>
-    </ClCompile>
-    <ClCompile Include="UI\ControlPanel.cpp">
-      <Filter>UI</Filter>
-    </ClCompile>
-    <ClCompile Include="UI\PlotPanel.cpp">
-      <Filter>UI</Filter>
-    </ClCompile>
-    <ClCompile Include="UI\UiKit\PropertyGrid.cpp">
-      <Filter>UI\UiKit</Filter>
-    </ClCompile>
-    <ClCompile Include="UI\UiKit\ResponsiveLayout.cpp">
-      <Filter>UI\UiKit</Filter>
-    </ClCompile>
-    <ClCompile Include="UI\UiKit\ResponsiveRows.cpp">
-      <Filter>UI\UiKit</Filter>
-    </ClCompile>
-    <ClCompile Include="UI\UiKit\Splitter.cpp">
-      <Filter>UI\UiKit</Filter>
-    </ClCompile>
-    <ClCompile Include="UI\UiKit\UiMetrics.cpp">
-      <Filter>UI\UiKit</Filter>
-    </ClCompile>
-    <ClCompile Include="Plotting\PlotRenderer.cpp">
-      <Filter>Plotting</Filter>
-    </ClCompile>
-    <ClCompile Include="..\vendor\imgui\imgui.cpp" />
-    <ClCompile Include="..\vendor\imgui\imgui_draw.cpp" />
-    <ClCompile Include="..\vendor\imgui\imgui_tables.cpp" />
-    <ClCompile Include="..\vendor\imgui\imgui_widgets.cpp" />
-    <ClCompile Include="..\vendor\imgui\backends\imgui_impl_dx11.cpp" />
-    <ClCompile Include="..\vendor\imgui\backends\imgui_impl_win32.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="app.rc">
@@ -89,95 +19,14 @@
     </ResourceCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="Core\Token.h">
-      <Filter>Core</Filter>
-    </ClInclude>
     <ClInclude Include="Version.h">
       <Filter>Resources</Filter>
     </ClInclude>
     <ClInclude Include="resource.h">
       <Filter>Resources</Filter>
     </ClInclude>
-    <ClInclude Include="Core\MathConstants.h">
-      <Filter>Core</Filter>
-    </ClInclude>
-    <ClInclude Include="Core\Tokenizer.h">
-      <Filter>Core</Filter>
-    </ClInclude>
-    <ClInclude Include="Core\ASTNode.h">
-      <Filter>Core</Filter>
-    </ClInclude>
-    <ClInclude Include="Core\Parser.h">
-      <Filter>Core</Filter>
-    </ClInclude>
-    <ClInclude Include="Core\Evaluator.h">
-      <Filter>Core</Filter>
-    </ClInclude>
-    <ClInclude Include="Core\FunctionRegistry.h">
-      <Filter>Core</Filter>
-    </ClInclude>
-    <ClInclude Include="Core\ExampleFormulaCatalog.h">
-      <Filter>Core</Filter>
-    </ClInclude>
-    <ClInclude Include="Core\ViewTransform.h">
-      <Filter>Core</Filter>
-    </ClInclude>
     <ClInclude Include="UI\Application.h">
-      <Filter>UI</Filter>
-    </ClInclude>
-    <ClInclude Include="UI\Components\FormulaCard.h">
-      <Filter>UI\Components</Filter>
-    </ClInclude>
-    <ClInclude Include="UI\Components\PlotToolbar.h">
-      <Filter>UI\Components</Filter>
-    </ClInclude>
-    <ClInclude Include="UI\ExportMetadata.h">
-      <Filter>UI</Filter>
-    </ClInclude>
-    <ClInclude Include="UI\ExportSettings.h">
-      <Filter>UI</Filter>
-    </ClInclude>
-    <ClInclude Include="UI\FormulaExamples.h">
-      <Filter>UI</Filter>
-    </ClInclude>
-    <ClInclude Include="UI\FormulaEntry.h">
-      <Filter>UI</Filter>
-    </ClInclude>
-    <ClInclude Include="UI\FormulaPanel.h">
-      <Filter>UI</Filter>
-    </ClInclude>
-    <ClInclude Include="UI\ControlPanel.h">
-      <Filter>UI</Filter>
-    </ClInclude>
-    <ClInclude Include="UI\PlotPanel.h">
-      <Filter>UI</Filter>
-    </ClInclude>
-    <ClInclude Include="UI\PlotSettings.h">
-      <Filter>UI</Filter>
-    </ClInclude>
-    <ClInclude Include="UI\ProjectSession.h">
-      <Filter>UI</Filter>
-    </ClInclude>
-    <ClInclude Include="UI\UiKit\PropertyGrid.h">
-      <Filter>UI\UiKit</Filter>
-    </ClInclude>
-    <ClInclude Include="UI\UiKit\ResponsiveLayout.h">
-      <Filter>UI\UiKit</Filter>
-    </ClInclude>
-    <ClInclude Include="UI\UiKit\ResponsiveRows.h">
-      <Filter>UI\UiKit</Filter>
-    </ClInclude>
-    <ClInclude Include="UI\UiKit\Splitter.h">
-      <Filter>UI\UiKit</Filter>
-    </ClInclude>
-    <ClInclude Include="UI\UiKit\UiMetrics.h">
-      <Filter>UI\UiKit</Filter>
-    </ClInclude>
-    <ClInclude Include="UI\UiKit\UiScopes.h">
-      <Filter>UI\UiKit</Filter>
-    </ClInclude>
-    <ClInclude Include="Plotting\PlotRenderer.h">
-      <Filter>Plotting</Filter>
+      <Filter>ApplicationHost</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

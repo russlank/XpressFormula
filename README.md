@@ -70,6 +70,7 @@ Common path:
 - Documentation index: [`doc/index.md`](doc/index.md)
 - Run and debug guide: [`doc/run-guide.md`](doc/run-guide.md)
 - Architecture overview: [`doc/architecture.md`](doc/architecture.md)
+- Architecture dependency rules: [`doc/architecture-dependencies.md`](doc/architecture-dependencies.md)
 - Math API guide (internal math abstractions and APIs): [`doc/math-api-guide.md`](doc/math-api-guide.md)
 - Math API cheatsheet (quick reference + where used): [`doc/math-api-cheatsheet.md`](doc/math-api-cheatsheet.md)
 - Algorithms guide (parsing/rendering/meshing): [`doc/algorithms-guide.md`](doc/algorithms-guide.md)

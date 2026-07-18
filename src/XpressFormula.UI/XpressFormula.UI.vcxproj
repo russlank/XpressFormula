@@ -21,40 +21,36 @@
   <PropertyGroup Label="Globals">
     <VCProjectVersion>17.0</VCProjectVersion>
     <Keyword>Win32Proj</Keyword>
-    <ProjectGuid>{B5A2C3D4-1111-2222-3333-444455556666}</ProjectGuid>
-    <RootNamespace>XpressFormulaTests</RootNamespace>
+    <ProjectGuid>{957C7594-0184-44A4-86BD-683DD22E3AF1}</ProjectGuid>
+    <RootNamespace>XpressFormulaUI</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
-    <ConfigurationType>Application</ConfigurationType>
+    <ConfigurationType>StaticLibrary</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
     <PlatformToolset>v145</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
-    <UseOfMfc>false</UseOfMfc>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
-    <ConfigurationType>Application</ConfigurationType>
+    <ConfigurationType>StaticLibrary</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
     <PlatformToolset>v145</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
-    <UseOfMfc>false</UseOfMfc>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
-    <ConfigurationType>Application</ConfigurationType>
+    <ConfigurationType>StaticLibrary</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
     <PlatformToolset>v145</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
-    <UseOfMfc>false</UseOfMfc>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
-    <ConfigurationType>Application</ConfigurationType>
+    <ConfigurationType>StaticLibrary</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
     <PlatformToolset>v145</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
-    <UseOfMfc>false</UseOfMfc>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ImportGroup Label="ExtensionSettings" />
@@ -72,53 +68,17 @@
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
-  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
-    <ClCompile>
-      <WarningLevel>Level3</WarningLevel>
-      <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>WIN32;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <ConformanceMode>true</ConformanceMode>
-      <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>$(MSBuildProjectDirectory)\..\XpressFormula;$(MSBuildProjectDirectory)\..\vendor\imgui;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-    </ClCompile>
-    <Link>
-      <SubSystem>Console</SubSystem>
-      <GenerateDebugInformation>true</GenerateDebugInformation>
-    </Link>
-  </ItemDefinitionGroup>
-  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
-    <ClCompile>
-      <WarningLevel>Level3</WarningLevel>
-      <FunctionLevelLinking>true</FunctionLevelLinking>
-      <IntrinsicFunctions>true</IntrinsicFunctions>
-      <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>WIN32;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <ConformanceMode>true</ConformanceMode>
-      <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>$(MSBuildProjectDirectory)\..\XpressFormula;$(MSBuildProjectDirectory)\..\vendor\imgui;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-    </ClCompile>
-    <Link>
-      <SubSystem>Console</SubSystem>
-      <GenerateDebugInformation>true</GenerateDebugInformation>
-      <EnableCOMDATFolding>true</EnableCOMDATFolding>
-      <OptimizeReferences>true</OptimizeReferences>
-    </Link>
-  </ItemDefinitionGroup>
-  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>$(MSBuildProjectDirectory)\..\XpressFormula;$(MSBuildProjectDirectory)\..\vendor\imgui;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(MSBuildProjectDirectory)\..\XpressFormula;$(MSBuildProjectDirectory)\..\vendor\imgui;$(MSBuildProjectDirectory)\..\vendor\imgui\backends;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
-    <Link>
-      <SubSystem>Console</SubSystem>
-      <GenerateDebugInformation>true</GenerateDebugInformation>
-    </Link>
   </ItemDefinitionGroup>
-  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <FunctionLevelLinking>true</FunctionLevelLinking>
@@ -127,54 +87,59 @@
       <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>$(MSBuildProjectDirectory)\..\XpressFormula;$(MSBuildProjectDirectory)\..\vendor\imgui;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(MSBuildProjectDirectory)\..\XpressFormula;$(MSBuildProjectDirectory)\..\vendor\imgui;$(MSBuildProjectDirectory)\..\vendor\imgui\backends;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
-    <Link>
-      <SubSystem>Console</SubSystem>
-      <GenerateDebugInformation>true</GenerateDebugInformation>
-      <EnableCOMDATFolding>true</EnableCOMDATFolding>
-      <OptimizeReferences>true</OptimizeReferences>
-    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Platform)'=='Win32'">
+    <ClCompile>
+      <PreprocessorDefinitions>WIN32;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="main.cpp" />
-    <ClCompile Include="TokenizerTests.cpp" />
-    <ClCompile Include="ParserTests.cpp" />
-    <ClCompile Include="EvaluatorTests.cpp" />
-    <ClCompile Include="ViewTransformTests.cpp" />
-    <ClCompile Include="FormulaEntryTests.cpp" />
-    <ClCompile Include="UpdateVersionUtilsTests.cpp" />
-    <ClCompile Include="ExportSettingsTests.cpp" />
-    <ClCompile Include="ProjectSessionTests.cpp" />
-    <ClCompile Include="PlotSettingsTests.cpp" />
-    <ClCompile Include="FormulaListActionsTests.cpp" />
-    <ClCompile Include="UiKitLayoutTests.cpp" />
+    <ClCompile Include="..\XpressFormula\UI\Components\FormulaCard.cpp" />
+    <ClCompile Include="..\XpressFormula\UI\Components\PlotToolbar.cpp" />
+    <ClCompile Include="..\XpressFormula\UI\FormulaPanel.cpp" />
+    <ClCompile Include="..\XpressFormula\UI\ControlPanel.cpp" />
+    <ClCompile Include="..\XpressFormula\UI\PlotPanel.cpp" />
+    <ClCompile Include="..\XpressFormula\UI\UiKit\PropertyGrid.cpp" />
+    <ClCompile Include="..\XpressFormula\UI\UiKit\ResponsiveLayout.cpp" />
+    <ClCompile Include="..\XpressFormula\UI\UiKit\ResponsiveRows.cpp" />
+    <ClCompile Include="..\XpressFormula\UI\UiKit\Splitter.cpp" />
+    <ClCompile Include="..\XpressFormula\UI\UiKit\UiMetrics.cpp" />
+    <ClCompile Include="..\vendor\imgui\imgui.cpp" />
+    <ClCompile Include="..\vendor\imgui\imgui_draw.cpp" />
+    <ClCompile Include="..\vendor\imgui\imgui_tables.cpp" />
+    <ClCompile Include="..\vendor\imgui\imgui_widgets.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\XpressFormula\UI\Components\FormulaCard.h" />
+    <ClInclude Include="..\XpressFormula\UI\Components\PlotToolbar.h" />
+    <ClInclude Include="..\XpressFormula\UI\ExportMetadata.h" />
+    <ClInclude Include="..\XpressFormula\UI\ExportSettings.h" />
+    <ClInclude Include="..\XpressFormula\UI\FormulaExamples.h" />
+    <ClInclude Include="..\XpressFormula\UI\FormulaEntry.h" />
+    <ClInclude Include="..\XpressFormula\UI\FormulaListActions.h" />
+    <ClInclude Include="..\XpressFormula\UI\FormulaPanel.h" />
+    <ClInclude Include="..\XpressFormula\UI\ControlPanel.h" />
+    <ClInclude Include="..\XpressFormula\UI\PlotPanel.h" />
+    <ClInclude Include="..\XpressFormula\UI\PlotSettings.h" />
+    <ClInclude Include="..\XpressFormula\UI\ProjectSession.h" />
+    <ClInclude Include="..\XpressFormula\UI\UiKit\PropertyGrid.h" />
+    <ClInclude Include="..\XpressFormula\UI\UiKit\ResponsiveLayout.h" />
+    <ClInclude Include="..\XpressFormula\UI\UiKit\ResponsiveRows.h" />
+    <ClInclude Include="..\XpressFormula\UI\UiKit\Splitter.h" />
+    <ClInclude Include="..\XpressFormula\UI\UiKit\UiMetrics.h" />
+    <ClInclude Include="..\XpressFormula\UI\UiKit\UiScopes.h" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\XpressFormula.Expression\XpressFormula.Expression.vcxproj">
       <Project>{8DAFDF53-6738-4BAE-A25D-D1E5CF325BFE}</Project>
-      <LinkLibraryDependencies>true</LinkLibraryDependencies>
-      <GlobalPropertiesToRemove>IntDir;OutDir</GlobalPropertiesToRemove>
     </ProjectReference>
     <ProjectReference Include="..\XpressFormula.Model\XpressFormula.Model.vcxproj">
       <Project>{D893AD0C-E0A8-48D5-95AA-AA890435AACD}</Project>
-      <LinkLibraryDependencies>true</LinkLibraryDependencies>
-      <GlobalPropertiesToRemove>IntDir;OutDir</GlobalPropertiesToRemove>
     </ProjectReference>
     <ProjectReference Include="..\XpressFormula.Plotting\XpressFormula.Plotting.vcxproj">
       <Project>{CB9C35CB-1C18-4751-A96A-462C3F4E818D}</Project>
-      <LinkLibraryDependencies>true</LinkLibraryDependencies>
-      <GlobalPropertiesToRemove>IntDir;OutDir</GlobalPropertiesToRemove>
-    </ProjectReference>
-    <ProjectReference Include="..\XpressFormula.Infrastructure\XpressFormula.Infrastructure.vcxproj">
-      <Project>{E310CE87-5D86-4E95-97EC-E6C994B7F140}</Project>
-      <LinkLibraryDependencies>true</LinkLibraryDependencies>
-      <GlobalPropertiesToRemove>IntDir;OutDir</GlobalPropertiesToRemove>
-    </ProjectReference>
-    <ProjectReference Include="..\XpressFormula.UI\XpressFormula.UI.vcxproj">
-      <Project>{957C7594-0184-44A4-86BD-683DD22E3AF1}</Project>
-      <LinkLibraryDependencies>true</LinkLibraryDependencies>
-      <GlobalPropertiesToRemove>IntDir;OutDir</GlobalPropertiesToRemove>
     </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

@@ -51,6 +51,15 @@ TEST_CASE(FormulaEntry_ExpressionSurface3D) {
     Assert::AreEqual(2, entry.variableCount);
 }
 
+TEST_CASE(FormulaEntry_DefaultStartupFormulaIsCharacterized) {
+    FormulaEntry entry = parseFormula("sin(sqrt(x^2+y^2))");
+
+    Assert::IsTrue(entry.isValid());
+    Assert::IsTrue(entry.renderKind == FormulaRenderKind::Surface3D);
+    Assert::AreEqual(2, entry.variableCount);
+    Assert::AreEqual("z = f(x,y)", entry.typeLabel());
+}
+
 TEST_CASE(FormulaEntry_EquationImplicit2D) {
     FormulaEntry entry = parseFormula("x^2 + y^2 = 100");
     Assert::IsTrue(entry.isValid());

@@ -161,6 +161,28 @@ TEST_CASE(ProjectSession_RepeatedSerializeParseIsStable) {
     }
 }
 
+TEST_CASE(ProjectSession_SerializedSnapshotCharacterizesDirtyState) {
+    ProjectSession session;
+    session.formulas.push_back(ProjectFormulaRecord{});
+    session.formulas[0].expression = "sin(sqrt(x^2+y^2))";
+    session.formulas[0].visible = true;
+    session.formulas[0].color = { 0.18f, 0.78f, 0.32f, 1.0f };
+    session.view.scaleX = 60.0;
+    session.view.scaleY = 60.0;
+
+    const std::string cleanSnapshot = serializeProjectSession(session);
+
+    ProjectSession edited = session;
+    edited.formulas[0].expression = "sin(x)";
+    Assert::IsFalse(serializeProjectSession(edited) == cleanSnapshot);
+
+    const std::string savedSnapshot = serializeProjectSession(edited);
+    Assert::AreEqual(savedSnapshot, serializeProjectSession(edited));
+
+    edited.view.centerX = 2.0;
+    Assert::IsFalse(serializeProjectSession(edited) == savedSnapshot);
+}
+
 TEST_CASE(ProjectSession_SerializesNonFiniteValuesAsSafeJsonNumbers) {
     ProjectSession session;
     session.formulas.push_back(ProjectFormulaRecord{});

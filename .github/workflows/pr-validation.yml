@@ -1,0 +1,70 @@
+# SPDX-License-Identifier: MIT
+name: PR Validation
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: windows-2025-vs2026
+    env:
+      BUILD_PLATFORM: x64
+      MSVC_PLATFORM_TOOLSET: v143
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+        with:
+          vs-version: "[18.0,19.0)"
+          vs-prerelease: true
+
+      - name: Show MSBuild Version
+        shell: pwsh
+        run: msbuild -version
+
+      - name: Build Debug App
+        shell: pwsh
+        run: |
+          msbuild src\XpressFormula\XpressFormula.vcxproj /t:Build /m `
+            /p:Configuration=Debug `
+            /p:Platform=$env:BUILD_PLATFORM `
+            /p:PlatformToolset=$env:MSVC_PLATFORM_TOOLSET
+
+      - name: Build Debug Tests
+        shell: pwsh
+        run: |
+          msbuild src\XpressFormula.Tests\XpressFormula.Tests.vcxproj /t:Build /m `
+            /p:Configuration=Debug `
+            /p:Platform=$env:BUILD_PLATFORM `
+            /p:PlatformToolset=$env:MSVC_PLATFORM_TOOLSET
+
+      - name: Run Debug Tests
+        shell: pwsh
+        run: .\src\XpressFormula.Tests\x64\Debug\XpressFormula.Tests.exe
+
+      - name: Build Release App
+        shell: pwsh
+        run: |
+          msbuild src\XpressFormula\XpressFormula.vcxproj /t:Build /m `
+            /p:Configuration=Release `
+            /p:Platform=$env:BUILD_PLATFORM `
+            /p:PlatformToolset=$env:MSVC_PLATFORM_TOOLSET
+
+      - name: Build Release Tests
+        shell: pwsh
+        run: |
+          msbuild src\XpressFormula.Tests\XpressFormula.Tests.vcxproj /t:Build /m `
+            /p:Configuration=Release `
+            /p:Platform=$env:BUILD_PLATFORM `
+            /p:PlatformToolset=$env:MSVC_PLATFORM_TOOLSET
+
+      - name: Run Release Tests
+        shell: pwsh
+        run: .\src\XpressFormula.Tests\x64\Release\XpressFormula.Tests.exe

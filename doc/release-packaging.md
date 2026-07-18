@@ -90,6 +90,19 @@ msbuild src\XpressFormula\XpressFormula.vcxproj /t:Build /m `
   /p:OutDir="$PWD\build\bin\"
 ```
 
+Build and run release tests before packaging:
+
+```powershell
+msbuild src\XpressFormula.Tests\XpressFormula.Tests.vcxproj /t:Build /m `
+  /p:Configuration=Release `
+  /p:Platform=x64 `
+  /p:PlatformToolset=v143 `
+  /p:IntDir="$PWD\build\test-obj\" `
+  /p:OutDir="$PWD\build\test-bin\"
+
+.\build\test-bin\XpressFormula.Tests.exe
+```
+
 Create packages:
 
 ```powershell
@@ -132,7 +145,7 @@ Write-Host "Expected release tag: $expectedTag"
 
 ## v1.6.0 Release Verification Record
 
-Last updated: 2026-07-18
+Last updated: 2026-07-19
 
 Automated verification completed locally with Visual Studio MSBuild 18.8.2:
 
@@ -145,8 +158,8 @@ Automated verification completed locally with Visual Studio MSBuild 18.8.2:
 - [x] Release x64 test project builds:
   `MSBuild src\XpressFormula.Tests\XpressFormula.Tests.vcxproj /p:Configuration=Release /p:Platform=x64 /m`
 - [x] No new compiler warnings in the above builds (`0 Warning(s)`).
-- [x] Automated tests pass: `src\XpressFormula.Tests\x64\Debug\XpressFormula.Tests.exe` reported `359/359 tests passed`.
-- [x] Release test executable also reported `359/359 tests passed`.
+- [x] Automated tests pass: `src\XpressFormula.Tests\x64\Debug\XpressFormula.Tests.exe` reported `361/361 tests passed`.
+- [x] Release test executable also reported `361/361 tests passed`.
 - [x] Existing core tests pass.
 - [x] New project-session tests pass.
 - [x] Export settings and metadata tests pass.

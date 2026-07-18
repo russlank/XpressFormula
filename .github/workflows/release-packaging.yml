@@ -181,6 +181,20 @@ jobs:
             /p:IntDir="$env:GITHUB_WORKSPACE\build\obj\" `
             /p:OutDir="$env:GITHUB_WORKSPACE\build\bin\"
 
+      - name: Build Release Tests
+        shell: pwsh
+        run: |
+          msbuild src\XpressFormula.Tests\XpressFormula.Tests.vcxproj /t:Build /m `
+            /p:Configuration=$env:BUILD_CONFIGURATION `
+            /p:Platform=$env:BUILD_PLATFORM `
+            /p:PlatformToolset=$env:MSVC_PLATFORM_TOOLSET `
+            /p:IntDir="$env:GITHUB_WORKSPACE\build\test-obj\" `
+            /p:OutDir="$env:GITHUB_WORKSPACE\build\test-bin\"
+
+      - name: Run Release Tests
+        shell: pwsh
+        run: .\build\test-bin\XpressFormula.Tests.exe
+
       # Packaging script supports both unsigned and signed modes.
       # IMPORTANT signing-order constraint (handled in packaging/build-packages.ps1):
       #   sign app EXE -> build MSI -> sign MSI -> build bundle -> sign bundle

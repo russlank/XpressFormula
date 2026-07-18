@@ -22,6 +22,8 @@ try {
     $solutionDir = Join-Path $repoRoot "src\"
     $intDir = Join-Path $repoRoot "build\obj\"
     $outDir = Join-Path $repoRoot "build\bin\"
+    $testIntDir = Join-Path $repoRoot "build\test-obj\"
+    $testOutDir = Join-Path $repoRoot "build\test-bin\"
 
     $msbuild = (Get-Command msbuild -ErrorAction SilentlyContinue | Select-Object -First 1).Source
     if (-not $msbuild) {
@@ -85,8 +87,26 @@ try {
         throw "MSBuild failed with exit code $LASTEXITCODE."
     }
 
+    & $msbuild "src\XpressFormula.Tests\XpressFormula.Tests.vcxproj" /t:Build /m `
+        /p:Configuration=$Configuration `
+        /p:Platform=$Platform `
+        /p:PlatformToolset=$PlatformToolset `
+        /p:IntDir="$testIntDir" `
+        /p:OutDir="$testOutDir"
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "Test MSBuild failed with exit code $LASTEXITCODE."
+    }
+
+    $testExe = Join-Path $testOutDir "XpressFormula.Tests.exe"
+    & $testExe
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "Release tests failed with exit code $LASTEXITCODE."
+    }
+
     if ($SkipPackaging) {
-        Write-Host "SkipPackaging was set. Build stage completed successfully."
+        Write-Host "SkipPackaging was set. Build and test stages completed successfully."
         return
     }
 

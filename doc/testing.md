@@ -10,6 +10,8 @@
 
 The project uses a lightweight in-repo test harness ([`src/XpressFormula.Tests/CppUnitTest.h`](../src/XpressFormula.Tests/CppUnitTest.h)) and does not require external MSTest headers.
 
+The test project links the production static libraries (`XpressFormula.Expression`, `XpressFormula.Model`, `XpressFormula.Plotting`, `XpressFormula.Infrastructure`, and `XpressFormula.UI`) instead of compiling production `.cpp` files directly. When adding a new production `.cpp`, add it to the owning production library and reference that library from tests as needed.
+
 ## What Is Covered
 
 - Tokenization
@@ -26,6 +28,8 @@ The project uses a lightweight in-repo test harness ([`src/XpressFormula.Tests/C
   - size/aspect plans, export profiles, preview sizing, and JSON sidecar helpers
 - Project/session persistence
   - `.xfplot` numeric precision, Unicode escapes, malformed JSON rejection, schema validation, enum compatibility, safe clamping, formula warnings, and repeated save/load stability
+- Architecture characterization
+  - default startup formula behavior and serialized snapshot dirty-state scenarios that are testable without UI automation
 - UI layout plans
   - responsive plot toolbar, formula-card breakpoints, splitter clamping, and modal sizing
 

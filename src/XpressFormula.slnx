@@ -4,17 +4,20 @@
     <Platform Name="x86" />
   </Configurations>
   <Folder Name="/ci/">
+    <File Path="../.github/workflows/pr-validation.yml" />
     <File Path="../.github/workflows/release-packaging.yml" />
   </Folder>
   <Folder Name="/doc/">
     <File Path="../doc/algorithms-guide.md" />
     <File Path="../doc/architecture.md" />
+    <File Path="../doc/architecture-dependencies.md" />
     <File Path="../doc/expression-language.md" />
     <File Path="../doc/imgui-implementation-guide.md" />
     <File Path="../doc/index.md" />
     <File Path="../doc/math-api-cheatsheet.md" />
     <File Path="../doc/math-api-guide.md" />
     <File Path="../doc/project-vendors.md" />
+    <File Path="../doc/refactoring-roadmap.md" />
     <File Path="../doc/release-packaging.md" />
     <File Path="../doc/run-guide.md" />
     <File Path="../doc/testing.md" />
@@ -28,6 +31,12 @@
     <File Path="../scripts/get_version.py" />
     <File Path="../scripts/test-release-pipeline-local.ps1" />
   </Folder>
+  <Project Path="XpressFormula.App/XpressFormula.App.vcxproj" Id="d03e5ed4-e68d-4d38-9ba5-18023639b88e" />
+  <Project Path="XpressFormula.Expression/XpressFormula.Expression.vcxproj" Id="8dafdf53-6738-4bae-a25d-d1e5cf325bfe" />
+  <Project Path="XpressFormula.Infrastructure/XpressFormula.Infrastructure.vcxproj" Id="e310ce87-5d86-4e95-97ec-e6c994b7f140" />
+  <Project Path="XpressFormula.Model/XpressFormula.Model.vcxproj" Id="d893ad0c-e0a8-48d5-95aa-aa890435aacd" />
+  <Project Path="XpressFormula.Plotting/XpressFormula.Plotting.vcxproj" Id="cb9c35cb-1c18-4751-a96a-462c3f4e818d" />
   <Project Path="XpressFormula.Tests/XpressFormula.Tests.vcxproj" Id="b5a2c3d4-1111-2222-3333-444455556666" />
+  <Project Path="XpressFormula.UI/XpressFormula.UI.vcxproj" Id="957c7594-0184-44a4-86bd-683dd22e3af1" />
   <Project Path="XpressFormula/XpressFormula.vcxproj" Id="73109284-ce31-4087-bbf7-f64f40b2a3cc" />
 </Solution>

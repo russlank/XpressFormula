@@ -105,19 +105,6 @@ struct PlotSettings {
         return resolveCoordinateOverlayPolicy(showCoordinates, showAxisTriad);
     }
 
-    // 3D camera controls for z=f(x,y).
-    //float azimuthDeg = 40.0f;
-    //float elevationDeg = 30.0f;
-    //float zScale = 1.0f;
-    //int   surfaceResolution = 36;
-    //float surfaceOpacity = 0.82f;
-    //float wireThickness = 1.0f;
-    //bool  showSurfaceEnvelope = true;
-    //float envelopeThickness = 1.25f;
-    //bool  showAxisTriad = false;
-    //bool  autoRotate = false;
-    //float autoRotateSpeedDegPerSec = 20.0f;
-
     float azimuthDeg = kDefaultAzimuthDeg;
     float elevationDeg = kDefaultElevationDeg;
     float zScale = kDefaultZScale;
