@@ -107,51 +107,132 @@ TEST_CASE(ExportProfile_ListIncludesCompleteProfileSet) {
 }
 
 TEST_CASE(ExportProfile_PresentationUsesHighQualityWidePngDefaults) {
-    const auto settings = exportProfileSettings(ExportProfile::Presentation);
+    const auto settings = exportSettingsForProfile(ExportProfile::Presentation);
 
-    Assert::AreEqual(kExportSizePreset1920x1080, settings.selectedSizePreset);
-    Assert::AreEqual(ExportFormat::Png, settings.format);
-    Assert::AreEqual(ExportQualityMode::Override, settings.qualityMode);
+    Assert::AreEqual(kExportSizePreset1920x1080, settings.size.selectedPreset);
+    Assert::AreEqual(ExportFormat::Png, settings.output.format);
+    Assert::AreEqual(ExportQualityMode::Override, settings.quality.mode);
     Assert::AreEqual(ExportQualityPreset::High, settings.quality.preset);
-    Assert::IsTrue(settings.showGrid);
-    Assert::IsTrue(settings.showCoordinates);
-    Assert::IsFalse(settings.saveMetadataSidecar);
+    Assert::IsTrue(settings.scene.showGrid);
+    Assert::IsTrue(settings.scene.showCoordinates);
+    Assert::IsFalse(settings.output.saveMetadataSidecar);
 }
 
 TEST_CASE(ExportProfile_TransparentIllustrationUsesAlphaAndMetadata) {
-    const auto settings = exportProfileSettings(ExportProfile::TransparentIllustration);
+    const auto settings = exportSettingsForProfile(ExportProfile::TransparentIllustration);
 
-    Assert::AreEqual(kExportSizePreset2048x2048, settings.selectedSizePreset);
-    Assert::AreEqual(ExportBackgroundMode::Transparent, settings.backgroundMode);
-    Assert::AreEqual(ExportFormat::Png, settings.format);
+    Assert::AreEqual(kExportSizePreset2048x2048, settings.size.selectedPreset);
+    Assert::AreEqual(ExportBackgroundMode::Transparent, settings.appearance.backgroundMode);
+    Assert::AreEqual(ExportFormat::Png, settings.output.format);
     Assert::AreEqual(ExportQualityPreset::High, settings.quality.preset);
-    Assert::IsFalse(settings.showGrid);
-    Assert::IsFalse(settings.showCoordinates);
-    Assert::IsTrue(settings.showWires);
-    Assert::IsTrue(settings.saveMetadataSidecar);
+    Assert::IsFalse(settings.scene.showGrid);
+    Assert::IsFalse(settings.scene.showCoordinates);
+    Assert::IsTrue(settings.scene.showWires);
+    Assert::IsTrue(settings.output.saveMetadataSidecar);
 }
 
 TEST_CASE(ExportProfile_PrintGrayscaleUsesWhiteBoundsAndNoWires) {
-    const auto settings = exportProfileSettings(ExportProfile::PrintGrayscale);
+    const auto settings = exportSettingsForProfile(ExportProfile::PrintGrayscale);
 
-    Assert::AreEqual(ExportBackgroundMode::White, settings.backgroundMode);
-    Assert::AreEqual(ExportAspectMode::PreserveVisibleBounds, settings.aspectMode);
-    Assert::IsTrue(settings.grayscaleOutput);
-    Assert::IsFalse(settings.showWires);
-    Assert::IsFalse(settings.showEnvelope);
-    Assert::IsTrue(settings.saveMetadataSidecar);
+    Assert::AreEqual(ExportBackgroundMode::White, settings.appearance.backgroundMode);
+    Assert::AreEqual(ExportAspectMode::PreserveVisibleBounds, settings.output.aspectMode);
+    Assert::IsTrue(settings.appearance.grayscaleOutput);
+    Assert::IsFalse(settings.scene.showWires);
+    Assert::IsFalse(settings.scene.showEnvelope);
+    Assert::IsTrue(settings.output.saveMetadataSidecar);
 }
 
 TEST_CASE(ExportProfile_HighQuality3DUsesUltraQualityAndAxisTriad) {
-    const auto settings = exportProfileSettings(ExportProfile::HighQuality3D);
+    const auto settings = exportSettingsForProfile(ExportProfile::HighQuality3D);
 
-    Assert::AreEqual(kExportSizePreset3840x2160, settings.selectedSizePreset);
-    Assert::AreEqual(ExportQualityMode::Override, settings.qualityMode);
+    Assert::AreEqual(kExportSizePreset3840x2160, settings.size.selectedPreset);
+    Assert::AreEqual(ExportQualityMode::Override, settings.quality.mode);
     Assert::AreEqual(ExportQualityPreset::Ultra, settings.quality.preset);
-    Assert::AreEqual(ExportPreviewQuality::Draft, settings.previewQuality);
-    Assert::IsFalse(settings.showCoordinates);
-    Assert::IsTrue(settings.showAxisTriad);
-    Assert::IsTrue(settings.saveMetadataSidecar);
+    Assert::AreEqual(ExportPreviewQuality::Draft, settings.quality.previewQuality);
+    Assert::IsFalse(settings.scene.showCoordinates);
+    Assert::IsTrue(settings.scene.showAxisTriad);
+    Assert::IsTrue(settings.output.saveMetadataSidecar);
+}
+
+TEST_CASE(ExportProfile_EveryProfileProducesUnifiedSettings) {
+    for (ExportProfile profile : exportProfiles()) {
+        const ExportSettings settings = exportSettingsForProfile(profile);
+
+        Assert::AreEqual(profile, settings.profile);
+        Assert::IsTrue(settings.size.selectedPreset >= 0);
+        Assert::IsTrue(settings.size.selectedPreset < static_cast<int>(exportSizePresets().size()));
+        Assert::IsTrue(settings.size.scale >= 1);
+        Assert::IsTrue(settings.size.scale <= 4);
+        Assert::IsTrue(settings.quality.surfaceResolution >= plotLimits().surfaceResolution.min);
+        Assert::IsTrue(settings.quality.surfaceResolution <= plotLimits().surfaceResolution.max);
+        Assert::IsTrue(settings.quality.implicitSurfaceResolution >=
+                       plotLimits().implicitSurfaceResolution.min);
+        Assert::IsTrue(settings.quality.implicitSurfaceResolution <=
+                       plotLimits().implicitSurfaceResolution.max);
+    }
+}
+
+TEST_CASE(ExportProfile_CurrentViewUsesCurrentSceneSnapshot) {
+    ExportSceneSettings scene;
+    scene.showGrid = false;
+    scene.showCoordinates = false;
+    scene.showAxisTriad = true;
+
+    const ExportSettings settings =
+        exportSettingsForProfile(ExportProfile::CurrentView, &scene);
+
+    Assert::IsFalse(settings.scene.showGrid);
+    Assert::IsFalse(settings.scene.showCoordinates);
+    Assert::IsTrue(settings.scene.showAxisTriad);
+}
+
+TEST_CASE(ExportProfile_ManualChangesSwitchToCustomBySharedPolicy) {
+    ExportSettings settings = exportSettingsForProfile(ExportProfile::Presentation);
+
+    settings.output.openAfterSave = true;
+    const bool changed = syncExportProfileAfterManualChange(settings);
+
+    Assert::IsTrue(changed);
+    Assert::AreEqual(ExportProfile::Custom, settings.profile);
+}
+
+TEST_CASE(ExportProfile_UnchangedProfileDoesNotBecomeCustom) {
+    ExportSettings settings = exportSettingsForProfile(ExportProfile::Presentation);
+
+    const bool changed = syncExportProfileAfterManualChange(settings);
+
+    Assert::IsFalse(changed);
+    Assert::AreEqual(ExportProfile::Presentation, settings.profile);
+}
+
+TEST_CASE(ExportSettings_StorageNamesAreStable) {
+    Assert::IsTrue(toStorageName(ExportProfile::CurrentView) == "currentView");
+    Assert::IsTrue(toStorageName(ExportBackgroundMode::Transparent) == "transparent");
+    Assert::IsTrue(toStorageName(ExportFormat::Png) == "png");
+    Assert::IsTrue(toStorageName(ExportQualityMode::Override) == "override");
+    Assert::IsTrue(toStorageName(ExportQualityPreset::Ultra) == "ultra");
+    Assert::IsTrue(toStorageName(ExportSupersampling::X4) == "x4");
+    Assert::IsTrue(toStorageName(ExportAspectMode::PreserveMathematicalScale) ==
+                   "preserveMathematicalScale");
+    Assert::IsTrue(toStorageName(ExportPreviewQuality::Final) == "final");
+    Assert::IsTrue(std::string(exportSizePresets()[kExportSizePreset1920x1080].storageName) ==
+                   "1920x1080");
+}
+
+TEST_CASE(ExportSettings_BackgroundAndRenderOverridesResolveFromUnifiedSettings) {
+    ExportSettings settings = exportSettingsForProfile(ExportProfile::TransparentIllustration);
+
+    const auto color = resolveExportBackgroundColor(settings);
+    const PlotRenderOverrides overrides = plotRenderOverridesForExport(settings);
+    const PlotQualityDecision quality = plotQualityDecisionForExport(settings);
+
+    Assert::AreEqual(0.0f, color[3]);
+    Assert::IsTrue(overrides.active);
+    Assert::IsFalse(overrides.showGrid);
+    Assert::IsFalse(overrides.showCoordinates);
+    Assert::IsFalse(overrides.showAxisTriad);
+    Assert::IsTrue(quality.overrideQuality);
+    Assert::AreEqual(settings.quality.surfaceResolution, quality.surfaceResolution);
 }
 
 TEST_CASE(ExportMetadata_EscapesJsonStrings) {

@@ -557,62 +557,6 @@ inline void readOptionalColor(const JsonValue& object,
 
 } // namespace ProjectSessionDetail
 
-inline const char* xyRenderModePreferenceSchemaName(XYRenderModePreference preference) {
-    switch (preference) {
-        case XYRenderModePreference::Auto: return "auto";
-        case XYRenderModePreference::Force3D: return "force3D";
-        case XYRenderModePreference::Force2D: return "force2D";
-        default: return "auto";
-    }
-}
-
-inline const char* plotHudModeSchemaName(PlotHudMode mode) {
-    switch (mode) {
-        case PlotHudMode::Off: return "off";
-        case PlotHudMode::Minimal: return "minimal";
-        case PlotHudMode::Detailed: return "detailed";
-        case PlotHudMode::OnlyWhileInteracting: return "onlyWhileInteracting";
-        default: return "minimal";
-    }
-}
-
-inline bool parseXYRenderModePreference(std::string_view text,
-                                        XYRenderModePreference& preference) {
-    if (text == "auto" || text == "Auto") {
-        preference = XYRenderModePreference::Auto;
-        return true;
-    }
-    if (text == "force3D" || text == "3D" || text == "Force3D") {
-        preference = XYRenderModePreference::Force3D;
-        return true;
-    }
-    if (text == "force2D" || text == "2D" || text == "Force2D") {
-        preference = XYRenderModePreference::Force2D;
-        return true;
-    }
-    return false;
-}
-
-inline bool parsePlotHudMode(std::string_view text, PlotHudMode& mode) {
-    if (text == "off" || text == "Off") {
-        mode = PlotHudMode::Off;
-        return true;
-    }
-    if (text == "minimal" || text == "Minimal") {
-        mode = PlotHudMode::Minimal;
-        return true;
-    }
-    if (text == "detailed" || text == "Detailed") {
-        mode = PlotHudMode::Detailed;
-        return true;
-    }
-    if (text == "onlyWhileInteracting" || text == "Only While Interacting") {
-        mode = PlotHudMode::OnlyWhileInteracting;
-        return true;
-    }
-    return false;
-}
-
 inline ProjectSession makeProjectSession(const std::vector<Model::Formula>& formulas,
                                          const Core::ViewTransform& view,
                                          const PlotSettings& plot) {
@@ -672,8 +616,8 @@ inline std::string serializeProjectSession(const ProjectSession& session) {
     out << "  },\n";
     out << "  \"display\": {\n";
     out << "    \"xyRenderModePreference\": "
-        << quote(xyRenderModePreferenceSchemaName(session.plot.xyRenderModePreference)) << ",\n";
-    out << "    \"hudMode\": " << quote(plotHudModeSchemaName(session.plot.hudMode)) << ",\n";
+        << quote(toStorageName(session.plot.xyRenderModePreference)) << ",\n";
+    out << "    \"hudMode\": " << quote(toStorageName(session.plot.hudMode)) << ",\n";
     out << "    \"optimizeRendering\": " << jsonBool(session.plot.optimizeRendering) << ",\n";
     out << "    \"showGrid\": " << jsonBool(session.plot.showGrid) << ",\n";
     out << "    \"showCoordinates\": " << jsonBool(session.plot.showCoordinates) << ",\n";
@@ -782,11 +726,12 @@ inline ProjectSessionParseResult parseProjectSession(std::string_view json) {
         display && display->type == JsonValue::Type::Object) {
         std::string enumText;
         if (readString(*display, "xyRenderModePreference", enumText) &&
-            !parseXYRenderModePreference(enumText, result.session.plot.xyRenderModePreference)) {
+            !parseXYRenderModePreferenceStorageName(enumText,
+                                                    result.session.plot.xyRenderModePreference)) {
             result.warnings.emplace_back("Ignored unknown XY render mode preference.");
         }
         if (readString(*display, "hudMode", enumText) &&
-            !parsePlotHudMode(enumText, result.session.plot.hudMode)) {
+            !parsePlotHudModeStorageName(enumText, result.session.plot.hudMode)) {
             result.warnings.emplace_back("Ignored unknown HUD mode.");
         }
 
@@ -816,6 +761,7 @@ inline ProjectSessionParseResult parseProjectSession(std::string_view json) {
                           result.session.plot.autoRotateSpeedDegPerSec);
     }
 
+    normalizePlotSettings(result.session.plot);
     result.success = true;
     return result;
 }
@@ -854,40 +800,7 @@ inline void applyProjectSession(const ProjectSession& session,
                              0.1, 100000.0);
 
     plot = session.plot;
-    plot.surfaceResolution = std::clamp(plot.surfaceResolution, 16, 256);
-    plot.implicitSurfaceResolution = std::clamp(plot.implicitSurfaceResolution, 16, 192);
-    plot.surfaceOpacity = std::clamp(
-        std::isfinite(plot.surfaceOpacity) ? plot.surfaceOpacity : kDefaultSurfaceOpacity,
-        0.0f,
-        1.0f);
-    plot.wireOpacity = clampWireOpacity(
-        std::isfinite(plot.wireOpacity) ? plot.wireOpacity : kDefaultWireOpacity);
-    plot.wireThickness = std::clamp(
-        std::isfinite(plot.wireThickness) ? plot.wireThickness : kDefaultWireThickness,
-        0.05f,
-        8.0f);
-    plot.wireStride = clampWireStride(plot.wireStride);
-    plot.envelopeThickness = std::clamp(
-        std::isfinite(plot.envelopeThickness) ? plot.envelopeThickness : kDefaultEnvelopeThickness,
-        0.05f,
-        8.0f);
-    plot.heatmapOpacity = std::clamp(
-        std::isfinite(plot.heatmapOpacity) ? plot.heatmapOpacity : kDefaultHeatmapOpacity,
-        0.0f,
-        1.0f);
-    plot.azimuthDeg = std::clamp(std::isfinite(plot.azimuthDeg) ? plot.azimuthDeg : kDefaultAzimuthDeg,
-                                 -180.0f, 180.0f);
-    plot.elevationDeg = std::clamp(std::isfinite(plot.elevationDeg) ? plot.elevationDeg : kDefaultElevationDeg,
-                                   -85.0f, 85.0f);
-    plot.zScale = std::clamp(std::isfinite(plot.zScale) ? plot.zScale : kDefaultZScale,
-                             0.1f, 8.0f);
-    plot.autoRotateSpeedDegPerSec = std::clamp(
-        std::isfinite(plot.autoRotateSpeedDegPerSec)
-            ? plot.autoRotateSpeedDegPerSec
-            : kDefaultAutoRotateSpeedDegPerSec,
-        2.0f,
-        90.0f);
-    plot.applyCoordinateOverlayPolicy();
+    normalizePlotSettings(plot);
 }
 
 inline std::string serializeCurrentProjectSession(const std::vector<Model::Formula>& formulas,

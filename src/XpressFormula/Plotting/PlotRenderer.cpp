@@ -1,6 +1,7 @@
 // PlotRenderer.cpp - Rendering implementation for grids, axes, and curves.
 #include "PlotRenderer.h"
 #include "../Core/Evaluator.h"
+#include "../Model/PlotPolicy.h"
 #include "imgui.h"
 #include <algorithm>
 #include <cmath>
@@ -681,7 +682,7 @@ void PlotRenderer::drawSurface3D(ImDrawList* dl, const Core::ViewTransform& vt,
         double value;
     };
 
-    const int resolution = std::clamp(options.resolution, 12, 96);
+    const int resolution = XpressFormula::Model::clampSurfaceResolution(options.resolution);
     const int nx = resolution;
     const int ny = resolution;
     const double xMin = vt.worldXMin();
@@ -1160,7 +1161,7 @@ void PlotRenderer::drawImplicitSurface3D(ImDrawList* dl, const Core::ViewTransfo
     const int requestedImplicitRes = (options.implicitResolution > 0)
         ? options.implicitResolution
         : (options.resolution / 2 + 8);
-    const int gridRes = std::clamp(requestedImplicitRes, 16, 96);
+    const int gridRes = XpressFormula::Model::clampImplicitSurfaceResolution(requestedImplicitRes);
     const int nx = gridRes;
     const int ny = gridRes;
     const int nz = gridRes;

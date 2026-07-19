@@ -60,7 +60,10 @@ void PlotPanel::render(std::vector<Model::Formula>& formulas,
                        Core::ViewTransform& vt,
                        PlotSettings& settings,
                        const Model::SceneSummary& scene,
-                       const PlotRenderOverrides* overrides) {
+                       const PlotRenderOverrides* overrides,
+                       const PlotQualityDecision* qualityDecision) {
+    normalizePlotSettings(settings);
+
     // Update the viewport transform from the ImGui window
     ImVec2 pos  = ImGui::GetCursorScreenPos();
     ImVec2 size = ImGui::GetContentRegionAvail();
@@ -79,106 +82,70 @@ void PlotPanel::render(std::vector<Model::Formula>& formulas,
     bool isHovered = ImGui::IsItemHovered();
     bool isActive  = ImGui::IsItemActive();
 
-    // Draw background
-    ImDrawList* dl = ImGui::GetWindowDrawList();
-    const bool useOverrides = (overrides && overrides->active);
-    const bool showGrid = useOverrides ? overrides->showGrid : settings.showGrid;
-    const bool showCoordinates = useOverrides ? overrides->showCoordinates : settings.showCoordinates;
-    const bool showWires = useOverrides ? overrides->showWires : settings.showWires;
-    const bool showEnvelope = useOverrides ? overrides->showEnvelope : settings.showSurfaceEnvelope;
-    const bool showAxisTriadPreference =
-        useOverrides ? overrides->showAxisTriad : settings.showAxisTriad;
-    const bool showAxisTriad =
-        isAxisTriadVisible(showCoordinates, showAxisTriadPreference);
-    const bool showHud = useOverrides ? overrides->showHud : true;
-    const bool showCanvasBorder = useOverrides ? overrides->showCanvasBorder : true;
-    const float effectiveWireThickness =
-        (showWires && settings.wireThickness > 0.01f) ? settings.wireThickness : 0.0f;
-    const float effectiveWireOpacity =
-        (showWires && settings.wireOpacity > 0.0f) ? clampWireOpacity(settings.wireOpacity) : 0.0f;
-    const int effectiveWireStride = clampWireStride(settings.wireStride);
-    const std::array<float, 4> bg = useOverrides ? overrides->backgroundColor
-                                                  : std::array<float, 4>{0.098f, 0.098f, 0.118f, 1.0f};
-    dl->AddRectFilled(pos, ImVec2(pos.x + size.x, pos.y + size.y),
-                      ImGui::ColorConvertFloat4ToU32(ImVec4(bg[0], bg[1], bg[2], bg[3])));
-
-    const XYRenderMode effectiveRenderMode = settings.resolveXYRenderMode(scene);
-    const bool is3DMode = (effectiveRenderMode == XYRenderMode::Surface3D);
-    const bool use3DGridPlaneInterleave = is3DMode && showGrid;
+    const XYRenderMode requestedRenderMode = settings.resolveXYRenderMode(scene);
+    const bool requested3DMode = (requestedRenderMode == XYRenderMode::Surface3D);
 
     // Apply auto-rotation BEFORE any 3D drawing so the grid, axes, and surfaces
     // all use the same azimuth for this frame (avoids a 1-frame visual tear).
-    if (scene.hasVisible3D() && is3DMode && settings.autoRotate) {
+    if (scene.hasVisible3D() && requested3DMode && settings.autoRotate) {
         settings.azimuthDeg += ImGui::GetIO().DeltaTime * settings.autoRotateSpeedDegPerSec;
         if (settings.azimuthDeg > 180.0f) {
             settings.azimuthDeg -= 360.0f;
         }
     }
 
+    const bool isDraggingLeft = isActive && ImGui::IsMouseDragging(ImGuiMouseButton_Left);
+    const bool isZoomingView = isHovered && (ImGui::GetIO().MouseWheel != 0.0f);
+    const bool useInteractive3DThrottle =
+        settings.optimizeRendering && scene.hasVisible3D() && requested3DMode &&
+        (isDraggingLeft || isZoomingView);
+
+    PlotRenderOverrides renderOverrides = overrides ? *overrides : PlotRenderOverrides{};
+    PlotQualityDecision quality = qualityDecision ? *qualityDecision : PlotQualityDecision{};
+    quality.interactiveThrottle = quality.interactiveThrottle || useInteractive3DThrottle;
+    const EffectivePlotSettings effective =
+        resolveEffectivePlotSettings(settings, renderOverrides, quality, scene);
+
+    // Draw background
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    const std::array<float, 4>& bg = effective.backgroundColor;
+    dl->AddRectFilled(pos, ImVec2(pos.x + size.x, pos.y + size.y),
+                      ImGui::ColorConvertFloat4ToU32(ImVec4(bg[0], bg[1], bg[2], bg[3])));
+
+    const XYRenderMode effectiveRenderMode = effective.renderMode;
+    const bool is3DMode = effective.is3DMode;
+    const bool use3DGridPlaneInterleave = is3DMode && effective.showGrid;
+
     // 2D grid/axes/labels are drawn up-front. In 3D mode the projected grid can be interleaved
     // between below-plane and above-plane geometry later to preserve XY-plane depth ordering.
     if (!is3DMode) {
-        if (showGrid) {
+        if (effective.showGrid) {
             Plotting::PlotRenderer::drawGrid(dl, vt);
         }
-        if (showCoordinates) {
+        if (effective.showCoordinates) {
             Plotting::PlotRenderer::drawAxes(dl, vt);
             Plotting::PlotRenderer::drawAxisLabels(dl, vt);
         }
     }
 
-    const bool isDraggingLeft = isActive && ImGui::IsMouseDragging(ImGuiMouseButton_Left);
-    const bool isZoomingView = isHovered && (ImGui::GetIO().MouseWheel != 0.0f);
-    const bool useInteractive3DThrottle =
-        settings.optimizeRendering && scene.hasVisible3D() && is3DMode &&
-        (isDraggingLeft || isZoomingView);
-
-    // Panning/zooming implicit F(x,y,z)=0 changes the sampled domain, which invalidates the mesh cache
-    // and can force a full O(N^3) remesh every mouse move. Temporarily lowering mesh density (and
-    // suppressing wireframe lines) keeps interaction responsive, then full quality returns on release.
-    int interactiveSurfaceResolution = settings.surfaceResolution;
-    if (useInteractive3DThrottle) {
-        if (interactiveSurfaceResolution > 24) {
-            interactiveSurfaceResolution = (interactiveSurfaceResolution * 2) / 3;
-        }
-        if (interactiveSurfaceResolution < 24) {
-            interactiveSurfaceResolution = 24;
-        }
-    }
-
-    int interactiveImplicitResolution = settings.implicitSurfaceResolution;
-    if (useInteractive3DThrottle) {
-        if (interactiveImplicitResolution > 20) {
-            interactiveImplicitResolution /= 2;
-        }
-        if (interactiveImplicitResolution > 40) {
-            interactiveImplicitResolution = 40;
-        }
-        if (interactiveImplicitResolution < 20) {
-            interactiveImplicitResolution = 20;
-        }
-    }
-
-    const float interactionWireThickness = useInteractive3DThrottle ? 0.0f : effectiveWireThickness;
-
     // Helper to build Surface3DOptions from the current settings (avoids duplicating
     // the same field list for Surface3D and ScalarField3D render kinds).
     auto make3DOptions = [&]() {
         Plotting::PlotRenderer::Surface3DOptions options;
-        options.azimuthDeg = settings.azimuthDeg;
-        options.elevationDeg = settings.elevationDeg;
-        options.zScale = settings.zScale;
-        options.resolution = interactiveSurfaceResolution;
-        options.implicitResolution = interactiveImplicitResolution;
-        options.opacity = settings.surfaceOpacity;
-        options.wireOpacity = effectiveWireOpacity;
-        options.wireThickness = interactionWireThickness;
-        options.wireStride = effectiveWireStride;
-        options.showEnvelope = showEnvelope;
-        options.envelopeThickness = settings.envelopeThickness;
+        options.azimuthDeg = effective.azimuthDeg;
+        options.elevationDeg = effective.elevationDeg;
+        options.zScale = effective.zScale;
+        options.resolution = effective.surfaceResolution;
+        options.implicitResolution = effective.implicitSurfaceResolution;
+        options.opacity = effective.surfaceOpacity;
+        options.wireOpacity = effective.wireOpacity;
+        options.wireThickness = effective.wireThickness;
+        options.wireStride = effective.wireStride;
+        options.showEnvelope = effective.showEnvelope;
+        options.envelopeThickness = effective.envelopeThickness;
         // Axis triad is an alternative to coordinate overlays in 3D mode, so keep them
         // mutually exclusive to avoid redundant on-screen guidance.
-        options.showAxisTriad = showAxisTriad;
+        options.showAxisTriad = effective.showAxisTriad;
         return options;
     };
 
@@ -204,7 +171,7 @@ void PlotPanel::render(std::vector<Model::Formula>& formulas,
                             dl, vt, f.compiled.ast, f.color.data(), options);
                     } else {
                         Plotting::PlotRenderer::drawHeatmap(
-                            dl, vt, f.compiled.ast, f.color.data(), settings.heatmapOpacity);
+                            dl, vt, f.compiled.ast, f.color.data(), effective.heatmapOpacity);
                     }
                     break;
                 case FormulaRenderKind::Implicit2D:
@@ -231,7 +198,7 @@ void PlotPanel::render(std::vector<Model::Formula>& formulas,
                             f.compiled.ast,
                             static_cast<float>(f.zSlice),
                             f.color.data(),
-                            settings.heatmapOpacity);
+                            effective.heatmapOpacity);
                     }
                     break;
                 default:
@@ -242,9 +209,9 @@ void PlotPanel::render(std::vector<Model::Formula>& formulas,
 
     if (is3DMode) {
         Plotting::PlotRenderer::Surface3DOptions reference3D;
-        reference3D.azimuthDeg = settings.azimuthDeg;
-        reference3D.elevationDeg = settings.elevationDeg;
-        reference3D.zScale = settings.zScale;
+        reference3D.azimuthDeg = effective.azimuthDeg;
+        reference3D.elevationDeg = effective.elevationDeg;
+        reference3D.zScale = effective.zScale;
 
         if (use3DGridPlaneInterleave) {
             drawFormulas(Plotting::PlotRenderer::SurfacePlanePass3D::BelowGridPlane, false);
@@ -252,19 +219,19 @@ void PlotPanel::render(std::vector<Model::Formula>& formulas,
             drawFormulas(Plotting::PlotRenderer::SurfacePlanePass3D::AboveGridPlane, true);
         } else {
             drawFormulas(Plotting::PlotRenderer::SurfacePlanePass3D::All, true);
-            if (showGrid) {
+            if (effective.showGrid) {
                 Plotting::PlotRenderer::drawGrid3D(dl, vt, reference3D);
             }
         }
 
-        if (showCoordinates) {
+        if (effective.showCoordinates) {
             Plotting::PlotRenderer::drawAxes3D(dl, vt, reference3D);
         }
     } else {
         drawFormulas(Plotting::PlotRenderer::SurfacePlanePass3D::All, true);
     }
 
-    if (showCanvasBorder) {
+    if (effective.showCanvasBorder) {
         dl->AddRect(pos, ImVec2(pos.x + size.x, pos.y + size.y),
                     IM_COL32(100, 100, 100, 255));
     }
@@ -320,7 +287,7 @@ void PlotPanel::render(std::vector<Model::Formula>& formulas,
 
     float hudAlpha = 0.0f;
     PlotHudMode hudMode = settings.hudMode;
-    if (showHud && hudMode != PlotHudMode::Off) {
+    if (effective.showHud && hudMode != PlotHudMode::Off) {
         if (hudMode == PlotHudMode::OnlyWhileInteracting) {
             const double elapsed = now - m_lastHudInteractionTime;
             if (elapsed <= 0.90) {
@@ -359,16 +326,17 @@ void PlotPanel::render(std::vector<Model::Formula>& formulas,
             hudLines.emplace_back(line);
             if (is3DMode) {
                 std::snprintf(line, sizeof(line), "Camera az %.1f  el %.1f  z %.2f",
-                              settings.azimuthDeg, settings.elevationDeg, settings.zScale);
+                              effective.azimuthDeg, effective.elevationDeg, effective.zScale);
                 hudLines.emplace_back(line);
                 std::snprintf(line, sizeof(line), "Wires %.2f opacity  stride %d",
-                              effectiveWireOpacity, effectiveWireStride);
+                              effective.wireOpacity, effective.wireStride);
                 hudLines.emplace_back(line);
             }
         } else if (is3DMode) {
             std::snprintf(line, sizeof(line), "%s x %.4g  y %.4g", sampleLabel, wx, wy);
             hudLines.emplace_back(line);
-            std::snprintf(line, sizeof(line), "Camera az %.1f  el %.1f", settings.azimuthDeg, settings.elevationDeg);
+            std::snprintf(line, sizeof(line), "Camera az %.1f  el %.1f",
+                          effective.azimuthDeg, effective.elevationDeg);
             hudLines.emplace_back(line);
         } else {
             std::snprintf(line, sizeof(line), "%s x %.4g  y %.4g", sampleLabel, wx, wy);

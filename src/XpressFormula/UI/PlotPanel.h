@@ -5,22 +5,9 @@
 #include "../Core/ViewTransform.h"
 #include "../Model/Formula.h"
 #include "../Model/SceneSummary.h"
-#include <array>
 #include <vector>
 
 namespace XpressFormula::UI {
-
-struct PlotRenderOverrides {
-    bool active = false;
-    bool showGrid = true;
-    bool showCoordinates = true;
-    bool showWires = true;
-    bool showEnvelope = true;
-    bool showAxisTriad = true;
-    bool showHud = true;
-    bool showCanvasBorder = true;
-    std::array<float, 4> backgroundColor = { 0.098f, 0.098f, 0.118f, 1.0f };
-};
 
 /// Renders the main plot canvas with mouse interaction (pan & zoom).
 class PlotPanel {
@@ -28,7 +15,8 @@ public:
     void render(std::vector<Model::Formula>& formulas, Core::ViewTransform& vt,
                 PlotSettings& settings,
                 const Model::SceneSummary& scene,
-                const PlotRenderOverrides* overrides = nullptr);
+                const PlotRenderOverrides* overrides = nullptr,
+                const PlotQualityDecision* qualityDecision = nullptr);
 
 private:
     double m_lastHudInteractionTime = -1000.0;

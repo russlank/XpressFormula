@@ -156,16 +156,6 @@ bool copyUnicodeTextToClipboard(HWND owner, const std::wstring& text) {
     return true;
 }
 
-const char* xyRenderModePreferenceLabel(XpressFormula::UI::XYRenderModePreference preference) {
-    using XpressFormula::UI::XYRenderModePreference;
-    switch (preference) {
-        case XYRenderModePreference::Auto: return "Auto";
-        case XYRenderModePreference::Force3D: return "3D";
-        case XYRenderModePreference::Force2D: return "2D";
-        default: return "Auto";
-    }
-}
-
 const char* formulaRenderKindLabel(XpressFormula::UI::FormulaRenderKind kind) {
     using XpressFormula::UI::FormulaRenderKind;
     switch (kind) {
@@ -364,7 +354,7 @@ void Application::resetToDefaultProject() {
     m_plotSettings = PlotSettings{};
     m_plotSettings.applyCoordinateOverlayPolicy();
     m_formulaPanel.resetColorCycle(1);
-    m_exportDialogSettings = ExportDialogSettings{};
+    m_exportDialogSettings = defaultExportSettings();
     m_exportDialogSizeInitialized = false;
     markExportPreviewOutOfDate();
 }
@@ -1059,7 +1049,7 @@ void Application::renderFrame() {
         m_scheduledCopyPlotImage = false;
     }
 
-    if (m_exportDialogOpen && m_exportDialogSettings.autoRefreshPreview &&
+    if (m_exportDialogOpen && m_exportDialogSettings.quality.autoRefreshPreview &&
         m_exportPreviewDirty && !m_exportPreviewRefreshRequested) {
         const auto elapsed = std::chrono::steady_clock::now() - m_exportPreviewLastChanged;
         if (elapsed >= std::chrono::milliseconds(350)) {
@@ -1236,17 +1226,7 @@ void Application::renderFrame() {
     renderPlotToolbar(scene);
     PlotRenderOverrides exportOverrides;
     if (m_pendingSavePlotImage || m_pendingCopyPlotImage) {
-        exportOverrides.active = true;
-        exportOverrides.showGrid = m_pendingExportSettings.showGrid;
-        exportOverrides.showCoordinates = m_pendingExportSettings.showCoordinates;
-        exportOverrides.showWires = m_pendingExportSettings.showWires;
-        exportOverrides.showEnvelope = m_pendingExportSettings.showEnvelope;
-        exportOverrides.showAxisTriad = isAxisTriadVisible(
-            m_pendingExportSettings.showCoordinates,
-            m_pendingExportSettings.showAxisTriad);
-        exportOverrides.showHud = false;
-        exportOverrides.showCanvasBorder = false;
-        exportOverrides.backgroundColor = resolveExportBackgroundColor(m_pendingExportSettings);
+        exportOverrides = plotRenderOverridesForExport(m_pendingExportSettings);
     }
     m_plotPanel.render(m_formulas, m_viewTransform, m_plotSettings, scene,
                        exportOverrides.active ? &exportOverrides : nullptr);
@@ -1443,10 +1423,10 @@ void Application::initialiseExportDialogSize() {
     if (width <= 0) width = 1024;
     if (height <= 0) height = 768;
 
-    m_exportDialogSettings.width = width;
-    m_exportDialogSettings.height = height;
-    m_exportDialogSettings.scale = 1;
-    m_exportDialogSettings.selectedSizePreset = 0;
+    m_exportDialogSettings.size.width = width;
+    m_exportDialogSettings.size.height = height;
+    m_exportDialogSettings.size.scale = 1;
+    m_exportDialogSettings.size.selectedPreset = kExportSizePresetCurrent;
     m_exportDialogSizeInitialized = true;
 }
 
@@ -1459,16 +1439,10 @@ void Application::renderExportDialog(float, float) {
         m_exportDialogPopupOpenNextFrame = true;
         m_exportDialogCenterOnOpen = true;
         m_exportDialogSizeInitialized = false;
-        if (m_exportDialogSettings.selectedProfile == ExportProfile::CurrentView) {
-            // The Current View profile mirrors the interactive visibility state at open time.
-            m_exportDialogSettings.showGrid = m_plotSettings.showGrid;
-            m_exportDialogSettings.showCoordinates = m_plotSettings.showCoordinates;
-            m_exportDialogSettings.showWires = m_plotSettings.showWires;
-            m_exportDialogSettings.showEnvelope = m_plotSettings.showSurfaceEnvelope;
-            m_exportDialogSettings.showAxisTriad = m_plotSettings.showAxisTriad;
+        if (m_exportDialogSettings.profile == ExportProfile::CurrentView) {
+            applyCurrentViewScene(m_exportDialogSettings, exportSceneSettingsFromPlot(m_plotSettings));
         }
-        resolveCoordinateOverlayPolicy(m_exportDialogSettings.showCoordinates,
-                                       m_exportDialogSettings.showAxisTriad);
+        normalizeExportSettings(m_exportDialogSettings);
         m_exportPreviewZoom = 0.0f;
         m_exportPreviewPanX = 0.0f;
         m_exportPreviewPanY = 0.0f;
@@ -1515,86 +1489,42 @@ void Application::renderExportDialog(float, float) {
             m_viewTransform.worldXMin(), m_viewTransform.worldXMax(),
             m_viewTransform.worldYMin(), m_viewTransform.worldYMax()
         };
+        const ExportSceneSettings currentScene = exportSceneSettingsFromPlot(m_plotSettings);
         auto& settings = m_exportDialogSettings;
-        settings.selectedSizePreset = std::clamp(settings.selectedSizePreset, 0,
-            static_cast<int>(exportSizePresets().size()) - 1);
-        settings.scale = std::clamp(settings.scale, 1, 4);
-        previewChanged = resolveCoordinateOverlayPolicy(settings.showCoordinates,
-                                                        settings.showAxisTriad) ||
+        normalizeExportSettings(settings);
+        previewChanged = resolveCoordinateOverlayPolicy(settings.scene.showCoordinates,
+                                                        settings.scene.showAxisTriad) ||
                          previewChanged;
 
         auto applySelectedSizePreset = [&]() {
-            const auto& preset = exportSizePresets()[static_cast<size_t>(settings.selectedSizePreset)];
-            if (preset.custom) {
-                return;
-            }
-            const int baseWidth = preset.useCurrentSize ? sourceWidth : preset.width;
-            const int baseHeight = preset.useCurrentSize ? sourceHeight : preset.height;
-            if (baseWidth <= 0 || baseHeight <= 0) {
-                return;
-            }
-            settings.width = clampExportDimension(baseWidth * settings.scale);
-            settings.height = clampExportDimension(baseHeight * settings.scale);
+            applyExportSizePreset(settings, sourceWidth, sourceHeight);
         };
 
         auto markCustomProfile = [&]() {
-            if (settings.selectedProfile != ExportProfile::Custom) {
-                settings.selectedProfile = ExportProfile::Custom;
+            if (syncExportProfileAfterManualChange(settings, &currentScene)) {
                 m_redrawRequested = true;
             }
         };
 
         auto markCustomSize = [&]() {
-            settings.selectedSizePreset = static_cast<int>(exportSizePresets().size()) - 1;
+            markExportSizeCustom(settings);
             markCustomProfile();
         };
 
         auto applyExportProfile = [&](ExportProfile profile) {
-            settings.selectedProfile = profile;
             if (profile == ExportProfile::Custom) {
+                settings.profile = ExportProfile::Custom;
                 m_exportStatus = "Custom export profile selected.";
                 return;
             }
 
-            const ExportProfileSettings profileSettings = exportProfileSettings(profile);
-            settings.selectedSizePreset = std::clamp(
-                profileSettings.selectedSizePreset,
-                0,
-                static_cast<int>(exportSizePresets().size()) - 1);
-            settings.scale = std::clamp(profileSettings.scale, 1, 4);
-            settings.lockAspectRatio = profileSettings.lockAspectRatio;
-            settings.grayscaleOutput = profileSettings.grayscaleOutput;
-            settings.showGrid = profileSettings.showGrid;
-            settings.showCoordinates = profileSettings.showCoordinates;
-            settings.showWires = profileSettings.showWires;
-            settings.showEnvelope = profileSettings.showEnvelope;
-            settings.showAxisTriad = profileSettings.showAxisTriad;
-            settings.backgroundMode = profileSettings.backgroundMode;
-            settings.format = profileSettings.format;
-            settings.aspectMode = profileSettings.aspectMode;
-            settings.qualityMode = profileSettings.qualityMode;
-            settings.quality = profileSettings.quality;
-            settings.previewQuality = profileSettings.previewQuality;
-            settings.autoRefreshPreview = profileSettings.autoRefreshPreview;
-            settings.openAfterSave = profileSettings.openAfterSave;
-            settings.showInFolderAfterSave = profileSettings.showInFolderAfterSave;
-            settings.copyPathAfterSave = profileSettings.copyPathAfterSave;
-            settings.saveMetadataSidecar = profileSettings.saveMetadataSidecar;
-
-            if (profile == ExportProfile::CurrentView) {
-                settings.showGrid = m_plotSettings.showGrid;
-                settings.showCoordinates = m_plotSettings.showCoordinates;
-                settings.showWires = m_plotSettings.showWires;
-                settings.showEnvelope = m_plotSettings.showSurfaceEnvelope;
-                settings.showAxisTriad = m_plotSettings.showAxisTriad;
-            }
-            resolveCoordinateOverlayPolicy(settings.showCoordinates, settings.showAxisTriad);
+            settings = exportSettingsForProfile(profile, &currentScene);
             applySelectedSizePreset();
             m_exportStatus = std::string("Applied export profile: ") + exportProfileLabel(profile) + ".";
         };
 
         auto resetExportSettings = [&]() {
-            settings = ExportDialogSettings{};
+            settings = defaultExportSettings();
             m_exportDialogSizeInitialized = false;
             initialiseExportDialogSize();
             applyExportProfile(ExportProfile::CurrentView);
@@ -1658,9 +1588,9 @@ void Application::renderExportDialog(float, float) {
         const float settingsPaneWidth = m_exportSettingsPaneWidth;
 
         ImGui::BeginChild("##ExportSettingsPane", ImVec2(settingsPaneWidth, 0.0f), true);
-        if (ImGui::BeginCombo("Profile", exportProfileLabel(settings.selectedProfile))) {
+        if (ImGui::BeginCombo("Profile", exportProfileLabel(settings.profile))) {
             for (ExportProfile profile : exportProfiles()) {
-                const bool selected = (settings.selectedProfile == profile);
+                const bool selected = (settings.profile == profile);
                 if (ImGui::Selectable(exportProfileLabel(profile), selected)) {
                     applyExportProfile(profile);
                     previewChanged = (profile != ExportProfile::Custom) || previewChanged;
@@ -1683,7 +1613,7 @@ void Application::renderExportDialog(float, float) {
                 }
 
                 if (ImGui::Button("Use Current", ImVec2(ImGui::GetContentRegionAvail().x, 0.0f))) {
-                    settings.selectedSizePreset = 0;
+                    settings.size.selectedPreset = kExportSizePresetCurrent;
                     applySelectedSizePreset();
                     markCustomProfile();
                     previewChanged = true;
@@ -1691,12 +1621,12 @@ void Application::renderExportDialog(float, float) {
 
                 ImGui::Spacing();
                 const auto& presets = exportSizePresets();
-                const char* presetLabel = presets[static_cast<size_t>(settings.selectedSizePreset)].label;
+                const char* presetLabel = presets[static_cast<size_t>(settings.size.selectedPreset)].label;
                 if (ImGui::BeginCombo("Preset", presetLabel)) {
                     for (int i = 0; i < static_cast<int>(presets.size()); ++i) {
-                        const bool selected = (settings.selectedSizePreset == i);
+                        const bool selected = (settings.size.selectedPreset == i);
                         if (ImGui::Selectable(presets[static_cast<size_t>(i)].label, selected)) {
-                            settings.selectedSizePreset = i;
+                            settings.size.selectedPreset = i;
                             applySelectedSizePreset();
                             markCustomProfile();
                             previewChanged = !presets[static_cast<size_t>(i)].custom || previewChanged;
@@ -1708,19 +1638,19 @@ void Application::renderExportDialog(float, float) {
                     ImGui::EndCombo();
                 }
 
-                std::string scaleLabel = std::to_string(settings.scale) + "x";
+                std::string scaleLabel = std::to_string(settings.size.scale) + "x";
                 if (ImGui::BeginCombo("Scale", scaleLabel.c_str())) {
                     for (const int scaleOption : exportScaleOptions()) {
                         std::string optionLabel = std::to_string(scaleOption) + "x";
-                        const bool selected = (settings.scale == scaleOption);
+                        const bool selected = (settings.size.scale == scaleOption);
                         if (ImGui::Selectable(optionLabel.c_str(), selected)) {
-                            const int previousScale = (std::max)(1, settings.scale);
-                            settings.scale = scaleOption;
-                            if (exportSizePresets()[static_cast<size_t>(settings.selectedSizePreset)].custom) {
-                                settings.width = clampExportDimension(static_cast<int>(
-                                    std::lround(static_cast<double>(settings.width) * scaleOption / previousScale)));
-                                settings.height = clampExportDimension(static_cast<int>(
-                                    std::lround(static_cast<double>(settings.height) * scaleOption / previousScale)));
+                            const int previousScale = (std::max)(1, settings.size.scale);
+                            settings.size.scale = scaleOption;
+                            if (exportSizePresets()[static_cast<size_t>(settings.size.selectedPreset)].custom) {
+                                settings.size.width = clampExportDimension(static_cast<int>(
+                                    std::lround(static_cast<double>(settings.size.width) * scaleOption / previousScale)));
+                                settings.size.height = clampExportDimension(static_cast<int>(
+                                    std::lround(static_cast<double>(settings.size.height) * scaleOption / previousScale)));
                             } else {
                                 applySelectedSizePreset();
                             }
@@ -1734,27 +1664,27 @@ void Application::renderExportDialog(float, float) {
                     ImGui::EndCombo();
                 }
 
-                int width = settings.width;
-                int height = settings.height;
+                int width = settings.size.width;
+                int height = settings.size.height;
                 const int previousWidth = (std::max)(1, width);
                 const int previousHeight = (std::max)(1, height);
                 const bool widthChanged = ImGui::InputInt("Width", &width, 16, 128);
                 const bool heightChanged = ImGui::InputInt("Height", &height, 16, 128);
                 validateExportSize(width, height);
 
-                if (settings.lockAspectRatio && widthChanged && !heightChanged) {
+                if (settings.size.lockAspectRatio && widthChanged && !heightChanged) {
                     height = aspectLockedHeight(width, previousWidth, previousHeight);
-                } else if (settings.lockAspectRatio && heightChanged && !widthChanged) {
+                } else if (settings.size.lockAspectRatio && heightChanged && !widthChanged) {
                     width = aspectLockedWidth(height, previousWidth, previousHeight);
                 }
 
                 if (widthChanged || heightChanged) {
-                    settings.width = width;
-                    settings.height = height;
+                    settings.size.width = width;
+                    settings.size.height = height;
                     markCustomSize();
                     previewChanged = true;
                 }
-                if (ImGui::Checkbox("Lock Aspect Ratio", &settings.lockAspectRatio)) {
+                if (ImGui::Checkbox("Lock Aspect Ratio", &settings.size.lockAspectRatio)) {
                     markCustomProfile();
                     previewChanged = true;
                 }
@@ -1768,8 +1698,8 @@ void Application::renderExportDialog(float, float) {
                     ExportAspectMode::StretchToOutput
                 };
                 for (ExportAspectMode mode : aspectModes) {
-                    if (ImGui::RadioButton(exportAspectModeLabel(mode), settings.aspectMode == mode)) {
-                        settings.aspectMode = mode;
+                    if (ImGui::RadioButton(exportAspectModeLabel(mode), settings.output.aspectMode == mode)) {
+                        settings.output.aspectMode = mode;
                         markCustomProfile();
                         previewChanged = true;
                     }
@@ -1777,7 +1707,10 @@ void Application::renderExportDialog(float, float) {
                 }
 
                 const auto resolvedView =
-                    resolveExportView(settings.width, settings.height, sourceBounds, settings.aspectMode);
+                    resolveExportView(settings.size.width,
+                                      settings.size.height,
+                                      sourceBounds,
+                                      settings.output.aspectMode);
                 ImGui::Spacing();
                 ImGui::Text("X: [%.4g, %.4g]",
                             resolvedView.visibleBounds.xMin, resolvedView.visibleBounds.xMax);
@@ -1795,14 +1728,12 @@ void Application::renderExportDialog(float, float) {
                                 resolvedView.marginTopPx + resolvedView.marginBottomPx);
                 }
 
-                const ExportSupersampling sampling =
-                    settings.qualityMode == ExportQualityMode::Override
-                        ? settings.quality.supersampling
-                        : ExportSupersampling::Off;
-                const auto estimatedBytes = estimateRgbaBufferBytes(settings.width, settings.height, sampling);
+                const ExportSupersampling sampling = effectiveExportSupersampling(settings);
+                const auto estimatedBytes = estimateRgbaBufferBytes(
+                    settings.size.width, settings.size.height, sampling);
                 const double estimatedMiB = bytesToMiB(estimatedBytes);
                 ImGui::Spacing();
-                ImGui::Text("Output: %d x %d", settings.width, settings.height);
+                ImGui::Text("Output: %d x %d", settings.size.width, settings.size.height);
                 ImGui::Text("Render buffer: %.1f MiB", estimatedMiB);
                 if (estimatedMiB >= kLargeExportWarningMiB) {
                     ImGui::TextColored(ImVec4(1.0f, 0.68f, 0.22f, 1.0f),
@@ -1812,7 +1743,7 @@ void Application::renderExportDialog(float, float) {
             }
 
             if (ImGui::BeginTabItem("Appearance")) {
-                int backgroundMode = static_cast<int>(settings.backgroundMode);
+                int backgroundMode = static_cast<int>(settings.appearance.backgroundMode);
                 const ExportBackgroundMode backgroundModes[] = {
                     ExportBackgroundMode::Current,
                     ExportBackgroundMode::Transparent,
@@ -1824,40 +1755,40 @@ void Application::renderExportDialog(float, float) {
                     const int modeValue = static_cast<int>(mode);
                     if (ImGui::RadioButton(exportBackgroundModeLabel(mode), backgroundMode == modeValue)) {
                         backgroundMode = modeValue;
-                        settings.backgroundMode = mode;
+                        settings.appearance.backgroundMode = mode;
                         markCustomProfile();
                         previewChanged = true;
                     }
                 }
 
-                if (settings.backgroundMode == ExportBackgroundMode::Custom) {
-                    if (ImGui::ColorEdit3("Custom Color", settings.backgroundColor.data(),
+                if (settings.appearance.backgroundMode == ExportBackgroundMode::Custom) {
+                    if (ImGui::ColorEdit3("Custom Color", settings.appearance.backgroundColor.data(),
                                           ImGuiColorEditFlags_DisplayRGB)) {
                         markCustomProfile();
                         previewChanged = true;
                     }
-                    if (ImGui::SliderFloat("Opacity", &settings.backgroundColor[3],
+                    if (ImGui::SliderFloat("Opacity", &settings.appearance.backgroundColor[3],
                                            0.0f, 1.0f, "%.2f")) {
                         markCustomProfile();
                         previewChanged = true;
                     }
-                } else if (settings.backgroundMode == ExportBackgroundMode::Transparent) {
+                } else if (settings.appearance.backgroundMode == ExportBackgroundMode::Transparent) {
                     ImGui::TextDisabled("Transparency is best preserved by PNG output.");
-                    if (settings.format == ExportFormat::Bmp) {
+                    if (settings.output.format == ExportFormat::Bmp) {
                         ImGui::TextColored(ImVec4(1.0f, 0.68f, 0.22f, 1.0f),
                                            "BMP export does not preserve alpha transparency.");
                     }
                 }
 
                 ImGui::Spacing();
-                if (ImGui::RadioButton("Color", !settings.grayscaleOutput)) {
-                    settings.grayscaleOutput = false;
+                if (ImGui::RadioButton("Color", !settings.appearance.grayscaleOutput)) {
+                    settings.appearance.grayscaleOutput = false;
                     markCustomProfile();
                     previewChanged = true;
                 }
                 ImGui::SameLine();
-                if (ImGui::RadioButton("Grayscale", settings.grayscaleOutput)) {
-                    settings.grayscaleOutput = true;
+                if (ImGui::RadioButton("Grayscale", settings.appearance.grayscaleOutput)) {
+                    settings.appearance.grayscaleOutput = true;
                     markCustomProfile();
                     previewChanged = true;
                 }
@@ -1865,30 +1796,31 @@ void Application::renderExportDialog(float, float) {
             }
 
             if (ImGui::BeginTabItem("Scene")) {
-                if (ImGui::Checkbox("Grid", &settings.showGrid)) {
+                if (ImGui::Checkbox("Grid", &settings.scene.showGrid)) {
                     markCustomProfile();
                     previewChanged = true;
                 }
-                if (ImGui::Checkbox("Coordinates", &settings.showCoordinates)) {
+                if (ImGui::Checkbox("Coordinates", &settings.scene.showCoordinates)) {
                     markCustomProfile();
-                    resolveCoordinateOverlayPolicy(settings.showCoordinates, settings.showAxisTriad);
+                    resolveCoordinateOverlayPolicy(settings.scene.showCoordinates,
+                                                   settings.scene.showAxisTriad);
                     previewChanged = true;
                 }
-                if (ImGui::Checkbox("Wires", &settings.showWires)) {
-                    markCustomProfile();
-                    previewChanged = true;
-                }
-                if (ImGui::Checkbox("Envelope", &settings.showEnvelope)) {
+                if (ImGui::Checkbox("Wires", &settings.scene.showWires)) {
                     markCustomProfile();
                     previewChanged = true;
                 }
-                ImGui::BeginDisabled(settings.showCoordinates);
-                if (ImGui::Checkbox("Axis Triad", &settings.showAxisTriad)) {
+                if (ImGui::Checkbox("Envelope", &settings.scene.showEnvelope)) {
+                    markCustomProfile();
+                    previewChanged = true;
+                }
+                ImGui::BeginDisabled(settings.scene.showCoordinates);
+                if (ImGui::Checkbox("Axis Triad", &settings.scene.showAxisTriad)) {
                     markCustomProfile();
                     previewChanged = true;
                 }
                 ImGui::EndDisabled();
-                if (settings.showCoordinates) {
+                if (settings.scene.showCoordinates) {
                     ImGui::SetItemTooltip("Axis triad is disabled while coordinate axes and labels are enabled.");
                 }
 
@@ -1904,10 +1836,10 @@ void Application::renderExportDialog(float, float) {
             }
 
             if (ImGui::BeginTabItem("Quality")) {
-                bool overrideQuality = (settings.qualityMode == ExportQualityMode::Override);
+                bool overrideQuality = (settings.quality.mode == ExportQualityMode::Override);
                 if (ImGui::Checkbox("Override Interactive Quality", &overrideQuality)) {
-                    settings.qualityMode = overrideQuality ? ExportQualityMode::Override
-                                                           : ExportQualityMode::Interactive;
+                    settings.quality.mode = overrideQuality ? ExportQualityMode::Override
+                                                            : ExportQualityMode::Interactive;
                     markCustomProfile();
                     previewChanged = true;
                 }
@@ -1927,7 +1859,9 @@ void Application::renderExportDialog(float, float) {
                     for (ExportQualityPreset preset : qualityPresets) {
                         const bool selected = (settings.quality.preset == preset);
                         if (ImGui::Selectable(exportQualityPresetLabel(preset), selected)) {
+                            const ExportQualityMode currentMode = settings.quality.mode;
                             settings.quality = qualitySettingsForPreset(preset);
+                            settings.quality.mode = currentMode;
                             markCustomProfile();
                             previewChanged = true;
                         }
@@ -1938,9 +1872,10 @@ void Application::renderExportDialog(float, float) {
                     ImGui::EndCombo();
                 }
 
+                const PlotLimits& limits = plotLimits();
                 int surfaceResolution = settings.quality.surfaceResolution;
                 if (ImGui::InputInt("Surface Density", &surfaceResolution, 4, 16)) {
-                    settings.quality.surfaceResolution = std::clamp(surfaceResolution, 16, 256);
+                    settings.quality.surfaceResolution = clampSurfaceResolution(surfaceResolution);
                     settings.quality.preset = ExportQualityPreset::Custom;
                     markCustomProfile();
                     previewChanged = true;
@@ -1948,21 +1883,24 @@ void Application::renderExportDialog(float, float) {
 
                 int implicitResolution = settings.quality.implicitSurfaceResolution;
                 if (ImGui::InputInt("Implicit Resolution", &implicitResolution, 4, 16)) {
-                    settings.quality.implicitSurfaceResolution = std::clamp(implicitResolution, 16, 192);
+                    settings.quality.implicitSurfaceResolution =
+                        clampImplicitSurfaceResolution(implicitResolution);
                     settings.quality.preset = ExportQualityPreset::Custom;
                     markCustomProfile();
                     previewChanged = true;
                 }
 
-                ImGui::BeginDisabled(!settings.showWires);
+                ImGui::BeginDisabled(!settings.scene.showWires);
                 if (ImGui::SliderFloat("Wire Thickness Scale", &settings.quality.wireThicknessScale,
-                                       0.25f, 3.0f, "%.2fx")) {
+                                       limits.wireThicknessScale.min,
+                                       limits.wireThicknessScale.max,
+                                       "%.2fx")) {
                     settings.quality.preset = ExportQualityPreset::Custom;
                     markCustomProfile();
                     previewChanged = true;
                 }
                 ImGui::EndDisabled();
-                if (!settings.showWires) {
+                if (!settings.scene.showWires) {
                     ImGui::SetItemTooltip("Wire thickness scale has no effect while wires are excluded.");
                 }
 
@@ -1992,34 +1930,34 @@ void Application::renderExportDialog(float, float) {
             }
 
             if (ImGui::BeginTabItem("Output")) {
-                if (ImGui::RadioButton("PNG", settings.format == ExportFormat::Png)) {
-                    settings.format = ExportFormat::Png;
+                if (ImGui::RadioButton("PNG", settings.output.format == ExportFormat::Png)) {
+                    settings.output.format = ExportFormat::Png;
                     markCustomProfile();
                     previewChanged = true;
                 }
                 ImGui::SameLine();
-                if (ImGui::RadioButton("BMP", settings.format == ExportFormat::Bmp)) {
-                    settings.format = ExportFormat::Bmp;
+                if (ImGui::RadioButton("BMP", settings.output.format == ExportFormat::Bmp)) {
+                    settings.output.format = ExportFormat::Bmp;
                     markCustomProfile();
                     previewChanged = true;
                 }
-                if (settings.format == ExportFormat::Bmp &&
-                    settings.backgroundMode == ExportBackgroundMode::Transparent) {
+                if (settings.output.format == ExportFormat::Bmp &&
+                    settings.appearance.backgroundMode == ExportBackgroundMode::Transparent) {
                     ImGui::TextColored(ImVec4(1.0f, 0.68f, 0.22f, 1.0f),
                                        "BMP flattens transparency in many viewers. Use PNG for alpha.");
                 }
 
                 ImGui::Spacing();
-                if (ImGui::Checkbox("Open Image After Save", &settings.openAfterSave)) {
+                if (ImGui::Checkbox("Open Image After Save", &settings.output.openAfterSave)) {
                     markCustomProfile();
                 }
-                if (ImGui::Checkbox("Show In Folder After Save", &settings.showInFolderAfterSave)) {
+                if (ImGui::Checkbox("Show In Folder After Save", &settings.output.showInFolderAfterSave)) {
                     markCustomProfile();
                 }
-                if (ImGui::Checkbox("Copy Path After Save", &settings.copyPathAfterSave)) {
+                if (ImGui::Checkbox("Copy Path After Save", &settings.output.copyPathAfterSave)) {
                     markCustomProfile();
                 }
-                if (ImGui::Checkbox("Write Metadata Sidecar JSON", &settings.saveMetadataSidecar)) {
+                if (ImGui::Checkbox("Write Metadata Sidecar JSON", &settings.output.saveMetadataSidecar)) {
                     markCustomProfile();
                 }
                 ImGui::SetItemTooltip("Writes a versioned .json sidecar next to the exported image.");
@@ -2068,11 +2006,11 @@ void Application::renderExportDialog(float, float) {
             requestExportPreviewRefresh();
         }
         ImGui::SameLine();
-        bool autoRefresh = settings.autoRefreshPreview;
+        bool autoRefresh = settings.quality.autoRefreshPreview;
         if (ImGui::Checkbox("Auto Refresh", &autoRefresh)) {
-            settings.autoRefreshPreview = autoRefresh;
+            settings.quality.autoRefreshPreview = autoRefresh;
             markCustomProfile();
-            if (settings.autoRefreshPreview && m_exportPreviewDirty) {
+            if (settings.quality.autoRefreshPreview && m_exportPreviewDirty) {
                 m_exportPreviewLastChanged = std::chrono::steady_clock::now();
             }
             m_redrawRequested = true;
@@ -2082,11 +2020,11 @@ void Application::renderExportDialog(float, float) {
             ExportPreviewQuality::Normal
         };
         if (ImGui::BeginCombo("Preview Quality",
-                              exportPreviewQualityLabel(settings.previewQuality))) {
+                              exportPreviewQualityLabel(settings.quality.previewQuality))) {
             for (ExportPreviewQuality quality : previewQualityOptions) {
-                const bool selected = (settings.previewQuality == quality);
+                const bool selected = (settings.quality.previewQuality == quality);
                 if (ImGui::Selectable(exportPreviewQualityLabel(quality), selected)) {
-                    settings.previewQuality = quality;
+                    settings.quality.previewQuality = quality;
                     markCustomProfile();
                     markExportPreviewOutOfDate();
                 }
@@ -2102,25 +2040,22 @@ void Application::renderExportDialog(float, float) {
             requestExportPreviewRefresh();
         }
 
-        const ExportSupersampling effectiveSampling =
-            settings.qualityMode == ExportQualityMode::Override
-                ? settings.quality.supersampling
-                : ExportSupersampling::Off;
+        const ExportSupersampling effectiveSampling = effectiveExportSupersampling(settings);
         std::string samplingText = exportSupersamplingLabel(effectiveSampling);
         const int requestedSamplingFactor = supersamplingFactor(effectiveSampling);
         const int actualSamplingFactor =
-            effectiveSupersamplingFactor(settings.width, settings.height, effectiveSampling);
+            effectiveSupersamplingFactor(settings.size.width, settings.size.height, effectiveSampling);
         if (actualSamplingFactor != requestedSamplingFactor) {
             samplingText += " (effective ";
             samplingText += std::to_string(actualSamplingFactor);
             samplingText += "x)";
         }
         ImGui::Text("Output %d x %d  |  %s  |  %s  |  %s",
-                    settings.width, settings.height,
-                    exportFormatLabel(settings.format),
+                    settings.size.width, settings.size.height,
+                    exportFormatLabel(settings.output.format),
                     samplingText.c_str(),
-                    exportProfileLabel(settings.selectedProfile));
-        ImGui::TextDisabled("%s", exportAspectModeLabel(settings.aspectMode));
+                    exportProfileLabel(settings.profile));
+        ImGui::TextDisabled("%s", exportAspectModeLabel(settings.output.aspectMode));
 
         if (!m_exportPreviewStatus.empty()) {
             ImGui::TextWrapped("%s", m_exportPreviewStatus.c_str());
@@ -2230,24 +2165,21 @@ void Application::renderExportDialog(float, float) {
             m_scheduledSavePlotImage || m_scheduledCopyPlotImage ||
             m_pendingSavePlotImage || m_pendingCopyPlotImage ||
             m_exportPreviewRefreshRequested;
-        const ExportSupersampling footerSampling =
-            settings.qualityMode == ExportQualityMode::Override
-                ? settings.quality.supersampling
-                : ExportSupersampling::Off;
+        const ExportSupersampling footerSampling = effectiveExportSupersampling(settings);
         const double footerMiB = bytesToMiB(
-            estimateRgbaBufferBytes(settings.width, settings.height, footerSampling));
+            estimateRgbaBufferBytes(settings.size.width, settings.size.height, footerSampling));
         const char* footerPreviewState = m_exportPreviewRefreshRequested ? "Preview rendering"
             : (m_exportPreviewDirty ? "Preview out of date"
                                     : (m_exportPreviewSrv ? "Preview ready" : "Preview not rendered"));
         ImGui::Text("%s | %s | %d x %d | %s | %s | %.1f MiB | %s",
                     footerPreviewState,
-                    exportProfileLabel(settings.selectedProfile),
-                    settings.width,
-                    settings.height,
-                    exportFormatLabel(settings.format),
+                    exportProfileLabel(settings.profile),
+                    settings.size.width,
+                    settings.size.height,
+                    exportFormatLabel(settings.output.format),
                     exportSupersamplingLabel(footerSampling),
                     footerMiB,
-                    exportAspectModeLabel(settings.aspectMode));
+                    exportAspectModeLabel(settings.output.aspectMode));
         if (!m_exportStatus.empty()) {
             ImGui::SameLine();
             ImGui::TextDisabled("| %s", m_exportStatus.c_str());
@@ -2438,24 +2370,25 @@ bool Application::refreshExportPreviewTexture() {
 
     const ExportPreviewQuality requestedPreviewQuality = m_exportPreviewUseFinalQualityOnce
         ? ExportPreviewQuality::Final
-        : m_exportDialogSettings.previewQuality;
+        : m_exportDialogSettings.quality.previewQuality;
     m_exportPreviewUseFinalQualityOnce = false;
     const ExportPreviewSize previewSize =
-        resolveExportPreviewSize(m_exportDialogSettings.width,
-                                 m_exportDialogSettings.height,
+        resolveExportPreviewSize(m_exportDialogSettings.size.width,
+                                 m_exportDialogSettings.size.height,
                                  requestedPreviewQuality);
     const int previewW = previewSize.width;
     const int previewH = previewSize.height;
 
-    ExportDialogSettings previewSettings = m_exportDialogSettings;
-    previewSettings.width = previewW;
-    previewSettings.height = previewH;
+    ExportSettings previewSettings = m_exportDialogSettings;
+    previewSettings.size.width = previewW;
+    previewSettings.size.height = previewH;
     if (requestedPreviewQuality != ExportPreviewQuality::Final) {
-        previewSettings.qualityMode = ExportQualityMode::Override;
+        previewSettings.quality.mode = ExportQualityMode::Override;
         previewSettings.quality = qualitySettingsForPreset(
             requestedPreviewQuality == ExportPreviewQuality::Draft
                 ? ExportQualityPreset::Draft
                 : ExportQualityPreset::Normal);
+        previewSettings.quality.mode = ExportQualityMode::Override;
         previewSettings.quality.supersampling = ExportSupersampling::Off;
     }
 
@@ -2469,7 +2402,7 @@ bool Application::refreshExportPreviewTexture() {
     }
 
     unpremultiplyPixels(pixels);
-    if (previewSettings.grayscaleOutput) {
+    if (previewSettings.appearance.grayscaleOutput) {
         convertPixelsToGrayscaleRgba(pixels);
     }
 
@@ -2530,7 +2463,7 @@ bool Application::refreshExportPreviewTexture() {
     m_exportPreviewStatus = "Preview ready (" + std::to_string(renderedW) + "x" +
         std::to_string(renderedH) + ", " +
         exportPreviewQualityLabel(requestedPreviewQuality) + ", " +
-        exportAspectModeLabel(m_exportDialogSettings.aspectMode);
+        exportAspectModeLabel(m_exportDialogSettings.output.aspectMode);
     if (previewSize.reducedFromOutput) {
         m_exportPreviewStatus += ", reduced";
     }
@@ -2546,8 +2479,8 @@ void Application::applyExportPostProcessing(std::vector<std::uint8_t>& pixels,
     outputHeight = sourceHeight;
     outputPixels = pixels;
 
-    const int targetWidth = std::clamp(m_pendingExportSettings.width, 16, 8192);
-    const int targetHeight = std::clamp(m_pendingExportSettings.height, 16, 8192);
+    const int targetWidth = clampExportDimension(m_pendingExportSettings.size.width);
+    const int targetHeight = clampExportDimension(m_pendingExportSettings.size.height);
     if (targetWidth != sourceWidth || targetHeight != sourceHeight) {
         resizePixelsBilinear(pixels, sourceWidth, sourceHeight,
                              targetWidth, targetHeight, outputPixels);
@@ -2562,7 +2495,7 @@ void Application::applyExportPostProcessing(std::vector<std::uint8_t>& pixels,
     // PNG/clipboard consumers generally expect straight alpha color channels.
     unpremultiplyPixels(outputPixels);
 
-    if (m_pendingExportSettings.grayscaleOutput) {
+    if (m_pendingExportSettings.appearance.grayscaleOutput) {
         convertPixelsToGrayscale(outputPixels);
     }
 }
@@ -2670,7 +2603,7 @@ void Application::cleanupRenderTarget() {
 
 bool Application::promptSaveImagePath(std::wstring& path) {
     std::array<wchar_t, MAX_PATH> fileName = {};
-    const bool preferBmp = (m_pendingExportSettings.format == ExportFormat::Bmp);
+    const bool preferBmp = (m_pendingExportSettings.output.format == ExportFormat::Bmp);
     wcsncpy_s(fileName.data(), fileName.size(),
               preferBmp ? L"xpressformula-plot.bmp" : L"xpressformula-plot.png",
               _TRUNCATE);
@@ -2700,27 +2633,10 @@ bool Application::promptSaveImagePath(std::wstring& path) {
     return true;
 }
 
-std::array<float, 4> Application::resolveExportBackgroundColor(
-    const ExportDialogSettings& settings) const {
-    switch (settings.backgroundMode) {
-        case ExportBackgroundMode::Transparent:
-            return { 0.0f, 0.0f, 0.0f, 0.0f };
-        case ExportBackgroundMode::White:
-            return { 1.0f, 1.0f, 1.0f, 1.0f };
-        case ExportBackgroundMode::Black:
-            return { 0.0f, 0.0f, 0.0f, 1.0f };
-        case ExportBackgroundMode::Custom:
-            return settings.backgroundColor;
-        case ExportBackgroundMode::Current:
-        default:
-            return { 0.098f, 0.098f, 0.118f, 1.0f };
-    }
-}
-
 void Application::markExportPreviewOutOfDate() {
     m_exportPreviewDirty = true;
     m_exportPreviewLastChanged = std::chrono::steady_clock::now();
-    m_exportPreviewStatus = m_exportDialogSettings.autoRefreshPreview
+    m_exportPreviewStatus = m_exportDialogSettings.quality.autoRefreshPreview
         ? "Preview out of date. Auto refresh pending."
         : "Preview out of date.";
     m_redrawRequested = true;
@@ -2869,7 +2785,7 @@ bool Application::readTexturePixelsRgba(ID3D11Texture2D* sourceTexture,
     return true;
 }
 
-bool Application::renderPlotPixelsOffscreen(const Application::ExportDialogSettings& settings,
+bool Application::renderPlotPixelsOffscreen(const ExportSettings& settings,
                                             std::vector<std::uint8_t>& pixels,
                                             int& width, int& height) {
     width = 0;
@@ -2880,11 +2796,10 @@ bool Application::renderPlotPixelsOffscreen(const Application::ExportDialogSetti
         return false;
     }
 
-    const int outputWidth = clampExportDimension(settings.width);
-    const int outputHeight = clampExportDimension(settings.height);
-    const int samplingFactor = settings.qualityMode == ExportQualityMode::Override
-        ? effectiveSupersamplingFactor(outputWidth, outputHeight, settings.quality.supersampling)
-        : 1;
+    const int outputWidth = clampExportDimension(settings.size.width);
+    const int outputHeight = clampExportDimension(settings.size.height);
+    const int samplingFactor =
+        effectiveSupersamplingFactor(outputWidth, outputHeight, effectiveExportSupersampling(settings));
     const int targetWidth = clampExportDimension(outputWidth * samplingFactor);
     const int targetHeight = clampExportDimension(outputHeight * samplingFactor);
     const ExportWorldBounds sourceBounds{
@@ -2892,7 +2807,7 @@ bool Application::renderPlotPixelsOffscreen(const Application::ExportDialogSetti
         m_viewTransform.worldYMin(), m_viewTransform.worldYMax()
     };
     const ExportResolvedView resolvedView =
-        resolveExportView(targetWidth, targetHeight, sourceBounds, settings.aspectMode);
+        resolveExportView(targetWidth, targetHeight, sourceBounds, settings.output.aspectMode);
 
     D3D11_TEXTURE2D_DESC texDesc = {};
     texDesc.Width = static_cast<UINT>(targetWidth);
@@ -2972,16 +2887,6 @@ bool Application::renderPlotPixelsOffscreen(const Application::ExportDialogSetti
         Core::ViewTransform exportView = m_viewTransform;
         PlotSettings exportSettings = m_plotSettings;
         exportSettings.autoRotate = false;
-        if (settings.qualityMode == ExportQualityMode::Override) {
-            exportSettings.optimizeRendering = false;
-            exportSettings.surfaceResolution = std::clamp(settings.quality.surfaceResolution, 16, 256);
-            exportSettings.implicitSurfaceResolution =
-                std::clamp(settings.quality.implicitSurfaceResolution, 16, 192);
-            if (exportSettings.wireThickness > 0.0f) {
-                exportSettings.wireThickness = (std::max)(
-                    0.05f, exportSettings.wireThickness * settings.quality.wireThicknessScale);
-            }
-        }
 
         exportView.state.centerX = (resolvedView.visibleBounds.xMin + resolvedView.visibleBounds.xMax) * 0.5;
         exportView.state.centerY = (resolvedView.visibleBounds.yMin + resolvedView.visibleBounds.yMax) * 0.5;
@@ -2989,17 +2894,8 @@ bool Application::renderPlotPixelsOffscreen(const Application::ExportDialogSetti
         exportView.state.scaleY = resolvedView.scaleY;
         const Model::SceneSummary& scene = m_sceneSummary;
 
-        PlotRenderOverrides exportOverrides;
-        exportOverrides.active = true;
-        exportOverrides.showGrid = settings.showGrid;
-        exportOverrides.showCoordinates = settings.showCoordinates;
-        exportOverrides.showWires = settings.showWires;
-        exportOverrides.showEnvelope = settings.showEnvelope;
-        exportOverrides.showAxisTriad =
-            isAxisTriadVisible(settings.showCoordinates, settings.showAxisTriad);
-        exportOverrides.showHud = false;
-        exportOverrides.showCanvasBorder = false;
-        exportOverrides.backgroundColor = backgroundColor;
+        PlotRenderOverrides exportOverrides = plotRenderOverridesForExport(settings);
+        PlotQualityDecision exportQuality = plotQualityDecisionForExport(settings);
 
         ImGui::SetCursorScreenPos(
             ImVec2(windowPos.x + static_cast<float>(resolvedView.marginLeftPx),
@@ -3016,7 +2912,8 @@ bool Application::renderPlotPixelsOffscreen(const Application::ExportDialogSetti
                               ImGuiWindowFlags_NoSavedSettings |
                               ImGuiWindowFlags_NoInputs |
                               ImGuiWindowFlags_NoBackground)) {
-            m_plotPanel.render(m_formulas, exportView, exportSettings, scene, &exportOverrides);
+            m_plotPanel.render(m_formulas, exportView, exportSettings, scene,
+                               &exportOverrides, &exportQuality);
         }
         ImGui::EndChild();
         ImGui::PopStyleColor();
@@ -3060,7 +2957,7 @@ bool Application::saveImageToPath(const std::wstring& path,
     return savePngToPath(path, pixels, width, height, error);
 }
 
-std::string Application::buildExportMetadataJson(const ExportDialogSettings& settings,
+std::string Application::buildExportMetadataJson(const ExportSettings& settings,
                                                  const std::wstring& imagePath,
                                                  int width,
                                                  int height) const {
@@ -3074,12 +2971,12 @@ std::string Application::buildExportMetadataJson(const ExportDialogSettings& set
     };
 
     const int presetIndex = std::clamp(
-        settings.selectedSizePreset, 0, static_cast<int>(exportSizePresets().size()) - 1);
+        settings.size.selectedPreset, 0, static_cast<int>(exportSizePresets().size()) - 1);
     const auto& sizePreset = exportSizePresets()[static_cast<size_t>(presetIndex)];
     const std::array<float, 4> resolvedBackground = resolveExportBackgroundColor(settings);
     const std::string imagePathUtf8 = narrowUtf8(imagePath);
     std::filesystem::path imageFsPath(imagePath);
-    std::string actualFormat = exportFormatLabel(settings.format);
+    std::string actualFormat = exportFormatLabel(settings.output.format);
     std::wstring extension = imageFsPath.extension().wstring();
     std::transform(extension.begin(), extension.end(), extension.begin(),
                    [](wchar_t ch) { return static_cast<wchar_t>(std::towlower(ch)); });
@@ -3157,8 +3054,10 @@ std::string Application::buildExportMetadataJson(const ExportDialogSettings& set
     out << "    \"autoRotateSpeedDegPerSec\": " << m_plotSettings.autoRotateSpeedDegPerSec << "\n";
     out << "  },\n";
     out << "  \"display\": {\n";
-    out << "    \"xyRenderModePreference\": " << q(xyRenderModePreferenceLabel(m_plotSettings.xyRenderModePreference)) << ",\n";
+    out << "    \"xyRenderModePreference\": " << q(toDisplayLabel(m_plotSettings.xyRenderModePreference)) << ",\n";
+    out << "    \"xyRenderModePreferenceId\": " << q(toStorageName(m_plotSettings.xyRenderModePreference)) << ",\n";
     out << "    \"hudMode\": " << q(plotHudModeLabel(m_plotSettings.hudMode)) << ",\n";
+    out << "    \"hudModeId\": " << q(toStorageName(m_plotSettings.hudMode)) << ",\n";
     out << "    \"optimizeRendering\": " << jsonBool(m_plotSettings.optimizeRendering) << ",\n";
     out << "    \"showGrid\": " << jsonBool(m_plotSettings.showGrid) << ",\n";
     out << "    \"showCoordinates\": " << jsonBool(m_plotSettings.showCoordinates) << ",\n";
@@ -3176,45 +3075,55 @@ std::string Application::buildExportMetadataJson(const ExportDialogSettings& set
     out << "    \"heatmapOpacity\": " << m_plotSettings.heatmapOpacity << "\n";
     out << "  },\n";
     out << "  \"export\": {\n";
-    out << "    \"profile\": " << q(exportProfileLabel(settings.selectedProfile)) << ",\n";
-    out << "    \"requestedWidth\": " << settings.width << ",\n";
-    out << "    \"requestedHeight\": " << settings.height << ",\n";
+    out << "    \"profile\": " << q(exportProfileLabel(settings.profile)) << ",\n";
+    out << "    \"profileId\": " << q(toStorageName(settings.profile)) << ",\n";
+    out << "    \"requestedWidth\": " << settings.size.width << ",\n";
+    out << "    \"requestedHeight\": " << settings.size.height << ",\n";
     out << "    \"outputWidth\": " << width << ",\n";
     out << "    \"outputHeight\": " << height << ",\n";
-    out << "    \"scale\": " << settings.scale << ",\n";
+    out << "    \"scale\": " << settings.size.scale << ",\n";
     out << "    \"sizePreset\": " << q(sizePreset.label) << ",\n";
-    out << "    \"lockAspectRatio\": " << jsonBool(settings.lockAspectRatio) << ",\n";
-    out << "    \"format\": " << q(exportFormatLabel(settings.format)) << ",\n";
-    out << "    \"backgroundMode\": " << q(exportBackgroundModeLabel(settings.backgroundMode)) << ",\n";
-    out << "    \"customBackgroundColor\": " << colorArray(settings.backgroundColor) << ",\n";
+    out << "    \"sizePresetId\": " << q(sizePreset.storageName) << ",\n";
+    out << "    \"lockAspectRatio\": " << jsonBool(settings.size.lockAspectRatio) << ",\n";
+    out << "    \"format\": " << q(exportFormatLabel(settings.output.format)) << ",\n";
+    out << "    \"formatId\": " << q(toStorageName(settings.output.format)) << ",\n";
+    out << "    \"backgroundMode\": " << q(exportBackgroundModeLabel(settings.appearance.backgroundMode)) << ",\n";
+    out << "    \"backgroundModeId\": " << q(toStorageName(settings.appearance.backgroundMode)) << ",\n";
+    out << "    \"customBackgroundColor\": " << colorArray(settings.appearance.backgroundColor) << ",\n";
     out << "    \"resolvedBackgroundColor\": " << colorArray(resolvedBackground) << ",\n";
-    out << "    \"grayscaleOutput\": " << jsonBool(settings.grayscaleOutput) << ",\n";
-    out << "    \"aspectMode\": " << q(exportAspectModeLabel(settings.aspectMode)) << ",\n";
-    out << "    \"showGrid\": " << jsonBool(settings.showGrid) << ",\n";
-    out << "    \"showCoordinates\": " << jsonBool(settings.showCoordinates) << ",\n";
-    out << "    \"showWires\": " << jsonBool(settings.showWires) << ",\n";
-    out << "    \"showEnvelope\": " << jsonBool(settings.showEnvelope) << ",\n";
-    out << "    \"showAxisTriad\": " << jsonBool(settings.showAxisTriad) << ",\n";
+    out << "    \"grayscaleOutput\": " << jsonBool(settings.appearance.grayscaleOutput) << ",\n";
+    out << "    \"aspectMode\": " << q(exportAspectModeLabel(settings.output.aspectMode)) << ",\n";
+    out << "    \"aspectModeId\": " << q(toStorageName(settings.output.aspectMode)) << ",\n";
+    out << "    \"showGrid\": " << jsonBool(settings.scene.showGrid) << ",\n";
+    out << "    \"showCoordinates\": " << jsonBool(settings.scene.showCoordinates) << ",\n";
+    out << "    \"showWires\": " << jsonBool(settings.scene.showWires) << ",\n";
+    out << "    \"showEnvelope\": " << jsonBool(settings.scene.showEnvelope) << ",\n";
+    out << "    \"showAxisTriad\": " << jsonBool(settings.scene.showAxisTriad) << ",\n";
     out << "    \"effectiveShowAxisTriad\": "
-        << jsonBool(isAxisTriadVisible(settings.showCoordinates, settings.showAxisTriad)) << ",\n";
-    out << "    \"qualityMode\": " << q(exportQualityModeLabel(settings.qualityMode)) << ",\n";
+        << jsonBool(isAxisTriadVisible(settings.scene.showCoordinates,
+                                       settings.scene.showAxisTriad)) << ",\n";
+    out << "    \"qualityMode\": " << q(exportQualityModeLabel(settings.quality.mode)) << ",\n";
+    out << "    \"qualityModeId\": " << q(toStorageName(settings.quality.mode)) << ",\n";
     out << "    \"qualityPreset\": " << q(exportQualityPresetLabel(settings.quality.preset)) << ",\n";
+    out << "    \"qualityPresetId\": " << q(toStorageName(settings.quality.preset)) << ",\n";
     out << "    \"surfaceResolution\": " << settings.quality.surfaceResolution << ",\n";
     out << "    \"implicitSurfaceResolution\": " << settings.quality.implicitSurfaceResolution << ",\n";
     out << "    \"wireThicknessScale\": " << settings.quality.wireThicknessScale << ",\n";
     out << "    \"supersampling\": " << q(exportSupersamplingLabel(settings.quality.supersampling)) << ",\n";
-    out << "    \"previewQuality\": " << q(exportPreviewQualityLabel(settings.previewQuality)) << ",\n";
-    out << "    \"autoRefreshPreview\": " << jsonBool(settings.autoRefreshPreview) << ",\n";
-    out << "    \"openAfterSave\": " << jsonBool(settings.openAfterSave) << ",\n";
-    out << "    \"showInFolderAfterSave\": " << jsonBool(settings.showInFolderAfterSave) << ",\n";
-    out << "    \"copyPathAfterSave\": " << jsonBool(settings.copyPathAfterSave) << ",\n";
-    out << "    \"saveMetadataSidecar\": " << jsonBool(settings.saveMetadataSidecar) << "\n";
+    out << "    \"supersamplingId\": " << q(toStorageName(settings.quality.supersampling)) << ",\n";
+    out << "    \"previewQuality\": " << q(exportPreviewQualityLabel(settings.quality.previewQuality)) << ",\n";
+    out << "    \"previewQualityId\": " << q(toStorageName(settings.quality.previewQuality)) << ",\n";
+    out << "    \"autoRefreshPreview\": " << jsonBool(settings.quality.autoRefreshPreview) << ",\n";
+    out << "    \"openAfterSave\": " << jsonBool(settings.output.openAfterSave) << ",\n";
+    out << "    \"showInFolderAfterSave\": " << jsonBool(settings.output.showInFolderAfterSave) << ",\n";
+    out << "    \"copyPathAfterSave\": " << jsonBool(settings.output.copyPathAfterSave) << ",\n";
+    out << "    \"saveMetadataSidecar\": " << jsonBool(settings.output.saveMetadataSidecar) << "\n";
     out << "  }\n";
     out << "}\n";
     return out.str();
 }
 
-bool Application::writeExportMetadataSidecar(const ExportDialogSettings& settings,
+bool Application::writeExportMetadataSidecar(const ExportSettings& settings,
                                              const std::wstring& imagePath,
                                              int width,
                                              int height,
@@ -3502,7 +3411,7 @@ void Application::processPendingExportActions() {
             if (saveImageToPath(path, outputPixels, outputWidth, outputHeight, error)) {
                 m_lastExportSavedPath = path;
                 messages.emplace_back("Saved plot image to: " + narrowUtf8(path));
-                if (m_pendingExportSettings.saveMetadataSidecar) {
+                if (m_pendingExportSettings.output.saveMetadataSidecar) {
                     std::string metadataError;
                     if (writeExportMetadataSidecar(m_pendingExportSettings,
                                                    path,
@@ -3516,17 +3425,17 @@ void Application::processPendingExportActions() {
                         messages.emplace_back("Metadata sidecar failed: " + metadataError);
                     }
                 }
-                if (m_pendingExportSettings.openAfterSave) {
+                if (m_pendingExportSettings.output.openAfterSave) {
                     messages.emplace_back(openPathWithShell(path)
                         ? "Opened saved image."
                         : "Could not open saved image.");
                 }
-                if (m_pendingExportSettings.showInFolderAfterSave) {
+                if (m_pendingExportSettings.output.showInFolderAfterSave) {
                     messages.emplace_back(revealPathInExplorer(path)
                         ? "Opened saved image location."
                         : "Could not show saved image in folder.");
                 }
-                if (m_pendingExportSettings.copyPathAfterSave) {
+                if (m_pendingExportSettings.output.copyPathAfterSave) {
                     messages.emplace_back(copyUnicodeTextToClipboard(m_hWnd, path)
                         ? "Copied saved image path."
                         : "Could not copy saved image path.");

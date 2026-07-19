@@ -15,6 +15,7 @@ ControlPanelActions ControlPanel::render(Core::ViewTransform& vt, PlotSettings& 
                                          const Model::SceneSummary& scene,
                                          const std::string& exportStatus) {
     ControlPanelActions actions;
+    const PlotLimits& limits = plotLimits();
 
     ImGui::TextUnformatted("View");
     ImGui::Separator();
@@ -151,22 +152,22 @@ ControlPanelActions ControlPanel::render(Core::ViewTransform& vt, PlotSettings& 
                         UiKit::DisabledScope disabled(!settings.showWires);
                         displayGrid.sliderFloat("Wire Opacity",
                                                 settings.wireOpacity,
-                                                0.0f,
-                                                1.0f,
+                                                limits.wireOpacity.min,
+                                                limits.wireOpacity.max,
                                                 kDefaultWireOpacity,
                                                 "%.2f",
                                                 "Opacity for 3D mesh/wire overlays.");
                         displayGrid.sliderFloat("Wire Thickness",
                                                 settings.wireThickness,
-                                                0.0f,
-                                                2.5f,
+                                                limits.wireThickness.min,
+                                                limits.wireThickness.max,
                                                 kDefaultWireThickness,
                                                 "%.2f",
                                                 "Line thickness for 3D mesh/wire overlays.");
                         displayGrid.sliderInt("Wire Stride",
                                               settings.wireStride,
-                                              1,
-                                              8,
+                                              limits.wireStride.min,
+                                              limits.wireStride.max,
                                               kDefaultWireStride,
                                               "Draw every Nth wire row/column without changing surface sampling.");
                     }
@@ -176,8 +177,8 @@ ControlPanelActions ControlPanel::render(Core::ViewTransform& vt, PlotSettings& 
                     if (settings.showSurfaceEnvelope) {
                         displayGrid.sliderFloat("Envelope Thickness",
                                                 settings.envelopeThickness,
-                                                0.5f,
-                                                3.0f,
+                                                limits.envelopeThickness.min,
+                                                limits.envelopeThickness.max,
                                                 kDefaultEnvelopeThickness,
                                                 "%.2f",
                                                 "Thickness for the 3D bounding envelope.");
@@ -186,8 +187,8 @@ ControlPanelActions ControlPanel::render(Core::ViewTransform& vt, PlotSettings& 
                     if (settings.autoRotate) {
                         displayGrid.sliderFloat("Rotation Speed",
                                                 settings.autoRotateSpeedDegPerSec,
-                                                2.0f,
-                                                90.0f,
+                                                limits.autoRotateSpeedDegPerSec.min,
+                                                limits.autoRotateSpeedDegPerSec.max,
                                                 kDefaultAutoRotateSpeedDegPerSec,
                                                 "%.1f deg/s",
                                                 "Automatic camera rotation speed in degrees per second.");
@@ -222,41 +223,41 @@ ControlPanelActions ControlPanel::render(Core::ViewTransform& vt, PlotSettings& 
             if (cameraGrid.begin()) {
                 cameraGrid.sliderFloat("Azimuth",
                                        settings.azimuthDeg,
-                                       -180.0f,
-                                       180.0f,
+                                       limits.azimuthDeg.min,
+                                       limits.azimuthDeg.max,
                                        kDefaultAzimuthDeg,
                                        "%.1f deg",
                                        "Horizontal camera angle for 3D surfaces.");
                 cameraGrid.sliderFloat("Elevation",
                                        settings.elevationDeg,
-                                       -85.0f,
-                                       85.0f,
+                                       limits.elevationDeg.min,
+                                       limits.elevationDeg.max,
                                        kDefaultElevationDeg,
                                        "%.1f deg",
                                        "Vertical camera angle for 3D surfaces.");
                 cameraGrid.sliderFloat("Z Scale",
                                        settings.zScale,
-                                       0.1f,
-                                       8.0f,
+                                       limits.zScale.min,
+                                       limits.zScale.max,
                                        kDefaultZScale,
                                        "%.2f",
                                        "Vertical exaggeration applied to 3D geometry.");
                 cameraGrid.sliderInt("Surface Density",
                                      settings.surfaceResolution,
-                                     12,
-                                     96,
+                                     limits.surfaceResolution.min,
+                                     limits.surfaceResolution.max,
                                      kDefaultSurfaceResolution,
                                      "Sampling density for explicit z=f(x,y) surfaces.");
                 cameraGrid.sliderInt("Implicit Resolution",
                                      settings.implicitSurfaceResolution,
-                                     16,
-                                     96,
+                                     limits.implicitSurfaceResolution.min,
+                                     limits.implicitSurfaceResolution.max,
                                      kDefaultImplicitSurfaceResolution,
                                      "Grid resolution for implicit F(x,y,z)=0 surfaces.");
                 cameraGrid.sliderFloat("Surface Opacity",
                                        settings.surfaceOpacity,
-                                       0.25f,
-                                       1.0f,
+                                       limits.surfaceOpacity.min,
+                                       limits.surfaceOpacity.max,
                                        kDefaultSurfaceOpacity,
                                        "%.2f",
                                        "Surface fill opacity.");
@@ -274,8 +275,8 @@ ControlPanelActions ControlPanel::render(Core::ViewTransform& vt, PlotSettings& 
             if (heatmapGrid.begin()) {
                 heatmapGrid.sliderFloat("Heatmap Opacity",
                                         settings.heatmapOpacity,
-                                        0.1f,
-                                        1.0f,
+                                        limits.heatmapOpacity.min,
+                                        limits.heatmapOpacity.max,
                                         kDefaultHeatmapOpacity,
                                         "%.2f",
                                         "Opacity for heatmap and scalar-field cross-section fills.");
@@ -295,6 +296,7 @@ ControlPanelActions ControlPanel::render(Core::ViewTransform& vt, PlotSettings& 
         ImGui::TextWrapped("%s", exportStatus.c_str());
     }
 
+    normalizePlotSettings(settings);
     return actions;
 }
 

@@ -31,33 +31,6 @@ namespace XpressFormula::UI {
 
 class Application {
 public:
-    struct ExportDialogSettings {
-        int width = 0;
-        int height = 0;
-        int scale = 1;
-        int selectedSizePreset = 0;
-        ExportProfile selectedProfile = ExportProfile::CurrentView;
-        bool lockAspectRatio = true;
-        bool grayscaleOutput = false;
-        bool showGrid = true;
-        bool showCoordinates = true;
-        bool showWires = true;
-        bool showEnvelope = true;
-        bool showAxisTriad = false;
-        ExportBackgroundMode backgroundMode = ExportBackgroundMode::Current;
-        ExportFormat format = ExportFormat::Png;
-        ExportAspectMode aspectMode = ExportAspectMode::PreserveMathematicalScale;
-        ExportQualityMode qualityMode = ExportQualityMode::Interactive;
-        ExportQualitySettings quality = qualitySettingsForPreset(ExportQualityPreset::Normal);
-        ExportPreviewQuality previewQuality = ExportPreviewQuality::Normal;
-        bool autoRefreshPreview = false;
-        bool openAfterSave = false;
-        bool showInFolderAfterSave = false;
-        bool copyPathAfterSave = false;
-        bool saveMetadataSidecar = false;
-        std::array<float, 4> backgroundColor = { 0.098f, 0.098f, 0.118f, 1.0f };
-    };
-
     struct UpdateCheckResult {
         bool requestSucceeded = false;
         bool updateAvailable = false;
@@ -131,11 +104,10 @@ private:
     void startUpdateCheck(bool manualRequest);
     void pollUpdateCheckResult();
     bool promptSaveImagePath(std::wstring& path);
-    std::array<float, 4> resolveExportBackgroundColor(const ExportDialogSettings& settings) const;
     void markExportPreviewOutOfDate();
     void requestExportPreviewRefresh();
     bool capturePlotPixels(std::vector<std::uint8_t>& pixels, int& width, int& height);
-    bool renderPlotPixelsOffscreen(const ExportDialogSettings& settings,
+    bool renderPlotPixelsOffscreen(const ExportSettings& settings,
                                    std::vector<std::uint8_t>& pixels, int& width, int& height);
     bool readTexturePixelsRgba(ID3D11Texture2D* sourceTexture,
                                std::vector<std::uint8_t>& pixels,
@@ -159,10 +131,10 @@ private:
     bool saveImageToPath(const std::wstring& path,
                          const std::vector<std::uint8_t>& pixels,
                          int width, int height, std::string& error);
-    std::string buildExportMetadataJson(const ExportDialogSettings& settings,
+    std::string buildExportMetadataJson(const ExportSettings& settings,
                                         const std::wstring& imagePath,
                                         int width, int height) const;
-    bool writeExportMetadataSidecar(const ExportDialogSettings& settings,
+    bool writeExportMetadataSidecar(const ExportSettings& settings,
                                     const std::wstring& imagePath,
                                     int width, int height,
                                     std::string& error) const;
@@ -210,8 +182,8 @@ private:
     bool                      m_exportDialogCenterOnOpen = false;
     bool                      m_exportDialogSizeInitialized = false;
     float                     m_exportSettingsPaneWidth = 420.0f;
-    ExportDialogSettings      m_exportDialogSettings;
-    ExportDialogSettings      m_pendingExportSettings;
+    ExportSettings            m_exportDialogSettings;
+    ExportSettings            m_pendingExportSettings;
     bool                      m_scheduledSavePlotImage = false;
     bool                      m_scheduledCopyPlotImage = false;
     bool                      m_pendingSavePlotImage = false;
