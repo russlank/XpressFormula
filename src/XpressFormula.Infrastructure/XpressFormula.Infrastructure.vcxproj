@@ -96,11 +96,18 @@
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="..\XpressFormula\Infrastructure\FileSystem\AtomicFileWriter.cpp" />
+    <ClCompile Include="..\XpressFormula\Infrastructure\Serialization\JsonParser.cpp" />
+    <ClCompile Include="..\XpressFormula\Infrastructure\Serialization\JsonWriter.cpp" />
+    <ClCompile Include="..\XpressFormula\Platform\Windows\Utf.cpp" />
     <ClCompile Include="InfrastructureBoundary.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\XpressFormula\UI\ExportMetadata.h" />
-    <ClInclude Include="..\XpressFormula\UI\ProjectSession.h" />
+    <ClInclude Include="..\XpressFormula\Infrastructure\FileSystem\AtomicFileWriter.h" />
+    <ClInclude Include="..\XpressFormula\Infrastructure\Serialization\JsonParser.h" />
+    <ClInclude Include="..\XpressFormula\Infrastructure\Serialization\JsonValue.h" />
+    <ClInclude Include="..\XpressFormula\Infrastructure\Serialization\JsonWriter.h" />
+    <ClInclude Include="..\XpressFormula\Platform\Windows\Utf.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />

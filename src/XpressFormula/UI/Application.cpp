@@ -2,6 +2,9 @@
 // Application.cpp - Win32 + D3D11 + ImGui application implementation.
 #include "Application.h"
 #include "../Core/UpdateVersionUtils.h"
+#include "../Infrastructure/FileSystem/AtomicFileWriter.h"
+#include "../Infrastructure/Serialization/JsonWriter.h"
+#include "../Platform/Windows/Utf.h"
 #include "../Version.h"
 #include "../resource.h"
 #include "ExportMetadata.h"
@@ -38,10 +41,10 @@
 #include <exception>
 #include <filesystem>
 #include <fstream>
-#include <iomanip>
 #include <sstream>
 #include <span>
 #include <string>
+#include <string_view>
 #include <system_error>
 
 #pragma comment(lib, "windowscodecs.lib")
@@ -58,6 +61,10 @@ extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(
 
 // We store a pointer to the Application so the WndProc can access it.
 static XpressFormula::UI::Application* g_app = nullptr;
+
+namespace XFAtomic = XpressFormula::Infrastructure::FileSystem;
+namespace XFJson = XpressFormula::Infrastructure::Serialization;
+namespace XFWUtf = XpressFormula::Platform::Windows;
 
 namespace {
 
@@ -274,23 +281,8 @@ XpressFormula::UI::Application::UpdateCheckResult fetchLatestReleaseFromGitHub(b
 
 } // namespace
 
-static std::wstring utf8ToWide(const char* text) {
-    if (!text || text[0] == '\0') {
-        return {};
-    }
-
-    int size = ::MultiByteToWideChar(CP_UTF8, 0, text, -1, nullptr, 0);
-    if (size <= 1) {
-        return {};
-    }
-
-    std::wstring output(static_cast<size_t>(size - 1), L'\0');
-    ::MultiByteToWideChar(CP_UTF8, 0, text, -1, output.data(), size);
-    return output;
-}
-
 static std::wstring shortCommitWide(const char* commit) {
-    std::wstring commitWide = utf8ToWide(commit);
+    std::wstring commitWide = XFWUtf::utf8ToUtf16OrEmpty(commit ? std::string_view(commit) : std::string_view());
     if (commitWide.size() > 12) {
         commitWide.resize(12);
     }
@@ -384,7 +376,7 @@ void Application::refreshProjectDirtyState() {
 std::string Application::projectDisplayName() const {
     std::string name = m_projectPath.empty()
         ? std::string("Untitled.xfplot")
-        : narrowUtf8(std::filesystem::path(m_projectPath).filename().wstring());
+        : XFWUtf::utf16ToUtf8OrEmpty(std::filesystem::path(m_projectPath).filename().wstring());
     if (name.empty()) {
         name = "Untitled.xfplot";
     }
@@ -422,7 +414,7 @@ void Application::loadRecentProjectPaths() {
             changed = true;
             continue;
         }
-        std::wstring path = utf8ToWide(line.c_str());
+        std::wstring path = XFWUtf::utf8ToUtf16OrEmpty(line);
         if (path.empty()) {
             changed = true;
             continue;
@@ -468,13 +460,12 @@ void Application::saveRecentProjectPaths() const {
     std::error_code ignored;
     std::filesystem::create_directories(storePath.parent_path(), ignored);
 
-    std::ofstream out(storePath, std::ios::binary | std::ios::trunc);
-    if (!out) {
-        return;
-    }
+    std::string storeText;
     for (const std::wstring& path : m_recentProjectPaths) {
-        out << narrowUtf8(path) << '\n';
+        storeText += XFWUtf::utf16ToUtf8OrEmpty(path);
+        storeText += '\n';
     }
+    (void)XFAtomic::writeTextAtomically(storePath, storeText);
 }
 
 void Application::addRecentProjectPath(const std::wstring& path) {
@@ -560,39 +551,17 @@ bool Application::promptSaveProjectPath(std::wstring& path) const {
 bool Application::saveProjectToPath(const std::wstring& path, std::string& error) {
     error.clear();
     const std::filesystem::path projectPath(path);
-    const std::filesystem::path tempPath = std::filesystem::path(path + L".tmp");
     const std::string json = serializeProjectSession(currentProjectSession());
-
-    {
-        std::ofstream out(tempPath, std::ios::binary | std::ios::trunc);
-        if (!out) {
-            error = "Could not open project temp file.";
-            return false;
-        }
-        out.write(json.data(), static_cast<std::streamsize>(json.size()));
-        out.close();
-        if (!out) {
-            error = "Could not write project temp file.";
-            std::error_code ignored;
-            std::filesystem::remove(tempPath, ignored);
-            return false;
-        }
-    }
-
-    if (!::MoveFileExW(tempPath.wstring().c_str(),
-                       projectPath.wstring().c_str(),
-                       MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
-        const DWORD win32Error = ::GetLastError();
-        std::error_code ignored;
-        std::filesystem::remove(tempPath, ignored);
-        error = "Could not replace project file: Win32 error " + std::to_string(win32Error) + ".";
+    const XFAtomic::AtomicWriteResult writeResult = XFAtomic::writeTextAtomically(projectPath, json);
+    if (!writeResult) {
+        error = "Could not save project file: " + writeResult.error;
         return false;
     }
 
     m_projectPath = projectPath.wstring();
     addRecentProjectPath(m_projectPath);
     markProjectClean();
-    m_projectStatus = "Saved project: " + narrowUtf8(m_projectPath);
+    m_projectStatus = "Saved project: " + XFWUtf::utf16ToUtf8OrEmpty(m_projectPath);
     m_redrawRequested = true;
     return true;
 }
@@ -651,7 +620,7 @@ bool Application::openProjectFromPath(const std::wstring& path, std::string& err
     markExportPreviewOutOfDate();
 
     std::ostringstream status;
-    status << "Opened project: " << narrowUtf8(m_projectPath);
+    status << "Opened project: " << XFWUtf::utf16ToUtf8OrEmpty(m_projectPath);
     if (!warnings.empty()) {
         status << " (" << warnings.size() << " warning";
         if (warnings.size() != 1) {
@@ -753,7 +722,7 @@ void Application::renderProjectControls() {
     ImGui::Separator();
     ImGui::TextWrapped("%s", projectDisplayName().c_str());
     if (!m_projectPath.empty()) {
-        ImGui::SetItemTooltip("%s", narrowUtf8(m_projectPath).c_str());
+        ImGui::SetItemTooltip("%s", XFWUtf::utf16ToUtf8OrEmpty(m_projectPath).c_str());
     }
 
     const float buttonWidth = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
@@ -781,9 +750,9 @@ void Application::renderProjectControls() {
         for (int i = 0; i < static_cast<int>(m_recentProjectPaths.size()); ++i) {
             ImGui::PushID(i);
             const std::wstring& path = m_recentProjectPaths[static_cast<std::size_t>(i)];
-            std::string label = narrowUtf8(std::filesystem::path(path).filename().wstring());
+            std::string label = XFWUtf::utf16ToUtf8OrEmpty(std::filesystem::path(path).filename().wstring());
             if (label.empty()) {
-                label = narrowUtf8(path);
+                label = XFWUtf::utf16ToUtf8OrEmpty(path);
             }
             std::error_code pathError;
             const bool pathExists = std::filesystem::exists(std::filesystem::path(path), pathError);
@@ -798,9 +767,9 @@ void Application::renderProjectControls() {
             }
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
                 if (pathExists) {
-                    ImGui::SetTooltip("%s", narrowUtf8(path).c_str());
+                    ImGui::SetTooltip("%s", XFWUtf::utf16ToUtf8OrEmpty(path).c_str());
                 } else {
-                    ImGui::SetTooltip("Missing: %s", narrowUtf8(path).c_str());
+                    ImGui::SetTooltip("Missing: %s", XFWUtf::utf16ToUtf8OrEmpty(path).c_str());
                 }
             }
             ImGui::PopID();
@@ -895,7 +864,7 @@ bool Application::initialize(HINSTANCE hInstance, int width, int height) {
     std::wstring windowTitle = L"XpressFormula v";
     windowTitle += XF_VERSION_WSTRING;
 
-    std::wstring branchWide = utf8ToWide(XF_BUILD_BRANCH);
+    std::wstring branchWide = XFWUtf::utf8ToUtf16OrEmpty(XF_BUILD_BRANCH);
     std::wstring commitWide = shortCommitWide(XF_BUILD_COMMIT);
     if (!branchWide.empty() && branchWide != L"unknown") {
         windowTitle += L" [";
@@ -1165,7 +1134,7 @@ void Application::renderFrame() {
         if (ImGui::Button("Open Releases Page", ImVec2(ImGui::GetContentRegionAvail().x, 0.0f))) {
             std::wstring releaseUrlWide = m_updateReleaseUrl.empty()
                 ? std::wstring(kGitHubReleasesUrlW)
-                : utf8ToWide(m_updateReleaseUrl.c_str());
+                : XFWUtf::utf8ToUtf16OrEmpty(m_updateReleaseUrl);
             if (releaseUrlWide.empty()) {
                 releaseUrlWide = kGitHubReleasesUrlW;
             }
@@ -1964,7 +1933,7 @@ void Application::renderExportDialog(float, float) {
 
                 ImGui::Spacing();
                 if (!m_lastExportSavedPath.empty()) {
-                    ImGui::TextWrapped("Last saved: %s", narrowUtf8(m_lastExportSavedPath).c_str());
+                    ImGui::TextWrapped("Last saved: %s", XFWUtf::utf16ToUtf8OrEmpty(m_lastExportSavedPath).c_str());
                     if (ImGui::Button("Open Image", ImVec2(ImGui::GetContentRegionAvail().x, 0.0f))) {
                         openLastSavedExport();
                     }
@@ -2961,20 +2930,20 @@ std::string Application::buildExportMetadataJson(const ExportSettings& settings,
                                                  const std::wstring& imagePath,
                                                  int width,
                                                  int height) const {
-    auto q = [](std::string_view text) {
-        return std::string("\"") + jsonEscape(text) + "\"";
-    };
-    auto colorArray = [](const auto& color) {
-        std::ostringstream out;
-        out << '[' << color[0] << ", " << color[1] << ", " << color[2] << ", " << color[3] << ']';
-        return out.str();
+    auto writeColor = [](XFJson::JsonWriter& writer, const auto& color) {
+        writer.beginArray();
+        writer.value(color[0]);
+        writer.value(color[1]);
+        writer.value(color[2]);
+        writer.value(color[3]);
+        writer.endArray();
     };
 
     const int presetIndex = std::clamp(
         settings.size.selectedPreset, 0, static_cast<int>(exportSizePresets().size()) - 1);
     const auto& sizePreset = exportSizePresets()[static_cast<size_t>(presetIndex)];
     const std::array<float, 4> resolvedBackground = resolveExportBackgroundColor(settings);
-    const std::string imagePathUtf8 = narrowUtf8(imagePath);
+    const std::string imagePathUtf8 = XFWUtf::utf16ToUtf8OrEmpty(imagePath);
     std::filesystem::path imageFsPath(imagePath);
     std::string actualFormat = exportFormatLabel(settings.output.format);
     std::wstring extension = imageFsPath.extension().wstring();
@@ -2986,141 +2955,263 @@ std::string Application::buildExportMetadataJson(const ExportSettings& settings,
         actualFormat = "PNG";
     }
 
-    std::ostringstream out;
-    out << std::setprecision(9);
-    out << "{\n";
-    out << "  \"schemaVersion\": " << kExportMetadataSchemaVersion << ",\n";
-    out << "  \"application\": {\n";
-    out << "    \"name\": \"XpressFormula\",\n";
-    out << "    \"version\": " << q(XF_BUILD_VERSION) << ",\n";
-    out << "    \"repoUrl\": " << q(XF_BUILD_REPO_URL) << ",\n";
-    out << "    \"branch\": " << q(XF_BUILD_BRANCH) << ",\n";
-    out << "    \"commit\": " << q(XF_BUILD_COMMIT) << "\n";
-    out << "  },\n";
-    out << "  \"image\": {\n";
-    out << "    \"path\": " << q(imagePathUtf8) << ",\n";
-    out << "    \"width\": " << width << ",\n";
-    out << "    \"height\": " << height << ",\n";
-    out << "    \"format\": " << q(actualFormat) << "\n";
-    out << "  },\n";
-    out << "  \"formulas\": [\n";
+    XFJson::JsonWriter writer;
+    writer.beginObject();
+    writer.key("schemaVersion");
+    writer.value(kExportMetadataSchemaVersion);
+
+    writer.key("application");
+    writer.beginObject();
+    writer.key("name");
+    writer.value("XpressFormula");
+    writer.key("version");
+    writer.value(XF_BUILD_VERSION);
+    writer.key("repoUrl");
+    writer.value(XF_BUILD_REPO_URL);
+    writer.key("branch");
+    writer.value(XF_BUILD_BRANCH);
+    writer.key("commit");
+    writer.value(XF_BUILD_COMMIT);
+    writer.endObject();
+
+    writer.key("image");
+    writer.beginObject();
+    writer.key("path");
+    writer.value(imagePathUtf8);
+    writer.key("width");
+    writer.value(width);
+    writer.key("height");
+    writer.value(height);
+    writer.key("format");
+    writer.value(actualFormat);
+    writer.endObject();
+
+    writer.key("formulas");
+    writer.beginArray();
     for (size_t i = 0; i < m_formulas.size(); ++i) {
         const Model::Formula& formula = m_formulas[i];
         const FormulaRenderKind renderKind = formulaRenderKindFor(formula.compiled.kind);
         const char* diagnostic = formulaDiagnosticText(formula);
-        out << "    {\n";
-        out << "      \"index\": " << (i + 1) << ",\n";
-        out << "      \"expression\": " << q(formula.expression) << ",\n";
-        out << "      \"visible\": " << jsonBool(formula.visible) << ",\n";
-        out << "      \"color\": " << colorArray(formula.color) << ",\n";
-        out << "      \"valid\": " << jsonBool(formula.isValid()) << ",\n";
-        out << "      \"type\": " << q(formulaTypeLabel(formula)) << ",\n";
-        out << "      \"renderKind\": " << q(formulaRenderKindLabel(renderKind)) << ",\n";
-        out << "      \"equation\": " << jsonBool(formula.compiled.equation) << ",\n";
-        out << "      \"variableCount\": " << displayedVariableCount(formula) << ",\n";
-        out << "      \"variables\": [";
-        size_t variableIndex = 0;
+        writer.beginObject();
+        writer.key("index");
+        writer.value(static_cast<unsigned long long>(i + 1));
+        writer.key("expression");
+        writer.value(formula.expression);
+        writer.key("visible");
+        writer.value(formula.visible);
+        writer.key("color");
+        writeColor(writer, formula.color);
+        writer.key("valid");
+        writer.value(formula.isValid());
+        writer.key("type");
+        writer.value(formulaTypeLabel(formula));
+        writer.key("renderKind");
+        writer.value(formulaRenderKindLabel(renderKind));
+        writer.key("equation");
+        writer.value(formula.compiled.equation);
+        writer.key("variableCount");
+        writer.value(displayedVariableCount(formula));
+        writer.key("variables");
+        writer.beginArray();
         for (const std::string& variable : formula.compiled.variables) {
-            if (variableIndex++ > 0) {
-                out << ", ";
-            }
-            out << q(variable);
+            writer.value(variable);
         }
-        out << "],\n";
-        out << "      \"zSlice\": " << formula.zSlice << ",\n";
-        out << "      \"error\": " << q(diagnostic) << "\n";
-        out << "    }" << ((i + 1 < m_formulas.size()) ? "," : "") << "\n";
+        writer.endArray();
+        writer.key("zSlice");
+        writer.value(formula.zSlice);
+        writer.key("error");
+        writer.value(diagnostic);
+        writer.endObject();
     }
-    out << "  ],\n";
-    out << "  \"view\": {\n";
-    out << "    \"center\": { \"x\": " << m_viewTransform.state.centerX
-        << ", \"y\": " << m_viewTransform.state.centerY << " },\n";
-    out << "    \"scale\": { \"x\": " << m_viewTransform.state.scaleX
-        << ", \"y\": " << m_viewTransform.state.scaleY << " },\n";
-    out << "    \"screen\": { \"width\": " << m_viewTransform.viewport.width
-        << ", \"height\": " << m_viewTransform.viewport.height
-        << ", \"originX\": " << m_viewTransform.viewport.originX
-        << ", \"originY\": " << m_viewTransform.viewport.originY << " },\n";
-    out << "    \"worldBounds\": { \"xMin\": " << m_viewTransform.worldXMin()
-        << ", \"xMax\": " << m_viewTransform.worldXMax()
-        << ", \"yMin\": " << m_viewTransform.worldYMin()
-        << ", \"yMax\": " << m_viewTransform.worldYMax() << " }\n";
-    out << "  },\n";
-    out << "  \"camera\": {\n";
-    out << "    \"azimuthDeg\": " << m_plotSettings.azimuthDeg << ",\n";
-    out << "    \"elevationDeg\": " << m_plotSettings.elevationDeg << ",\n";
-    out << "    \"zScale\": " << m_plotSettings.zScale << ",\n";
-    out << "    \"autoRotate\": " << jsonBool(m_plotSettings.autoRotate) << ",\n";
-    out << "    \"autoRotateSpeedDegPerSec\": " << m_plotSettings.autoRotateSpeedDegPerSec << "\n";
-    out << "  },\n";
-    out << "  \"display\": {\n";
-    out << "    \"xyRenderModePreference\": " << q(toDisplayLabel(m_plotSettings.xyRenderModePreference)) << ",\n";
-    out << "    \"xyRenderModePreferenceId\": " << q(toStorageName(m_plotSettings.xyRenderModePreference)) << ",\n";
-    out << "    \"hudMode\": " << q(plotHudModeLabel(m_plotSettings.hudMode)) << ",\n";
-    out << "    \"hudModeId\": " << q(toStorageName(m_plotSettings.hudMode)) << ",\n";
-    out << "    \"optimizeRendering\": " << jsonBool(m_plotSettings.optimizeRendering) << ",\n";
-    out << "    \"showGrid\": " << jsonBool(m_plotSettings.showGrid) << ",\n";
-    out << "    \"showCoordinates\": " << jsonBool(m_plotSettings.showCoordinates) << ",\n";
-    out << "    \"showWires\": " << jsonBool(m_plotSettings.showWires) << ",\n";
-    out << "    \"showSurfaceEnvelope\": " << jsonBool(m_plotSettings.showSurfaceEnvelope) << ",\n";
-    out << "    \"showAxisTriad\": " << jsonBool(m_plotSettings.showAxisTriad) << ",\n";
-    out << "    \"effectiveShowAxisTriad\": " << jsonBool(m_plotSettings.effectiveShowAxisTriad()) << ",\n";
-    out << "    \"surfaceResolution\": " << m_plotSettings.surfaceResolution << ",\n";
-    out << "    \"implicitSurfaceResolution\": " << m_plotSettings.implicitSurfaceResolution << ",\n";
-    out << "    \"surfaceOpacity\": " << m_plotSettings.surfaceOpacity << ",\n";
-    out << "    \"wireOpacity\": " << m_plotSettings.wireOpacity << ",\n";
-    out << "    \"wireThickness\": " << m_plotSettings.wireThickness << ",\n";
-    out << "    \"wireStride\": " << m_plotSettings.wireStride << ",\n";
-    out << "    \"envelopeThickness\": " << m_plotSettings.envelopeThickness << ",\n";
-    out << "    \"heatmapOpacity\": " << m_plotSettings.heatmapOpacity << "\n";
-    out << "  },\n";
-    out << "  \"export\": {\n";
-    out << "    \"profile\": " << q(exportProfileLabel(settings.profile)) << ",\n";
-    out << "    \"profileId\": " << q(toStorageName(settings.profile)) << ",\n";
-    out << "    \"requestedWidth\": " << settings.size.width << ",\n";
-    out << "    \"requestedHeight\": " << settings.size.height << ",\n";
-    out << "    \"outputWidth\": " << width << ",\n";
-    out << "    \"outputHeight\": " << height << ",\n";
-    out << "    \"scale\": " << settings.size.scale << ",\n";
-    out << "    \"sizePreset\": " << q(sizePreset.label) << ",\n";
-    out << "    \"sizePresetId\": " << q(sizePreset.storageName) << ",\n";
-    out << "    \"lockAspectRatio\": " << jsonBool(settings.size.lockAspectRatio) << ",\n";
-    out << "    \"format\": " << q(exportFormatLabel(settings.output.format)) << ",\n";
-    out << "    \"formatId\": " << q(toStorageName(settings.output.format)) << ",\n";
-    out << "    \"backgroundMode\": " << q(exportBackgroundModeLabel(settings.appearance.backgroundMode)) << ",\n";
-    out << "    \"backgroundModeId\": " << q(toStorageName(settings.appearance.backgroundMode)) << ",\n";
-    out << "    \"customBackgroundColor\": " << colorArray(settings.appearance.backgroundColor) << ",\n";
-    out << "    \"resolvedBackgroundColor\": " << colorArray(resolvedBackground) << ",\n";
-    out << "    \"grayscaleOutput\": " << jsonBool(settings.appearance.grayscaleOutput) << ",\n";
-    out << "    \"aspectMode\": " << q(exportAspectModeLabel(settings.output.aspectMode)) << ",\n";
-    out << "    \"aspectModeId\": " << q(toStorageName(settings.output.aspectMode)) << ",\n";
-    out << "    \"showGrid\": " << jsonBool(settings.scene.showGrid) << ",\n";
-    out << "    \"showCoordinates\": " << jsonBool(settings.scene.showCoordinates) << ",\n";
-    out << "    \"showWires\": " << jsonBool(settings.scene.showWires) << ",\n";
-    out << "    \"showEnvelope\": " << jsonBool(settings.scene.showEnvelope) << ",\n";
-    out << "    \"showAxisTriad\": " << jsonBool(settings.scene.showAxisTriad) << ",\n";
-    out << "    \"effectiveShowAxisTriad\": "
-        << jsonBool(isAxisTriadVisible(settings.scene.showCoordinates,
-                                       settings.scene.showAxisTriad)) << ",\n";
-    out << "    \"qualityMode\": " << q(exportQualityModeLabel(settings.quality.mode)) << ",\n";
-    out << "    \"qualityModeId\": " << q(toStorageName(settings.quality.mode)) << ",\n";
-    out << "    \"qualityPreset\": " << q(exportQualityPresetLabel(settings.quality.preset)) << ",\n";
-    out << "    \"qualityPresetId\": " << q(toStorageName(settings.quality.preset)) << ",\n";
-    out << "    \"surfaceResolution\": " << settings.quality.surfaceResolution << ",\n";
-    out << "    \"implicitSurfaceResolution\": " << settings.quality.implicitSurfaceResolution << ",\n";
-    out << "    \"wireThicknessScale\": " << settings.quality.wireThicknessScale << ",\n";
-    out << "    \"supersampling\": " << q(exportSupersamplingLabel(settings.quality.supersampling)) << ",\n";
-    out << "    \"supersamplingId\": " << q(toStorageName(settings.quality.supersampling)) << ",\n";
-    out << "    \"previewQuality\": " << q(exportPreviewQualityLabel(settings.quality.previewQuality)) << ",\n";
-    out << "    \"previewQualityId\": " << q(toStorageName(settings.quality.previewQuality)) << ",\n";
-    out << "    \"autoRefreshPreview\": " << jsonBool(settings.quality.autoRefreshPreview) << ",\n";
-    out << "    \"openAfterSave\": " << jsonBool(settings.output.openAfterSave) << ",\n";
-    out << "    \"showInFolderAfterSave\": " << jsonBool(settings.output.showInFolderAfterSave) << ",\n";
-    out << "    \"copyPathAfterSave\": " << jsonBool(settings.output.copyPathAfterSave) << ",\n";
-    out << "    \"saveMetadataSidecar\": " << jsonBool(settings.output.saveMetadataSidecar) << "\n";
-    out << "  }\n";
-    out << "}\n";
-    return out.str();
+    writer.endArray();
+
+    writer.key("view");
+    writer.beginObject();
+    writer.key("center");
+    writer.beginObject();
+    writer.key("x");
+    writer.value(m_viewTransform.state.centerX);
+    writer.key("y");
+    writer.value(m_viewTransform.state.centerY);
+    writer.endObject();
+    writer.key("scale");
+    writer.beginObject();
+    writer.key("x");
+    writer.value(m_viewTransform.state.scaleX);
+    writer.key("y");
+    writer.value(m_viewTransform.state.scaleY);
+    writer.endObject();
+    writer.key("screen");
+    writer.beginObject();
+    writer.key("width");
+    writer.value(m_viewTransform.viewport.width);
+    writer.key("height");
+    writer.value(m_viewTransform.viewport.height);
+    writer.key("originX");
+    writer.value(m_viewTransform.viewport.originX);
+    writer.key("originY");
+    writer.value(m_viewTransform.viewport.originY);
+    writer.endObject();
+    writer.key("worldBounds");
+    writer.beginObject();
+    writer.key("xMin");
+    writer.value(m_viewTransform.worldXMin());
+    writer.key("xMax");
+    writer.value(m_viewTransform.worldXMax());
+    writer.key("yMin");
+    writer.value(m_viewTransform.worldYMin());
+    writer.key("yMax");
+    writer.value(m_viewTransform.worldYMax());
+    writer.endObject();
+    writer.endObject();
+
+    writer.key("camera");
+    writer.beginObject();
+    writer.key("azimuthDeg");
+    writer.value(m_plotSettings.azimuthDeg);
+    writer.key("elevationDeg");
+    writer.value(m_plotSettings.elevationDeg);
+    writer.key("zScale");
+    writer.value(m_plotSettings.zScale);
+    writer.key("autoRotate");
+    writer.value(m_plotSettings.autoRotate);
+    writer.key("autoRotateSpeedDegPerSec");
+    writer.value(m_plotSettings.autoRotateSpeedDegPerSec);
+    writer.endObject();
+
+    writer.key("display");
+    writer.beginObject();
+    writer.key("xyRenderModePreference");
+    writer.value(toDisplayLabel(m_plotSettings.xyRenderModePreference));
+    writer.key("xyRenderModePreferenceId");
+    writer.value(toStorageName(m_plotSettings.xyRenderModePreference));
+    writer.key("hudMode");
+    writer.value(plotHudModeLabel(m_plotSettings.hudMode));
+    writer.key("hudModeId");
+    writer.value(toStorageName(m_plotSettings.hudMode));
+    writer.key("optimizeRendering");
+    writer.value(m_plotSettings.optimizeRendering);
+    writer.key("showGrid");
+    writer.value(m_plotSettings.showGrid);
+    writer.key("showCoordinates");
+    writer.value(m_plotSettings.showCoordinates);
+    writer.key("showWires");
+    writer.value(m_plotSettings.showWires);
+    writer.key("showSurfaceEnvelope");
+    writer.value(m_plotSettings.showSurfaceEnvelope);
+    writer.key("showAxisTriad");
+    writer.value(m_plotSettings.showAxisTriad);
+    writer.key("effectiveShowAxisTriad");
+    writer.value(m_plotSettings.effectiveShowAxisTriad());
+    writer.key("surfaceResolution");
+    writer.value(m_plotSettings.surfaceResolution);
+    writer.key("implicitSurfaceResolution");
+    writer.value(m_plotSettings.implicitSurfaceResolution);
+    writer.key("surfaceOpacity");
+    writer.value(m_plotSettings.surfaceOpacity);
+    writer.key("wireOpacity");
+    writer.value(m_plotSettings.wireOpacity);
+    writer.key("wireThickness");
+    writer.value(m_plotSettings.wireThickness);
+    writer.key("wireStride");
+    writer.value(m_plotSettings.wireStride);
+    writer.key("envelopeThickness");
+    writer.value(m_plotSettings.envelopeThickness);
+    writer.key("heatmapOpacity");
+    writer.value(m_plotSettings.heatmapOpacity);
+    writer.endObject();
+
+    writer.key("export");
+    writer.beginObject();
+    writer.key("profile");
+    writer.value(exportProfileLabel(settings.profile));
+    writer.key("profileId");
+    writer.value(toStorageName(settings.profile));
+    writer.key("requestedWidth");
+    writer.value(settings.size.width);
+    writer.key("requestedHeight");
+    writer.value(settings.size.height);
+    writer.key("outputWidth");
+    writer.value(width);
+    writer.key("outputHeight");
+    writer.value(height);
+    writer.key("scale");
+    writer.value(settings.size.scale);
+    writer.key("sizePreset");
+    writer.value(sizePreset.label);
+    writer.key("sizePresetId");
+    writer.value(sizePreset.storageName);
+    writer.key("lockAspectRatio");
+    writer.value(settings.size.lockAspectRatio);
+    writer.key("format");
+    writer.value(exportFormatLabel(settings.output.format));
+    writer.key("formatId");
+    writer.value(toStorageName(settings.output.format));
+    writer.key("backgroundMode");
+    writer.value(exportBackgroundModeLabel(settings.appearance.backgroundMode));
+    writer.key("backgroundModeId");
+    writer.value(toStorageName(settings.appearance.backgroundMode));
+    writer.key("customBackgroundColor");
+    writeColor(writer, settings.appearance.backgroundColor);
+    writer.key("resolvedBackgroundColor");
+    writeColor(writer, resolvedBackground);
+    writer.key("grayscaleOutput");
+    writer.value(settings.appearance.grayscaleOutput);
+    writer.key("aspectMode");
+    writer.value(exportAspectModeLabel(settings.output.aspectMode));
+    writer.key("aspectModeId");
+    writer.value(toStorageName(settings.output.aspectMode));
+    writer.key("showGrid");
+    writer.value(settings.scene.showGrid);
+    writer.key("showCoordinates");
+    writer.value(settings.scene.showCoordinates);
+    writer.key("showWires");
+    writer.value(settings.scene.showWires);
+    writer.key("showEnvelope");
+    writer.value(settings.scene.showEnvelope);
+    writer.key("showAxisTriad");
+    writer.value(settings.scene.showAxisTriad);
+    writer.key("effectiveShowAxisTriad");
+    writer.value(isAxisTriadVisible(settings.scene.showCoordinates,
+                                    settings.scene.showAxisTriad));
+    writer.key("qualityMode");
+    writer.value(exportQualityModeLabel(settings.quality.mode));
+    writer.key("qualityModeId");
+    writer.value(toStorageName(settings.quality.mode));
+    writer.key("qualityPreset");
+    writer.value(exportQualityPresetLabel(settings.quality.preset));
+    writer.key("qualityPresetId");
+    writer.value(toStorageName(settings.quality.preset));
+    writer.key("surfaceResolution");
+    writer.value(settings.quality.surfaceResolution);
+    writer.key("implicitSurfaceResolution");
+    writer.value(settings.quality.implicitSurfaceResolution);
+    writer.key("wireThicknessScale");
+    writer.value(settings.quality.wireThicknessScale);
+    writer.key("supersampling");
+    writer.value(exportSupersamplingLabel(settings.quality.supersampling));
+    writer.key("supersamplingId");
+    writer.value(toStorageName(settings.quality.supersampling));
+    writer.key("previewQuality");
+    writer.value(exportPreviewQualityLabel(settings.quality.previewQuality));
+    writer.key("previewQualityId");
+    writer.value(toStorageName(settings.quality.previewQuality));
+    writer.key("autoRefreshPreview");
+    writer.value(settings.quality.autoRefreshPreview);
+    writer.key("openAfterSave");
+    writer.value(settings.output.openAfterSave);
+    writer.key("showInFolderAfterSave");
+    writer.value(settings.output.showInFolderAfterSave);
+    writer.key("copyPathAfterSave");
+    writer.value(settings.output.copyPathAfterSave);
+    writer.key("saveMetadataSidecar");
+    writer.value(settings.output.saveMetadataSidecar);
+    writer.endObject();
+
+    writer.endObject();
+    std::string json = writer.str();
+    json += '\n';
+    return json;
 }
 
 bool Application::writeExportMetadataSidecar(const ExportSettings& settings,
@@ -3130,32 +3221,10 @@ bool Application::writeExportMetadataSidecar(const ExportSettings& settings,
                                              std::string& error) const {
     error.clear();
     const std::filesystem::path sidecarPath = exportMetadataSidecarPath(std::filesystem::path(imagePath));
-    const std::filesystem::path tempPath = exportMetadataTempPath(sidecarPath);
     const std::string json = buildExportMetadataJson(settings, imagePath, width, height);
-
-    {
-        std::ofstream out(tempPath, std::ios::binary | std::ios::trunc);
-        if (!out) {
-            error = "Could not open metadata sidecar temp file: " + narrowUtf8(tempPath.wstring());
-            return false;
-        }
-        out.write(json.data(), static_cast<std::streamsize>(json.size()));
-        out.close();
-        if (!out) {
-            error = "Could not write metadata sidecar temp file: " + narrowUtf8(tempPath.wstring());
-            std::error_code ignored;
-            std::filesystem::remove(tempPath, ignored);
-            return false;
-        }
-    }
-
-    if (!::MoveFileExW(tempPath.wstring().c_str(),
-                       sidecarPath.wstring().c_str(),
-                       MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
-        const DWORD win32Error = ::GetLastError();
-        std::error_code ignored;
-        std::filesystem::remove(tempPath, ignored);
-        error = "Could not replace metadata sidecar: Win32 error " + std::to_string(win32Error) + ".";
+    const XFAtomic::AtomicWriteResult writeResult = XFAtomic::writeTextAtomically(sidecarPath, json);
+    if (!writeResult) {
+        error = "Could not write metadata sidecar: " + writeResult.error;
         return false;
     }
 
@@ -3410,7 +3479,7 @@ void Application::processPendingExportActions() {
             std::string error;
             if (saveImageToPath(path, outputPixels, outputWidth, outputHeight, error)) {
                 m_lastExportSavedPath = path;
-                messages.emplace_back("Saved plot image to: " + narrowUtf8(path));
+                messages.emplace_back("Saved plot image to: " + XFWUtf::utf16ToUtf8OrEmpty(path));
                 if (m_pendingExportSettings.output.saveMetadataSidecar) {
                     std::string metadataError;
                     if (writeExportMetadataSidecar(m_pendingExportSettings,
@@ -3420,7 +3489,8 @@ void Application::processPendingExportActions() {
                                                    metadataError)) {
                         const std::filesystem::path sidecarPath =
                             exportMetadataSidecarPath(std::filesystem::path(path));
-                        messages.emplace_back("Saved metadata sidecar: " + narrowUtf8(sidecarPath.wstring()));
+                        messages.emplace_back("Saved metadata sidecar: " +
+                            XFWUtf::utf16ToUtf8OrEmpty(sidecarPath.wstring()));
                     } else {
                         messages.emplace_back("Metadata sidecar failed: " + metadataError);
                     }
@@ -3476,22 +3546,6 @@ void Application::processPendingExportActions() {
         }
         m_exportStatus = oss.str();
     }
-}
-
-std::string Application::narrowUtf8(const std::wstring& text) {
-    if (text.empty()) {
-        return {};
-    }
-    int size = ::WideCharToMultiByte(CP_UTF8, 0, text.c_str(),
-                                     static_cast<int>(text.size()),
-                                     nullptr, 0, nullptr, nullptr);
-    if (size <= 0) {
-        return {};
-    }
-    std::string output(static_cast<size_t>(size), '\0');
-    ::WideCharToMultiByte(CP_UTF8, 0, text.c_str(), static_cast<int>(text.size()),
-                          output.data(), size, nullptr, nullptr);
-    return output;
 }
 
 } // namespace XpressFormula::UI

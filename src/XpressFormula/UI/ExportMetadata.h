@@ -2,6 +2,9 @@
 // ExportMetadata.h - Small reusable helpers for export metadata sidecars.
 #pragma once
 
+#include "../Infrastructure/FileSystem/AtomicFileWriter.h"
+#include "../Infrastructure/Serialization/JsonWriter.h"
+
 #include <filesystem>
 #include <string>
 #include <string_view>
@@ -11,50 +14,11 @@ namespace XpressFormula::UI {
 inline constexpr int kExportMetadataSchemaVersion = 1;
 
 inline std::string jsonEscape(std::string_view text) {
-    std::string escaped;
-    escaped.reserve(text.size() + 8);
-    static constexpr char hex[] = "0123456789ABCDEF";
-
-    for (unsigned char ch : text) {
-        switch (ch) {
-            case '"':
-                escaped += "\\\"";
-                break;
-            case '\\':
-                escaped += "\\\\";
-                break;
-            case '\b':
-                escaped += "\\b";
-                break;
-            case '\f':
-                escaped += "\\f";
-                break;
-            case '\n':
-                escaped += "\\n";
-                break;
-            case '\r':
-                escaped += "\\r";
-                break;
-            case '\t':
-                escaped += "\\t";
-                break;
-            default:
-                if (ch < 0x20) {
-                    escaped += "\\u00";
-                    escaped += hex[(ch >> 4) & 0x0F];
-                    escaped += hex[ch & 0x0F];
-                } else {
-                    escaped += static_cast<char>(ch);
-                }
-                break;
-        }
-    }
-
-    return escaped;
+    return Infrastructure::Serialization::jsonEscape(text);
 }
 
 inline const char* jsonBool(bool value) {
-    return value ? "true" : "false";
+    return Infrastructure::Serialization::jsonBool(value);
 }
 
 inline std::filesystem::path exportMetadataSidecarPath(const std::filesystem::path& imagePath) {
@@ -64,9 +28,7 @@ inline std::filesystem::path exportMetadataSidecarPath(const std::filesystem::pa
 }
 
 inline std::filesystem::path exportMetadataTempPath(const std::filesystem::path& sidecarPath) {
-    std::filesystem::path temporary = sidecarPath;
-    temporary += L".tmp";
-    return temporary;
+    return Infrastructure::FileSystem::atomicTempPathFor(sidecarPath);
 }
 
 } // namespace XpressFormula::UI

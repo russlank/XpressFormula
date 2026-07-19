@@ -150,7 +150,6 @@ private:
     void showLastSavedExportInFolder();
     void copyLastSavedExportPath();
     void processPendingExportActions();
-    static std::string narrowUtf8(const std::wstring& text);
 
     HWND                      m_hWnd               = nullptr;
     ID3D11Device*             m_device              = nullptr;
