@@ -109,6 +109,11 @@
     <ClInclude Include="..\XpressFormula\UI\ExportSettings.h" />
     <ClInclude Include="..\XpressFormula\UI\PlotSettings.h" />
   </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\XpressFormula.Expression\XpressFormula.Expression.vcxproj">
+      <Project>{8DAFDF53-6738-4BAE-A25D-D1E5CF325BFE}</Project>
+    </ProjectReference>
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />
 </Project>

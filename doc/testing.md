@@ -5,8 +5,8 @@
 
 - Project: [`src/XpressFormula.Tests/XpressFormula.Tests.vcxproj`](../src/XpressFormula.Tests/XpressFormula.Tests.vcxproj)
 - Output executable:
-  - x64: `src\x64\Debug\XpressFormula.Tests.exe`
-  - x86: `src\Debug\XpressFormula.Tests.exe`
+  - x64 Debug direct project build: `src\XpressFormula.Tests\x64\Debug\XpressFormula.Tests.exe`
+  - x64 Release direct project build: `src\XpressFormula.Tests\x64\Release\XpressFormula.Tests.exe`
 
 The project uses a lightweight in-repo test harness ([`src/XpressFormula.Tests/CppUnitTest.h`](../src/XpressFormula.Tests/CppUnitTest.h)) and does not require external MSTest headers.
 
@@ -24,8 +24,8 @@ The test project links the production static libraries (`XpressFormula.Expressio
   - coordinate conversion, zoom/pan/reset, grid spacing behavior, and persistent state versus transient viewport round trips
 - Scene summary / render mode policy
   - visible scene analysis for empty, invalid, hidden, 2D-only, 3D-only, scalar-field, and mixed scenes; centralized Auto/Force2D/Force3D resolution
-- Formula entry / mode selection
-  - formula compiler diagnostics, equation parsing (`left=right`), implicit equation compilation, render-mode classification, stable formula identity, and UI adapter compatibility
+- Model formula / mode selection
+  - formula compiler diagnostics, equation parsing (`left=right`), implicit equation compilation, render-mode classification, stable formula identity, dynamic editor state, and ID-targeted list actions
 - Export settings and metadata
   - size/aspect plans, export profiles, preview sizing, and JSON sidecar helpers
 - Project/session persistence
@@ -53,8 +53,10 @@ The test project links the production static libraries (`XpressFormula.Expressio
 ### CLI (PowerShell)
 
 ```powershell
-.\src\x64\Debug\XpressFormula.Tests.exe
+.\src\XpressFormula.Tests\x64\Debug\XpressFormula.Tests.exe
 ```
+
+CI PR validation builds Debug/Release app and test targets with explicit, non-colliding `IntDir` and `OutDir` values under `build\obj\...` and `build\bin\...`, then runs tests from those configured output directories.
 
 ## Interpreting Results
 

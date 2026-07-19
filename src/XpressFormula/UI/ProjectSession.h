@@ -3,6 +3,7 @@
 #pragma once
 
 #include "../Core/ViewTransform.h"
+#include "../Model/Formula.h"
 #include "../Model/ViewState.h"
 #include "ExportMetadata.h"
 #include "FormulaEntry.h"
@@ -612,19 +613,24 @@ inline bool parsePlotHudMode(std::string_view text, PlotHudMode& mode) {
     return false;
 }
 
-inline ProjectSession makeProjectSession(const std::vector<FormulaEntry>& formulas,
+inline ProjectSession makeProjectSession(const std::vector<Model::Formula>& formulas,
                                          const Core::ViewTransform& view,
                                          const PlotSettings& plot) {
     ProjectSession session;
     session.formulas.reserve(formulas.size());
-    for (const FormulaEntry& formula : formulas) {
+    for (const Model::Formula& formula : formulas) {
         ProjectFormulaRecord record;
-        record.expression = formula.expressionText();
+        record.expression = formula.expression;
         for (std::size_t channel = 0; channel < record.color.size(); ++channel) {
             record.color[channel] = formula.color[channel];
         }
         record.visible = formula.visible;
-        record.zSlice = formula.zSlice;
+        record.zSlice =
+            (std::isfinite(formula.zSlice) &&
+             formula.zSlice >= -static_cast<double>((std::numeric_limits<float>::max)()) &&
+             formula.zSlice <= static_cast<double>((std::numeric_limits<float>::max)()))
+                ? static_cast<float>(formula.zSlice)
+                : 0.0f;
         session.formulas.push_back(std::move(record));
     }
 
@@ -815,7 +821,7 @@ inline ProjectSessionParseResult parseProjectSession(std::string_view json) {
 }
 
 inline void applyProjectSession(const ProjectSession& session,
-                                std::vector<FormulaEntry>& formulas,
+                                std::vector<Model::Formula>& formulas,
                                 Core::ViewTransform& view,
                                 PlotSettings& plot,
                                 std::vector<std::string>& warnings) {
@@ -823,7 +829,7 @@ inline void applyProjectSession(const ProjectSession& session,
     formulas.reserve(session.formulas.size());
     for (std::size_t i = 0; i < session.formulas.size(); ++i) {
         const ProjectFormulaRecord& record = session.formulas[i];
-        FormulaEntry entry;
+        Model::Formula entry;
         entry.setExpression(record.expression);
 
         for (std::size_t channel = 0; channel < record.color.size(); ++channel) {
@@ -831,10 +837,11 @@ inline void applyProjectSession(const ProjectSession& session,
         }
         entry.visible = record.visible;
         entry.zSlice = record.zSlice;
-        entry.parse();
+        entry.compile();
         if (!entry.isValid() && !record.expression.empty()) {
+            const Expression::FormulaDiagnostic* diagnostic = entry.compiled.firstDiagnostic();
             warnings.emplace_back("Formula " + std::to_string(i + 1) +
-                " did not parse: " + entry.error);
+                " did not parse: " + (diagnostic ? diagnostic->message : "unknown parse error"));
         }
         formulas.push_back(std::move(entry));
     }
@@ -883,7 +890,7 @@ inline void applyProjectSession(const ProjectSession& session,
     plot.applyCoordinateOverlayPolicy();
 }
 
-inline std::string serializeCurrentProjectSession(const std::vector<FormulaEntry>& formulas,
+inline std::string serializeCurrentProjectSession(const std::vector<Model::Formula>& formulas,
                                                   const Core::ViewTransform& view,
                                                   const PlotSettings& plot) {
     return serializeProjectSession(makeProjectSession(formulas, view, plot));

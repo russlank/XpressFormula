@@ -12,19 +12,20 @@
 using namespace Microsoft::VisualStudio::CppUnitTestFramework;
 using namespace XpressFormula::UI;
 namespace XFCore = XpressFormula::Core;
+namespace XFModel = XpressFormula::Model;
 
 namespace XpressFormulaTests {
 
-static FormulaEntry makeFormula(const char* expression) {
-    FormulaEntry entry;
+static XFModel::Formula makeFormula(const char* expression) {
+    XFModel::Formula entry;
     entry.setExpression(expression ? expression : "");
     entry.color[0] = 0.25f;
     entry.color[1] = 0.50f;
     entry.color[2] = 0.75f;
     entry.color[3] = 1.0f;
     entry.visible = false;
-    entry.zSlice = 1.25f;
-    entry.parse();
+    entry.zSlice = 1.25;
+    entry.compile();
     return entry;
 }
 
@@ -62,7 +63,7 @@ static void assertParseFails(std::string_view json) {
 }
 
 TEST_CASE(ProjectSession_RoundTripPreservesCoreState) {
-    std::vector<FormulaEntry> formulas = { makeFormula("sin(x)") };
+    std::vector<XFModel::Formula> formulas = { makeFormula("sin(x)") };
     XFCore::ViewTransform view;
     view.state.centerX = 2.5;
     view.state.centerY = -1.25;
@@ -98,8 +99,34 @@ TEST_CASE(ProjectSession_RoundTripPreservesCoreState) {
     Assert::AreEqual(4, parsed.session.plot.wireStride);
 }
 
+TEST_CASE(ProjectSession_DoesNotPersistRuntimeFormulaState) {
+    std::vector<XFModel::Formula> formulas = { makeFormula("sin(x)") };
+    const XFModel::FormulaId originalId = formulas[0].id;
+    XFCore::ViewTransform view;
+    PlotSettings plot;
+
+    const std::string json = serializeCurrentProjectSession(formulas, view, plot);
+
+    Assert::IsTrue(json.find("\"id\"") == std::string::npos);
+    Assert::IsTrue(json.find("compiled") == std::string::npos);
+    Assert::IsTrue(json.find("diagnostic") == std::string::npos);
+    Assert::IsTrue(json.find("editor") == std::string::npos);
+
+    const ProjectSessionParseResult parsed = parseProjectSession(json);
+    Assert::IsTrue(parsed.success);
+
+    std::vector<XFModel::Formula> restored;
+    std::vector<std::string> warnings;
+    applyProjectSession(parsed.session, restored, view, plot, warnings);
+
+    Assert::AreEqual(1, static_cast<int>(restored.size()));
+    Assert::IsTrue(restored[0].isValid());
+    Assert::IsTrue(restored[0].compiled.ast != nullptr);
+    Assert::IsTrue(restored[0].id != originalId);
+}
+
 TEST_CASE(ProjectSession_PersistsViewStateButLeavesViewportTransient) {
-    std::vector<FormulaEntry> formulas;
+    std::vector<XFModel::Formula> formulas;
     XFCore::ViewTransform view;
     view.state.centerX = -4.0;
     view.state.centerY = 3.5;
@@ -365,7 +392,7 @@ TEST_CASE(ProjectSession_EmptyProjectRoundTrips) {
     Assert::IsTrue(parsed.success);
     Assert::AreEqual(0, static_cast<int>(parsed.session.formulas.size()));
 
-    std::vector<FormulaEntry> formulas;
+    std::vector<XFModel::Formula> formulas;
     XFCore::ViewTransform view;
     PlotSettings plot;
     std::vector<std::string> warnings;
@@ -420,7 +447,7 @@ TEST_CASE(ProjectSession_LongFormulaPreservesStoredExpression) {
     const std::string expectedExpression = formula.expression;
     session.formulas.push_back(std::move(formula));
 
-    std::vector<FormulaEntry> formulas;
+    std::vector<XFModel::Formula> formulas;
     XFCore::ViewTransform view;
     PlotSettings plot;
     std::vector<std::string> warnings;
@@ -442,7 +469,7 @@ TEST_CASE(ProjectSession_ApplyValidatesLoadedFormulas) {
     ProjectSession session;
     session.formulas.push_back(ProjectFormulaRecord{ "x = y = 1" });
 
-    std::vector<FormulaEntry> formulas;
+    std::vector<XFModel::Formula> formulas;
     XFCore::ViewTransform view;
     PlotSettings plot;
     std::vector<std::string> warnings;
@@ -517,7 +544,7 @@ TEST_CASE(ProjectSession_AppliesSafeClampsAndCoordinatePolicy) {
     session.plot.showCoordinates = true;
     session.plot.showAxisTriad = true;
 
-    std::vector<FormulaEntry> formulas;
+    std::vector<XFModel::Formula> formulas;
     XFCore::ViewTransform view;
     PlotSettings plot;
     std::vector<std::string> warnings;

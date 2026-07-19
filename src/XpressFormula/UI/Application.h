@@ -3,7 +3,6 @@
 //                  ImGui context, and orchestrates the UI panels.
 #pragma once
 
-#include "FormulaEntry.h"
 #include "FormulaPanel.h"
 #include "ControlPanel.h"
 #include "ExportSettings.h"
@@ -11,6 +10,7 @@
 #include "PlotSettings.h"
 #include "ProjectSession.h"
 #include "../Core/ViewTransform.h"
+#include "../Model/Formula.h"
 #include "../Model/SceneSummary.h"
 
 #include <chrono>
@@ -191,7 +191,7 @@ private:
     bool                      m_closeRequestedAfterFrame = false;
 
     // Application state
-    std::vector<FormulaEntry> m_formulas;
+    std::vector<Model::Formula> m_formulas;
     Model::SceneSummary       m_sceneSummary;
     Core::ViewTransform       m_viewTransform;
     PlotSettings              m_plotSettings;

@@ -1,6 +1,7 @@
 // PlotPanel.cpp - Interactive plot panel implementation.
 #include "PlotPanel.h"
 #include "../Plotting/PlotRenderer.h"
+#include "FormulaPresentation.h"
 #include "imgui.h"
 #include <algorithm>
 #include <cmath>
@@ -55,7 +56,7 @@ void drawCornerHud(ImDrawList* dl,
 
 } // namespace
 
-void PlotPanel::render(std::vector<FormulaEntry>& formulas,
+void PlotPanel::render(std::vector<Model::Formula>& formulas,
                        Core::ViewTransform& vt,
                        PlotSettings& settings,
                        const Model::SceneSummary& scene,
@@ -185,10 +186,10 @@ void PlotPanel::render(std::vector<FormulaEntry>& formulas,
                             bool enable3DOverlays) {
         for (auto& f : formulas) {
             if (!f.visible || !f.isValid()) continue;
-            switch (f.renderKind) {
+            switch (formulaRenderKindFor(f.compiled.kind)) {
                 case FormulaRenderKind::Curve2D:
                     if (!is3DMode) {
-                        Plotting::PlotRenderer::drawCurve2D(dl, vt, f.ast, f.color);
+                        Plotting::PlotRenderer::drawCurve2D(dl, vt, f.compiled.ast, f.color.data());
                     }
                     break;
                 case FormulaRenderKind::Surface3D:
@@ -199,30 +200,38 @@ void PlotPanel::render(std::vector<FormulaEntry>& formulas,
                             options.showEnvelope = false;
                             options.showAxisTriad = false;
                         }
-                        Plotting::PlotRenderer::drawSurface3D(dl, vt, f.ast, f.color, options);
+                        Plotting::PlotRenderer::drawSurface3D(
+                            dl, vt, f.compiled.ast, f.color.data(), options);
                     } else {
                         Plotting::PlotRenderer::drawHeatmap(
-                            dl, vt, f.ast, f.color, settings.heatmapOpacity);
+                            dl, vt, f.compiled.ast, f.color.data(), settings.heatmapOpacity);
                     }
                     break;
                 case FormulaRenderKind::Implicit2D:
                     if (!is3DMode) {
-                        Plotting::PlotRenderer::drawImplicitContour2D(dl, vt, f.ast, f.color, 2.0f);
+                        Plotting::PlotRenderer::drawImplicitContour2D(
+                            dl, vt, f.compiled.ast, f.color.data(), 2.0f);
                     }
                     break;
                 case FormulaRenderKind::ScalarField3D:
-                    if (f.isEquation && is3DMode) {
+                    if (f.compiled.equation && is3DMode) {
                         auto options = make3DOptions();
-                        options.implicitZCenter = f.zSlice;
+                        options.implicitZCenter = static_cast<float>(f.zSlice);
                         options.planePass = planePass;
                         if (!enable3DOverlays) {
                             options.showEnvelope = false;
                             options.showAxisTriad = false;
                         }
-                        Plotting::PlotRenderer::drawImplicitSurface3D(dl, vt, f.ast, f.color, options);
+                        Plotting::PlotRenderer::drawImplicitSurface3D(
+                            dl, vt, f.compiled.ast, f.color.data(), options);
                     } else if (!is3DMode) {
                         Plotting::PlotRenderer::drawCrossSection(
-                            dl, vt, f.ast, f.zSlice, f.color, settings.heatmapOpacity);
+                            dl,
+                            vt,
+                            f.compiled.ast,
+                            static_cast<float>(f.zSlice),
+                            f.color.data(),
+                            settings.heatmapOpacity);
                     }
                     break;
                 default:

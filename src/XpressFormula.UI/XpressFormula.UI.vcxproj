@@ -116,12 +116,12 @@
     <ClInclude Include="..\XpressFormula\UI\Components\PlotToolbar.h" />
     <ClInclude Include="..\XpressFormula\UI\ExportMetadata.h" />
     <ClInclude Include="..\XpressFormula\UI\ExportSettings.h" />
+    <ClInclude Include="..\XpressFormula\UI\FormulaEditorState.h" />
     <ClInclude Include="..\XpressFormula\UI\FormulaExamples.h" />
     <ClInclude Include="..\XpressFormula\UI\FormulaEntry.h" />
     <ClInclude Include="..\XpressFormula\UI\FormulaListActions.h" />
     <ClInclude Include="..\XpressFormula\UI\FormulaPanel.h" />
     <ClInclude Include="..\XpressFormula\UI\FormulaPresentation.h" />
-    <ClInclude Include="..\XpressFormula\UI\FormulaSceneAdapter.h" />
     <ClInclude Include="..\XpressFormula\UI\ControlPanel.h" />
     <ClInclude Include="..\XpressFormula\UI\PlotPanel.h" />
     <ClInclude Include="..\XpressFormula\UI\PlotSettings.h" />

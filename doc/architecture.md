@@ -51,7 +51,7 @@ This first boundary step references existing files from new static-library proje
 - [`src/XpressFormula/Expression/FormulaCompiler.h`](../src/XpressFormula/Expression/FormulaCompiler.h) and [`src/XpressFormula/Expression/FormulaCompiler.cpp`](../src/XpressFormula/Expression/FormulaCompiler.cpp)
   - Formula trimming, expression/equation parsing, equation normalization, unsupported-variable validation, and formula-kind classification.
 - [`src/XpressFormula/Model/Formula.h`](../src/XpressFormula/Model/Formula.h)
-  - Stable formula identity and string-backed domain formula state.
+  - Stable formula identity, string-backed formula state, display state, z-slice, compiled formula, and compiler diagnostics.
 - [`src/XpressFormula/Model/SceneSummary.h`](../src/XpressFormula/Model/SceneSummary.h) and [`src/XpressFormula/Model/SceneSummary.cpp`](../src/XpressFormula/Model/SceneSummary.cpp)
   - Pure visible-scene capability analysis for render-mode planning, toolbar state, idle redraw scheduling, and plot rendering.
 - [`src/XpressFormula/Model/ViewState.h`](../src/XpressFormula/Model/ViewState.h)
@@ -69,11 +69,11 @@ This first boundary step references existing files from new static-library proje
 - [`src/XpressFormula/UI/Components`](../src/XpressFormula/UI/Components)
   - Reusable XpressFormula-specific UI components such as `PlotToolbar` and `FormulaCard`. Components may edit ordinary widget state passed by reference, but collection mutations and application commands stay with panels or `Application`.
 - [`src/XpressFormula/UI/FormulaPanel.h`](../src/XpressFormula/UI/FormulaPanel.h) and [`src/XpressFormula/UI/FormulaPanel.cpp`](../src/XpressFormula/UI/FormulaPanel.cpp)
-  - Formula list management, editor modal workflow, collection mutations, and action handling returned by formula-card components.
+  - Formula list management, dynamically sized editor modal workflow, collection mutations, and action handling returned by formula-card components.
+- [`src/XpressFormula/UI/FormulaEditorState.h`](../src/XpressFormula/UI/FormulaEditorState.h)
+  - Temporary formula-editor state for target ID, editor text, and cached validation preview.
 - [`src/XpressFormula/UI/FormulaEntry.h`](../src/XpressFormula/UI/FormulaEntry.h) and [`src/XpressFormula/UI/FormulaPresentation.h`](../src/XpressFormula/UI/FormulaPresentation.h)
-  - UI compatibility adapter and presentation labels around the expression compiler. `FormulaEntry` keeps legacy fields available for current renderers, while stored formula text is a `std::string`.
-- [`src/XpressFormula/UI/FormulaSceneAdapter.h`](../src/XpressFormula/UI/FormulaSceneAdapter.h)
-  - Thin adapter from `FormulaEntry` lists to model scene-summary analysis.
+  - `FormulaEntry` is a transitional alias for `Model::Formula`; presentation helpers derive user-facing labels and display counts from compiled formula kind.
 - [`src/XpressFormula/UI/ControlPanel.h`](../src/XpressFormula/UI/ControlPanel.h) and [`src/XpressFormula/UI/ControlPanel.cpp`](../src/XpressFormula/UI/ControlPanel.cpp)
   - Global 2D view controls, display toggles (grid/coordinates/wires), reusable property-grid rows for 3D/heatmap controls, and export dialog launch action.
 - [`src/XpressFormula/UI/PlotPanel.h`](../src/XpressFormula/UI/PlotPanel.h) and [`src/XpressFormula/UI/PlotPanel.cpp`](../src/XpressFormula/UI/PlotPanel.cpp)
@@ -90,8 +90,8 @@ This first boundary step references existing files from new static-library proje
 1. [`src/XpressFormula/main.cpp`](../src/XpressFormula/main.cpp) constructs `UI::Application`.
 2. `Application::initialize()` creates Win32 window, D3D11 swap chain/device, and ImGui context.
 3. `Application::run()` drives the message loop and rendering frames (including idle redraw optimization).
-4. `FormulaPanel` updates formula text and triggers parse.
-5. `Application` builds a `SceneSummary` from the edited formula list and passes it to the control panel, toolbar, and plot panel.
+4. `FormulaPanel` updates `Model::Formula` text and compiles through the expression compiler.
+5. `Application` calls `Model::analyzeScene()` on the model formula list and passes the resulting `SceneSummary` to the control panel, toolbar, and plot panel.
 6. `PlotPanel` updates only the transient viewport geometry on `ViewTransform` and delegates drawing to `PlotRenderer`.
 7. `PlotRenderer` evaluates formulas through `Core::Evaluator` and draws based on variable dimensionality and equation form.
 8. `Application` also polls a background GitHub release check future and updates sidebar notification state when a result arrives.
@@ -100,13 +100,14 @@ This first boundary step references existing files from new static-library proje
 
 ## Project Persistence Boundary
 
-`ProjectSession` is the versioned boundary for `.xfplot` files. `Application` still owns live state (`FormulaEntry`, `ViewTransform`, `PlotSettings`, project path, dirty flag, and recent list), while the serializer works on plain records that do not depend on ImGui widgets.
+`ProjectSession` is the versioned boundary for `.xfplot` files. `Application` owns live state (`Model::Formula`, `ViewTransform`, `PlotSettings`, project path, dirty flag, and recent list), while the serializer works on plain records that do not depend on ImGui widgets.
 
 Important rules:
 
 - Build a `ProjectSession` snapshot from application state before saving.
 - Parse and validate a full project file before mutating active application state.
 - Retain invalid loaded formulas where possible and report load warnings after reparsing.
+- Persist formula expression, color, visibility, and z-slice only; runtime IDs, compiled ASTs, diagnostics, and editor state are rebuilt in memory.
 - Clamp or ignore unsafe numeric values before applying them to the live view and plot settings.
 - Persist only `ViewState` center/scale values; viewport origin/size is frame layout state and is not written to `.xfplot`.
 - Keep unknown fields tolerated for schema version 1 so future writers can add data without breaking older builds.
@@ -190,7 +191,7 @@ Dimension-arrow behavior:
 
 ## Error Handling
 
-- Parse/tokenization failures are attached to each `FormulaEntry`.
+- Parse/tokenization failures are exposed through each `Model::Formula` compiled diagnostic list.
 - Evaluation domain errors produce `NaN` and are skipped/neutralized during rendering.
 - Startup failures show a message box from `main.cpp` and exit with non-zero code.
 

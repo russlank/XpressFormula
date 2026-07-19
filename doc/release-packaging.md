@@ -158,8 +158,8 @@ Automated verification completed locally with Visual Studio MSBuild 18.8.2:
 - [x] Release x64 test project builds:
   `MSBuild src\XpressFormula.Tests\XpressFormula.Tests.vcxproj /p:Configuration=Release /p:Platform=x64 /m`
 - [x] No new compiler warnings in the above builds (`0 Warning(s)`).
-- [x] Automated tests pass: `src\XpressFormula.Tests\x64\Debug\XpressFormula.Tests.exe` reported `389/389 tests passed`.
-- [x] Release test executable also reported `389/389 tests passed`.
+- [x] Automated tests pass: `build\bin\debug-tests\XpressFormula.Tests.exe` reported `378/378 tests passed`.
+- [x] Release test executable also reported `378/378 tests passed`.
 - [x] Existing core tests pass.
 - [x] New project-session tests pass.
 - [x] Export settings and metadata tests pass.

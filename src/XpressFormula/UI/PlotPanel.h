@@ -1,9 +1,9 @@
 // PlotPanel.h - ImGui panel that displays the interactive plot area.
 #pragma once
 
-#include "FormulaEntry.h"
 #include "PlotSettings.h"
 #include "../Core/ViewTransform.h"
+#include "../Model/Formula.h"
 #include "../Model/SceneSummary.h"
 #include <array>
 #include <vector>
@@ -25,7 +25,7 @@ struct PlotRenderOverrides {
 /// Renders the main plot canvas with mouse interaction (pan & zoom).
 class PlotPanel {
 public:
-    void render(std::vector<FormulaEntry>& formulas, Core::ViewTransform& vt,
+    void render(std::vector<Model::Formula>& formulas, Core::ViewTransform& vt,
                 PlotSettings& settings,
                 const Model::SceneSummary& scene,
                 const PlotRenderOverrides* overrides = nullptr);

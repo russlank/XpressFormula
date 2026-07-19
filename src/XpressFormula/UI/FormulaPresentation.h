@@ -2,6 +2,8 @@
 #pragma once
 
 #include "../Expression/FormulaKind.h"
+#include "../Expression/FormulaCompiler.h"
+#include "../Model/Formula.h"
 
 namespace XpressFormula::UI {
 
@@ -42,6 +44,32 @@ inline const char* formulaTypeLabel(FormulaRenderKind renderKind, bool isEquatio
         default:
             return "invalid";
     }
+}
+
+inline const char* formulaTypeLabel(Expression::FormulaKind kind, bool isEquation) {
+    return formulaTypeLabel(formulaRenderKindFor(kind), isEquation);
+}
+
+inline const char* formulaTypeLabel(const Model::Formula& formula) {
+    return formulaTypeLabel(formula.compiled.kind, formula.compiled.equation);
+}
+
+inline int displayedVariableCount(Expression::FormulaKind kind) {
+    return Expression::variableCountForKind(kind);
+}
+
+inline int displayedVariableCount(const Model::Formula& formula) {
+    return displayedVariableCount(formula.compiled.kind);
+}
+
+inline bool formulaUses3DSurface(const Model::Formula& formula) {
+    return formula.compiled.kind == Expression::FormulaKind::ExplicitSurface3D ||
+           formula.compiled.kind == Expression::FormulaKind::ImplicitSurface3D;
+}
+
+inline const char* formulaDiagnosticText(const Model::Formula& formula) {
+    const Expression::FormulaDiagnostic* diagnostic = formula.compiled.firstDiagnostic();
+    return diagnostic ? diagnostic->message.c_str() : "";
 }
 
 } // namespace XpressFormula::UI

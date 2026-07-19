@@ -1,21 +1,19 @@
 // SceneSummaryTests.cpp - Unit tests for visible scene capability analysis.
 #include "CppUnitTest.h"
-#include "../XpressFormula/Expression/FormulaCompiler.h"
 #include "../XpressFormula/Model/SceneSummary.h"
 
 #include <vector>
 
 using namespace Microsoft::VisualStudio::CppUnitTestFramework;
-namespace XFExpression = XpressFormula::Expression;
 namespace XFModel = XpressFormula::Model;
 
 namespace XpressFormulaTests {
 
 static XFModel::Formula makeFormula(const char* expression, bool visible = true) {
     XFModel::Formula formula;
-    formula.expression = expression ? expression : "";
+    formula.setExpression(expression ? expression : "");
     formula.visible = visible;
-    formula.compiled = XFExpression::compileFormula(formula.expression);
+    formula.compile();
     return formula;
 }
 

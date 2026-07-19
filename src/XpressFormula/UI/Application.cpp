@@ -5,7 +5,8 @@
 #include "../Version.h"
 #include "../resource.h"
 #include "ExportMetadata.h"
-#include "FormulaSceneAdapter.h"
+#include "FormulaEntry.h"
+#include "FormulaPresentation.h"
 #include "Components/PlotToolbar.h"
 #include "UiKit/Splitter.h"
 #include "UiKit/UiMetrics.h"
@@ -39,6 +40,7 @@
 #include <fstream>
 #include <iomanip>
 #include <sstream>
+#include <span>
 #include <string>
 #include <system_error>
 
@@ -349,10 +351,12 @@ Application::~Application() = default;
 void Application::resetToDefaultProject() {
     m_formulas.clear();
 
-    FormulaEntry defaultEntry;
+    Model::Formula defaultEntry;
     defaultEntry.setExpression("sin(sqrt(x^2+y^2))");
-    std::memcpy(defaultEntry.color, kDefaultPalette[0], sizeof(defaultEntry.color));
-    defaultEntry.parse();
+    for (std::size_t channel = 0; channel < defaultEntry.color.size(); ++channel) {
+        defaultEntry.color[channel] = kDefaultPalette[0][channel];
+    }
+    defaultEntry.compile();
     m_formulas.push_back(std::move(defaultEntry));
     refreshSceneSummary();
 
@@ -366,7 +370,8 @@ void Application::resetToDefaultProject() {
 }
 
 void Application::refreshSceneSummary() {
-    m_sceneSummary = analyzeFormulaScene(m_formulas);
+    m_sceneSummary = Model::analyzeScene(
+        std::span<const Model::Formula>(m_formulas.data(), m_formulas.size()));
 }
 
 ProjectSession Application::currentProjectSession() const {
@@ -3103,20 +3108,22 @@ std::string Application::buildExportMetadataJson(const ExportDialogSettings& set
     out << "  },\n";
     out << "  \"formulas\": [\n";
     for (size_t i = 0; i < m_formulas.size(); ++i) {
-        const FormulaEntry& formula = m_formulas[i];
+        const Model::Formula& formula = m_formulas[i];
+        const FormulaRenderKind renderKind = formulaRenderKindFor(formula.compiled.kind);
+        const char* diagnostic = formulaDiagnosticText(formula);
         out << "    {\n";
         out << "      \"index\": " << (i + 1) << ",\n";
-        out << "      \"expression\": " << q(formula.expressionText()) << ",\n";
+        out << "      \"expression\": " << q(formula.expression) << ",\n";
         out << "      \"visible\": " << jsonBool(formula.visible) << ",\n";
         out << "      \"color\": " << colorArray(formula.color) << ",\n";
         out << "      \"valid\": " << jsonBool(formula.isValid()) << ",\n";
-        out << "      \"type\": " << q(formula.typeLabel()) << ",\n";
-        out << "      \"renderKind\": " << q(formulaRenderKindLabel(formula.renderKind)) << ",\n";
-        out << "      \"equation\": " << jsonBool(formula.isEquation) << ",\n";
-        out << "      \"variableCount\": " << formula.variableCount << ",\n";
+        out << "      \"type\": " << q(formulaTypeLabel(formula)) << ",\n";
+        out << "      \"renderKind\": " << q(formulaRenderKindLabel(renderKind)) << ",\n";
+        out << "      \"equation\": " << jsonBool(formula.compiled.equation) << ",\n";
+        out << "      \"variableCount\": " << displayedVariableCount(formula) << ",\n";
         out << "      \"variables\": [";
         size_t variableIndex = 0;
-        for (const std::string& variable : formula.variables) {
+        for (const std::string& variable : formula.compiled.variables) {
             if (variableIndex++ > 0) {
                 out << ", ";
             }
@@ -3124,7 +3131,7 @@ std::string Application::buildExportMetadataJson(const ExportDialogSettings& set
         }
         out << "],\n";
         out << "      \"zSlice\": " << formula.zSlice << ",\n";
-        out << "      \"error\": " << q(formula.error) << "\n";
+        out << "      \"error\": " << q(diagnostic) << "\n";
         out << "    }" << ((i + 1 < m_formulas.size()) ? "," : "") << "\n";
     }
     out << "  ],\n";

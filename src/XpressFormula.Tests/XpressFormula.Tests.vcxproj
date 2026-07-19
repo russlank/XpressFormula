@@ -146,6 +146,7 @@
     <ClCompile Include="FormulaCompilerTests.cpp" />
     <ClCompile Include="SceneSummaryTests.cpp" />
     <ClCompile Include="FormulaEntryTests.cpp" />
+    <ClCompile Include="FormulaEditorStateTests.cpp" />
     <ClCompile Include="UpdateVersionUtilsTests.cpp" />
     <ClCompile Include="ExportSettingsTests.cpp" />
     <ClCompile Include="ProjectSessionTests.cpp" />
