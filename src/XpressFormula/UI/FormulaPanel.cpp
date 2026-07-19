@@ -68,7 +68,8 @@ bool canCopyEquivalent(const Core::FunctionInfo& fn) {
 
 void FormulaPanel::openEditor(const FormulaEntry& formula, int formulaIndex) {
     m_editorFormulaIndex = formulaIndex;
-    loadEditorText(m_editorBuffer, sizeof(m_editorBuffer), formula.inputBuffer);
+    loadEditorText(m_editorBuffer, sizeof(m_editorBuffer),
+                   FormulaListActions::formulaExpression(formula).c_str());
     m_openEditorPopupNextFrame = true;
     m_focusEditorInput = true;
     // Reset the cached preview so it re-parses on the first frame.
@@ -329,17 +330,16 @@ void FormulaPanel::renderEditorDialog(std::vector<FormulaEntry>& formulas) {
         if (currentEditorText != m_editorPreviousText) {
             m_editorPreviousText = currentEditorText;
             m_editorPreview = FormulaEntry{};
-            strncpy_s(m_editorPreview.inputBuffer, sizeof(m_editorPreview.inputBuffer), m_editorBuffer, _TRUNCATE);
+            m_editorPreview.setExpression(currentEditorText);
             m_editorPreview.parse();
         }
         const FormulaEntry& editorPreview = m_editorPreview;
 
         ImGui::TextDisabled("Editor buffer: %zu / %zu", editorLength, sizeof(m_editorBuffer) - 1);
-        if (editorLength >= sizeof(formula.inputBuffer)) {
+        if (editorLength >= sizeof(m_editorBuffer) - 1) {
             ImGui::SameLine();
             ImGui::TextColored(ImVec4(1.0f, 0.65f, 0.2f, 1.0f),
-                               "Will be truncated to %zu chars when applied",
-                               sizeof(formula.inputBuffer) - 1);
+                               "Editor input limit reached");
         }
 
         ImGui::Dummy(ImVec2(0.0f, 4.0f));
@@ -367,7 +367,7 @@ void FormulaPanel::renderEditorDialog(std::vector<FormulaEntry>& formulas) {
         ImGui::Separator();
         ImGui::Dummy(ImVec2(0.0f, 4.0f));
         if (ImGui::Button("Apply", ImVec2(120.0f, 0.0f))) {
-            strncpy_s(formula.inputBuffer, sizeof(formula.inputBuffer), m_editorBuffer, _TRUNCATE);
+            formula.setExpression(std::string(m_editorBuffer, editorLength));
             formula.parse();
             m_editorFormulaIndex = -1;
             ImGui::CloseCurrentPopup();
@@ -534,7 +534,7 @@ void FormulaPanel::render(std::vector<FormulaEntry>& formulas) {
             UiKit::IdScope presetId(i);
             if (ImGui::SmallButton(preset.label)) {
                 FormulaEntry entry;
-                strncpy_s(entry.inputBuffer, sizeof(entry.inputBuffer), preset.expression, _TRUNCATE);
+                entry.setExpression(preset.expression);
                 int idx = m_nextColorIndex % kPaletteSize;
                 std::memcpy(entry.color, kDefaultPalette[idx], sizeof(entry.color));
                 m_nextColorIndex++;

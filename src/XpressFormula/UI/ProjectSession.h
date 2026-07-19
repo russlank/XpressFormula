@@ -623,7 +623,7 @@ inline ProjectSession makeProjectSession(const std::vector<FormulaEntry>& formul
     session.formulas.reserve(formulas.size());
     for (const FormulaEntry& formula : formulas) {
         ProjectFormulaRecord record;
-        record.expression = std::string(formula.inputBuffer);
+        record.expression = formula.expressionText();
         for (std::size_t channel = 0; channel < record.color.size(); ++channel) {
             record.color[channel] = formula.color[channel];
         }
@@ -828,14 +828,7 @@ inline void applyProjectSession(const ProjectSession& session,
     for (std::size_t i = 0; i < session.formulas.size(); ++i) {
         const ProjectFormulaRecord& record = session.formulas[i];
         FormulaEntry entry;
-        const std::size_t copyLength =
-            (std::min)(record.expression.size(), sizeof(entry.inputBuffer) - 1);
-        std::memcpy(entry.inputBuffer, record.expression.data(), copyLength);
-        entry.inputBuffer[copyLength] = '\0';
-        if (copyLength < record.expression.size()) {
-            warnings.emplace_back("Formula " + std::to_string(i + 1) +
-                " was truncated to fit the editor buffer.");
-        }
+        entry.setExpression(record.expression);
 
         for (std::size_t channel = 0; channel < record.color.size(); ++channel) {
             entry.color[channel] = record.color[channel];

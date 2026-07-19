@@ -40,9 +40,6 @@ private:
     bool         match(TokenType type);
     bool         expect(TokenType type, const std::string& context);
 
-    // Utility: walk the AST and collect variable names
-    static void collectVariables(const ASTNodePtr& node, std::set<std::string>& vars);
-
     std::vector<Token> m_tokens;
     size_t             m_pos = 0;
     std::string        m_error;

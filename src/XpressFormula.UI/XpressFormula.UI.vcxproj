@@ -120,6 +120,7 @@
     <ClInclude Include="..\XpressFormula\UI\FormulaEntry.h" />
     <ClInclude Include="..\XpressFormula\UI\FormulaListActions.h" />
     <ClInclude Include="..\XpressFormula\UI\FormulaPanel.h" />
+    <ClInclude Include="..\XpressFormula\UI\FormulaPresentation.h" />
     <ClInclude Include="..\XpressFormula\UI\ControlPanel.h" />
     <ClInclude Include="..\XpressFormula\UI\PlotPanel.h" />
     <ClInclude Include="..\XpressFormula\UI\PlotSettings.h" />

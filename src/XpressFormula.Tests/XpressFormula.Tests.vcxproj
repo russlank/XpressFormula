@@ -140,8 +140,10 @@
     <ClCompile Include="main.cpp" />
     <ClCompile Include="TokenizerTests.cpp" />
     <ClCompile Include="ParserTests.cpp" />
+    <ClCompile Include="AstQueriesTests.cpp" />
     <ClCompile Include="EvaluatorTests.cpp" />
     <ClCompile Include="ViewTransformTests.cpp" />
+    <ClCompile Include="FormulaCompilerTests.cpp" />
     <ClCompile Include="FormulaEntryTests.cpp" />
     <ClCompile Include="UpdateVersionUtilsTests.cpp" />
     <ClCompile Include="ExportSettingsTests.cpp" />

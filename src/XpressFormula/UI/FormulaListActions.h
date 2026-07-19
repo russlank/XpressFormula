@@ -14,6 +14,9 @@ inline bool isValidFormulaIndex(const std::vector<FormulaEntry>& formulas, int i
 }
 
 inline std::string formulaExpression(const FormulaEntry& formula) {
+    if (!formula.expressionText().empty() || std::string(formula.inputBuffer).empty()) {
+        return formula.expressionText();
+    }
     return std::string(formula.inputBuffer);
 }
 
@@ -24,6 +27,7 @@ inline FormulaEntry duplicateFormulaEntry(const FormulaEntry& source) {
     duplicate.ast = nullptr;
     duplicate.leftAst = nullptr;
     duplicate.rightAst = nullptr;
+    duplicate.assignNewId();
     duplicate.lastParsedText = "\x01";
     duplicate.parse();
     return duplicate;

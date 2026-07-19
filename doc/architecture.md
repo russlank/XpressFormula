@@ -15,8 +15,8 @@ The architecture modernization now adds build-enforced production library bounda
 
 Current production projects:
 
-- `XpressFormula.Expression`: expression tokenization, parsing, evaluation, function metadata, examples, and version parsing helpers.
-- `XpressFormula.Model`: durable model-side sources, currently anchored by `ViewTransform` while settings models are still header-only.
+- `XpressFormula.Expression`: expression tokenization, parsing, shared AST queries, formula compilation/classification, evaluation, function metadata, examples, and version parsing helpers.
+- `XpressFormula.Model`: stable formula identity/state headers and durable model-side sources, currently anchored by `ViewTransform` while settings models are still header-only.
 - `XpressFormula.Plotting`: plotting renderer implementation.
 - `XpressFormula.Infrastructure`: temporary boundary for header-only persistence/export infrastructure until JSON/file/project sources are extracted.
 - `XpressFormula.UI`: ImGui panels, components, UiKit, and Dear ImGui core sources.
@@ -45,6 +45,12 @@ This first boundary step references existing files from new static-library proje
   - Converts expression text into token stream.
 - [`src/XpressFormula/Core/Parser.h`](../src/XpressFormula/Core/Parser.h) and [`src/XpressFormula/Core/Parser.cpp`](../src/XpressFormula/Core/Parser.cpp)
   - Recursive-descent parser producing an AST.
+- [`src/XpressFormula/Expression/AstQueries.h`](../src/XpressFormula/Expression/AstQueries.h) and [`src/XpressFormula/Expression/AstQueries.cpp`](../src/XpressFormula/Expression/AstQueries.cpp)
+  - Shared pure AST traversal queries, including variable collection and variable search.
+- [`src/XpressFormula/Expression/FormulaCompiler.h`](../src/XpressFormula/Expression/FormulaCompiler.h) and [`src/XpressFormula/Expression/FormulaCompiler.cpp`](../src/XpressFormula/Expression/FormulaCompiler.cpp)
+  - Formula trimming, expression/equation parsing, equation normalization, unsupported-variable validation, and formula-kind classification.
+- [`src/XpressFormula/Model/Formula.h`](../src/XpressFormula/Model/Formula.h)
+  - Stable formula identity and string-backed domain formula state.
 - [`src/XpressFormula/Core/Evaluator.h`](../src/XpressFormula/Core/Evaluator.h) and [`src/XpressFormula/Core/Evaluator.cpp`](../src/XpressFormula/Core/Evaluator.cpp)
   - Evaluates AST values for provided variables.
 - [`src/XpressFormula/Core/ViewTransform.h`](../src/XpressFormula/Core/ViewTransform.h) and [`src/XpressFormula/Core/ViewTransform.cpp`](../src/XpressFormula/Core/ViewTransform.cpp)
@@ -59,6 +65,8 @@ This first boundary step references existing files from new static-library proje
   - Reusable XpressFormula-specific UI components such as `PlotToolbar` and `FormulaCard`. Components may edit ordinary widget state passed by reference, but collection mutations and application commands stay with panels or `Application`.
 - [`src/XpressFormula/UI/FormulaPanel.h`](../src/XpressFormula/UI/FormulaPanel.h) and [`src/XpressFormula/UI/FormulaPanel.cpp`](../src/XpressFormula/UI/FormulaPanel.cpp)
   - Formula list management, editor modal workflow, collection mutations, and action handling returned by formula-card components.
+- [`src/XpressFormula/UI/FormulaEntry.h`](../src/XpressFormula/UI/FormulaEntry.h) and [`src/XpressFormula/UI/FormulaPresentation.h`](../src/XpressFormula/UI/FormulaPresentation.h)
+  - UI compatibility adapter and presentation labels around the expression compiler. `FormulaEntry` keeps legacy fields available for current renderers, while stored formula text is a `std::string`.
 - [`src/XpressFormula/UI/ControlPanel.h`](../src/XpressFormula/UI/ControlPanel.h) and [`src/XpressFormula/UI/ControlPanel.cpp`](../src/XpressFormula/UI/ControlPanel.cpp)
   - Global 2D view controls, display toggles (grid/coordinates/wires), reusable property-grid rows for 3D/heatmap controls, and export dialog launch action.
 - [`src/XpressFormula/UI/PlotPanel.h`](../src/XpressFormula/UI/PlotPanel.h) and [`src/XpressFormula/UI/PlotPanel.cpp`](../src/XpressFormula/UI/PlotPanel.cpp)

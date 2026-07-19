@@ -16,7 +16,7 @@ namespace XpressFormulaTests {
 
 static FormulaEntry parseFormula(const char* text) {
     FormulaEntry entry;
-    strncpy_s(entry.inputBuffer, sizeof(entry.inputBuffer), text, _TRUNCATE);
+    entry.setExpression(text ? text : "");
     entry.parse();
     return entry;
 }
@@ -125,7 +125,7 @@ TEST_CASE(FormulaEntry_WhitespaceOnly) {
 
 TEST_CASE(FormulaEntry_ReparseUnchangedText) {
     FormulaEntry entry;
-    strncpy_s(entry.inputBuffer, sizeof(entry.inputBuffer), "sin(x)", _TRUNCATE);
+    entry.setExpression("sin(x)");
     entry.parse();
     Assert::IsTrue(entry.isValid());
 
@@ -139,13 +139,13 @@ TEST_CASE(FormulaEntry_ReparseUnchangedText) {
 
 TEST_CASE(FormulaEntry_ReparseChangedText) {
     FormulaEntry entry;
-    strncpy_s(entry.inputBuffer, sizeof(entry.inputBuffer), "sin(x)", _TRUNCATE);
+    entry.setExpression("sin(x)");
     entry.parse();
     Assert::IsTrue(entry.isValid());
     Assert::IsTrue(entry.renderKind == FormulaRenderKind::Curve2D);
 
     // Change to a different formula
-    strncpy_s(entry.inputBuffer, sizeof(entry.inputBuffer), "x^2 + y^2", _TRUNCATE);
+    entry.setExpression("x^2 + y^2");
     entry.parse();
     Assert::IsTrue(entry.isValid());
     Assert::IsTrue(entry.renderKind == FormulaRenderKind::Surface3D);
@@ -303,8 +303,6 @@ TEST_CASE(FormulaEntry_EquationSolvedForZ_RightSide) {
 TEST_CASE(FormulaEntry_AllBuiltinExamplesParse) {
     std::set<std::string> labels;
     std::set<std::string> expressions;
-    FormulaEntry bufferProbe;
-    const std::size_t inputBufferSize = sizeof(bufferProbe.inputBuffer);
 
     Evaluator::Variables vars = { {"x", 0.37}, {"y", -0.21}, {"z", 0.43} };
 
@@ -312,8 +310,6 @@ TEST_CASE(FormulaEntry_AllBuiltinExamplesParse) {
         Assert::IsTrue(example.label != nullptr && example.label[0] != '\0');
         Assert::IsTrue(example.expression != nullptr && example.expression[0] != '\0');
         Assert::IsTrue(example.description != nullptr && example.description[0] != '\0');
-        Assert::IsTrue(std::strlen(example.expression) < inputBufferSize,
-            (std::wstring(L"Example exceeds FormulaEntry input buffer: ") + widen(example.label)).c_str());
         if (example.includeInPresets) {
             Assert::IsTrue(std::strlen(example.label) <= 40,
                 (std::wstring(L"Preset label is too long for a compact button: ") + widen(example.label)).c_str());

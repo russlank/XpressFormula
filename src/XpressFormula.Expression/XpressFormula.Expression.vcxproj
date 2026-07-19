@@ -96,6 +96,8 @@
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="..\XpressFormula\Expression\AstQueries.cpp" />
+    <ClCompile Include="..\XpressFormula\Expression\FormulaCompiler.cpp" />
     <ClCompile Include="..\XpressFormula\Core\Tokenizer.cpp" />
     <ClCompile Include="..\XpressFormula\Core\Parser.cpp" />
     <ClCompile Include="..\XpressFormula\Core\Evaluator.cpp" />
@@ -103,6 +105,9 @@
     <ClCompile Include="..\XpressFormula\Core\ExampleFormulaCatalog.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\XpressFormula\Expression\AstQueries.h" />
+    <ClInclude Include="..\XpressFormula\Expression\FormulaCompiler.h" />
+    <ClInclude Include="..\XpressFormula\Expression\FormulaKind.h" />
     <ClInclude Include="..\XpressFormula\Core\Token.h" />
     <ClInclude Include="..\XpressFormula\Core\MathConstants.h" />
     <ClInclude Include="..\XpressFormula\Core\Tokenizer.h" />

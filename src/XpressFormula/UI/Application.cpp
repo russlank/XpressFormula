@@ -349,8 +349,7 @@ void Application::resetToDefaultProject() {
     m_formulas.clear();
 
     FormulaEntry defaultEntry;
-    strncpy_s(defaultEntry.inputBuffer, sizeof(defaultEntry.inputBuffer),
-              "sin(sqrt(x^2+y^2))", _TRUNCATE);
+    defaultEntry.setExpression("sin(sqrt(x^2+y^2))");
     std::memcpy(defaultEntry.color, kDefaultPalette[0], sizeof(defaultEntry.color));
     defaultEntry.parse();
     m_formulas.push_back(std::move(defaultEntry));
@@ -3157,7 +3156,7 @@ std::string Application::buildExportMetadataJson(const ExportDialogSettings& set
         const FormulaEntry& formula = m_formulas[i];
         out << "    {\n";
         out << "      \"index\": " << (i + 1) << ",\n";
-        out << "      \"expression\": " << q(std::string(formula.inputBuffer)) << ",\n";
+        out << "      \"expression\": " << q(formula.expressionText()) << ",\n";
         out << "      \"visible\": " << jsonBool(formula.visible) << ",\n";
         out << "      \"color\": " << colorArray(formula.color) << ",\n";
         out << "      \"valid\": " << jsonBool(formula.isValid()) << ",\n";

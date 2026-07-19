@@ -99,6 +99,9 @@
     <ClCompile Include="..\XpressFormula\Core\ViewTransform.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\XpressFormula\Model\Color.h" />
+    <ClInclude Include="..\XpressFormula\Model\Formula.h" />
+    <ClInclude Include="..\XpressFormula\Model\FormulaId.h" />
     <ClInclude Include="..\XpressFormula\Core\ViewTransform.h" />
     <ClInclude Include="..\XpressFormula\UI\ExportSettings.h" />
     <ClInclude Include="..\XpressFormula\UI\PlotSettings.h" />

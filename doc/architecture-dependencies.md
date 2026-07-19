@@ -7,10 +7,10 @@ This document records the production library boundaries introduced for the archi
 
 ```text
 XpressFormula.Expression
-  Core tokenization, parsing, AST, evaluation, functions, examples, and version parsing helpers.
+  Core tokenization, parsing, AST, shared AST queries, formula compilation/classification, evaluation, functions, examples, and version parsing helpers.
 
 XpressFormula.Model
-  Current durable model-side source: ViewTransform. Header-only settings models are listed here until they move to Model.
+  Formula identity/state headers and current durable model-side source: ViewTransform. Header-only settings models are listed here until they move to Model.
 
 XpressFormula.Plotting
   PlotRenderer and plotting draw logic.
@@ -81,6 +81,7 @@ This makes tests consume the same production object code used by the executable.
 ## Current Exceptions
 
 - `XpressFormula.Infrastructure` contains an anchor `.cpp` because current persistence/export infrastructure is mostly header-only. Later serialization and persistence phases are expected to replace this with real JSON, atomic file, project serializer, repository, and recent-project sources.
+- `XpressFormula.UI::FormulaEntry` remains as a compatibility adapter for existing panels and renderers, but expression storage, parsing, equation normalization, AST variable traversal, and classification now delegate to `XpressFormula.Expression`.
 - `XpressFormula.Plotting` still includes ImGui because rendering currently writes directly to `ImDrawList`. A later plotting foundation phase is expected to introduce geometry generation before an ImGui backend.
 - `XpressFormula.App` still owns Windows API, D3D, WIC, WinHTTP, shell, clipboard, and file-dialog code. Later platform, export, document-controller, and composition phases are expected to extract these responsibilities.
 

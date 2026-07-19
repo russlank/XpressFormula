@@ -3,6 +3,7 @@
 #include "Tokenizer.h"
 #include "MathConstants.h"
 #include "FunctionRegistry.h"
+#include "../Expression/AstQueries.h"
 
 namespace XpressFormula::Core {
 
@@ -45,7 +46,7 @@ Parser::Result Parser::parse(const std::string& expression) {
         return result;
     }
 
-    collectVariables(result.ast, result.variables);
+    result.variables = Expression::collectVariables(result.ast);
     return result;
 }
 
@@ -215,32 +216,6 @@ bool Parser::expect(TokenType type, const std::string& context) {
               " at position " + std::to_string(current().position) +
               ", got '" + current().value + "'";
     return false;
-}
-
-// ---- variable collection ----------------------------------------------------
-void Parser::collectVariables(const ASTNodePtr& node, std::set<std::string>& vars) {
-    if (!node) return;
-    switch (node->type()) {
-        case NodeType::Variable:
-            vars.insert(static_cast<VariableNode*>(node.get())->name);
-            break;
-        case NodeType::BinaryOp: {
-            auto* bin = static_cast<BinaryOpNode*>(node.get());
-            collectVariables(bin->left, vars);
-            collectVariables(bin->right, vars);
-            break;
-        }
-        case NodeType::UnaryOp:
-            collectVariables(static_cast<UnaryOpNode*>(node.get())->operand, vars);
-            break;
-        case NodeType::FunctionCall: {
-            auto* fn = static_cast<FunctionCallNode*>(node.get());
-            for (auto& arg : fn->arguments)
-                collectVariables(arg, vars);
-            break;
-        }
-        default: break;
-    }
 }
 
 } // namespace XpressFormula::Core

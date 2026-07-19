@@ -11,7 +11,7 @@ namespace XpressFormulaTests {
 
 static FormulaEntry makeFormula(const char* expression) {
     FormulaEntry entry;
-    strncpy_s(entry.inputBuffer, sizeof(entry.inputBuffer), expression, _TRUNCATE);
+    entry.setExpression(expression ? expression : "");
     entry.parse();
     return entry;
 }
@@ -30,11 +30,13 @@ TEST_CASE(FormulaListActions_DuplicateCreatesIndependentEntry) {
     formulas.push_back(source);
 
     const auto originalAst = formulas[0].ast;
+    const auto originalId = formulas[0].id;
     const bool duplicated = FormulaListActions::duplicateFormula(formulas, 0);
 
     Assert::IsTrue(duplicated);
     Assert::AreEqual(2, static_cast<int>(formulas.size()));
-    assertStringEquals("sin(x)", formulas[1].inputBuffer);
+    assertStringEquals("sin(x)", FormulaListActions::formulaExpression(formulas[1]).c_str());
+    Assert::IsTrue(originalId != formulas[1].id);
     Assert::IsFalse(formulas[1].visible);
     Assert::AreEqual(2.5f, formulas[1].zSlice);
     Assert::AreEqual(0.25f, formulas[1].color[0]);
@@ -43,7 +45,7 @@ TEST_CASE(FormulaListActions_DuplicateCreatesIndependentEntry) {
     Assert::IsTrue(formulas[1].ast != nullptr);
     Assert::IsTrue(originalAst != formulas[1].ast);
 
-    strncpy_s(formulas[1].inputBuffer, sizeof(formulas[1].inputBuffer), "cos(x)", _TRUNCATE);
+    formulas[1].setExpression("cos(x)");
     formulas[1].parse();
     assertStringEquals("sin(x)", formulas[0].lastParsedText.c_str());
     assertStringEquals("cos(x)", formulas[1].lastParsedText.c_str());
@@ -73,11 +75,13 @@ TEST_CASE(FormulaListActions_ReorderPreservesStateAndSelection) {
     formulas[2].visible = false;
     formulas[2].zSlice = 4.0f;
     formulas[2].color[2] = 0.33f;
+    const auto movedId = formulas[2].id;
     int selectedIndex = 2;
 
     const bool moved = FormulaListActions::moveFormula(formulas, 2, 0, &selectedIndex);
 
     Assert::IsTrue(moved);
+    Assert::AreEqual(movedId, formulas[0].id);
     assertStringEquals("x + y + z", formulas[0].lastParsedText.c_str());
     Assert::IsFalse(formulas[0].visible);
     Assert::AreEqual(4.0f, formulas[0].zSlice);
@@ -134,7 +138,7 @@ TEST_CASE(FormulaListActions_HideOthersChangesOnlyVisibility) {
 TEST_CASE(FormulaListActions_FormulaExpressionPreservesExactBufferText) {
     FormulaEntry entry;
     const char* expression = "  sin(x) + cos(y)  ";
-    strncpy_s(entry.inputBuffer, sizeof(entry.inputBuffer), expression, _TRUNCATE);
+    entry.setExpression(expression);
     entry.parse();
 
     const std::string copied = FormulaListActions::formulaExpression(entry);

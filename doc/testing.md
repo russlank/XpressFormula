@@ -23,7 +23,7 @@ The test project links the production static libraries (`XpressFormula.Expressio
 - View transform
   - coordinate conversion, zoom/pan/reset, grid spacing behavior
 - Formula entry / mode selection
-  - equation parsing (`left=right`), implicit equation compilation, render-mode classification
+  - formula compiler diagnostics, equation parsing (`left=right`), implicit equation compilation, render-mode classification, stable formula identity, and UI adapter compatibility
 - Export settings and metadata
   - size/aspect plans, export profiles, preview sizing, and JSON sidecar helpers
 - Project/session persistence

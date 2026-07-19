@@ -4,7 +4,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstring>
 #include <limits>
 #include <string>
 #include <string_view>
@@ -18,7 +17,7 @@ namespace XpressFormulaTests {
 
 static FormulaEntry makeFormula(const char* expression) {
     FormulaEntry entry;
-    strncpy_s(entry.inputBuffer, sizeof(entry.inputBuffer), expression, _TRUNCATE);
+    entry.setExpression(expression ? expression : "");
     entry.color[0] = 0.25f;
     entry.color[1] = 0.50f;
     entry.color[2] = 0.75f;
@@ -370,13 +369,14 @@ TEST_CASE(ProjectSession_SkipsMalformedFormulaEntriesWithWarnings) {
     Assert::IsTrue(parsed.warnings.size() >= 2);
 }
 
-TEST_CASE(ProjectSession_LongFormulaProducesTruncationWarning) {
-    FormulaEntry probe;
-    const std::size_t bufferSize = sizeof(probe.inputBuffer);
-
+TEST_CASE(ProjectSession_LongFormulaPreservesStoredExpression) {
     ProjectSession session;
     ProjectFormulaRecord formula;
-    formula.expression.assign(bufferSize + 40, 'x');
+    formula.expression = "x";
+    for (int i = 0; i < 220; ++i) {
+        formula.expression += "+x";
+    }
+    const std::string expectedExpression = formula.expression;
     session.formulas.push_back(std::move(formula));
 
     std::vector<FormulaEntry> formulas;
@@ -386,17 +386,15 @@ TEST_CASE(ProjectSession_LongFormulaProducesTruncationWarning) {
     applyProjectSession(session, formulas, view, plot, warnings);
 
     Assert::AreEqual(1, static_cast<int>(formulas.size()));
-    Assert::AreEqual(static_cast<int>(bufferSize - 1),
-                     static_cast<int>(std::strlen(formulas[0].inputBuffer)));
-    Assert::AreEqual('\0', formulas[0].inputBuffer[bufferSize - 1]);
-
+    Assert::AreEqual(expectedExpression, formulas[0].expressionText());
+    Assert::IsTrue(formulas[0].isValid());
     const bool hasTruncationWarning = std::any_of(
         warnings.begin(),
         warnings.end(),
         [](const std::string& warning) {
             return warning.find("truncated") != std::string::npos;
         });
-    Assert::IsTrue(hasTruncationWarning);
+    Assert::IsFalse(hasTruncationWarning);
 }
 
 TEST_CASE(ProjectSession_ApplyValidatesLoadedFormulas) {
@@ -410,7 +408,7 @@ TEST_CASE(ProjectSession_ApplyValidatesLoadedFormulas) {
     applyProjectSession(session, formulas, view, plot, warnings);
 
     Assert::AreEqual(1, static_cast<int>(formulas.size()));
-    Assert::AreEqual(std::string("x = y = 1"), std::string(formulas[0].inputBuffer));
+    Assert::AreEqual(std::string("x = y = 1"), formulas[0].expressionText());
     Assert::IsFalse(formulas[0].isValid());
     Assert::IsFalse(warnings.empty());
 }
