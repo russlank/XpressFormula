@@ -4,6 +4,7 @@
 #include "FormulaEntry.h"
 #include "PlotSettings.h"
 #include "../Core/ViewTransform.h"
+#include "../Model/SceneSummary.h"
 #include <array>
 #include <vector>
 
@@ -26,6 +27,7 @@ class PlotPanel {
 public:
     void render(std::vector<FormulaEntry>& formulas, Core::ViewTransform& vt,
                 PlotSettings& settings,
+                const Model::SceneSummary& scene,
                 const PlotRenderOverrides* overrides = nullptr);
 
 private:

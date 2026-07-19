@@ -12,8 +12,7 @@
 namespace XpressFormula::UI {
 
 ControlPanelActions ControlPanel::render(Core::ViewTransform& vt, PlotSettings& settings,
-                                         bool has2DFormula,
-                                         bool hasSurfaceFormula,
+                                         const Model::SceneSummary& scene,
                                          const std::string& exportStatus) {
     ControlPanelActions actions;
 
@@ -21,7 +20,7 @@ ControlPanelActions ControlPanel::render(Core::ViewTransform& vt, PlotSettings& 
     ImGui::Separator();
 
     float viewScale = static_cast<float>(std::clamp(
-        std::sqrt(std::max(1e-6, vt.scaleX * vt.scaleY)),
+        std::sqrt(std::max(1e-6, vt.state.scaleX * vt.state.scaleY)),
         0.1,
         100000.0));
     ImGui::SetNextItemWidth(-1.0f);
@@ -32,8 +31,8 @@ ControlPanelActions ControlPanel::render(Core::ViewTransform& vt, PlotSettings& 
                            "%.1f px/unit",
                            ImGuiSliderFlags_Logarithmic)) {
         const double newScale = std::clamp(static_cast<double>(viewScale), 0.1, 100000.0);
-        vt.scaleX = newScale;
-        vt.scaleY = newScale;
+        vt.state.scaleX = newScale;
+        vt.state.scaleY = newScale;
     }
     ImGui::SetItemTooltip("Adjust X and Y scale together in pixels per world unit.");
 
@@ -42,7 +41,7 @@ ControlPanelActions ControlPanel::render(Core::ViewTransform& vt, PlotSettings& 
     ImGui::TextUnformatted(buf);
     std::snprintf(buf, sizeof(buf), "Y: [%.4g, %.4g]", vt.worldYMin(), vt.worldYMax());
     ImGui::TextUnformatted(buf);
-    std::snprintf(buf, sizeof(buf), "Scale: %.1f x %.1f px/unit", vt.scaleX, vt.scaleY);
+    std::snprintf(buf, sizeof(buf), "Scale: %.1f x %.1f px/unit", vt.state.scaleX, vt.state.scaleY);
     ImGui::TextUnformatted(buf);
     ImGui::TextWrapped("Mouse: drag to pan; wheel to zoom; Shift/Ctrl wheel constrains X/Y.");
 
@@ -91,16 +90,15 @@ ControlPanelActions ControlPanel::render(Core::ViewTransform& vt, PlotSettings& 
         settings.xyRenderModePreference = XYRenderModePreference::Force2D;
     }
 
-    const XYRenderMode effectiveRenderMode =
-        settings.resolveXYRenderMode(has2DFormula, hasSurfaceFormula);
+    const XYRenderMode effectiveRenderMode = settings.resolveXYRenderMode(scene);
     ImGui::TextDisabled("Effective mode: %s",
                         (effectiveRenderMode == XYRenderMode::Surface3D)
                             ? "3D"
                             : "2D");
     if (settings.xyRenderModePreference == XYRenderModePreference::Auto) {
-        if (hasSurfaceFormula && has2DFormula) {
+        if (scene.hasVisible3D() && scene.hasVisible2D()) {
             ImGui::TextWrapped("Auto is using 2D because both 2D and 3D formulas are visible.");
-        } else if (hasSurfaceFormula) {
+        } else if (scene.hasVisible3D()) {
             ImGui::TextWrapped("Auto is using 3D because only 3D-capable formulas are visible.");
         } else {
             ImGui::TextWrapped("Auto is using 2D (no visible 3D-capable formulas).");
@@ -265,7 +263,7 @@ ControlPanelActions ControlPanel::render(Core::ViewTransform& vt, PlotSettings& 
             }
         }
 
-        if (hasSurfaceFormula) {
+        if (scene.hasVisible3D()) {
             ImGui::TextWrapped("Tip: Drag in the plot to pan X/Y domain and use wheel to zoom.");
         } else {
             ImGui::TextWrapped("No 3D-capable formulas are currently visible (z=f(x,y) or F(x,y,z)=0).");

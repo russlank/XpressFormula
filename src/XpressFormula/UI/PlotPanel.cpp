@@ -58,6 +58,7 @@ void drawCornerHud(ImDrawList* dl,
 void PlotPanel::render(std::vector<FormulaEntry>& formulas,
                        Core::ViewTransform& vt,
                        PlotSettings& settings,
+                       const Model::SceneSummary& scene,
                        const PlotRenderOverrides* overrides) {
     // Update the viewport transform from the ImGui window
     ImVec2 pos  = ImGui::GetCursorScreenPos();
@@ -65,10 +66,10 @@ void PlotPanel::render(std::vector<FormulaEntry>& formulas,
     if (size.x < 1.0f) size.x = 1.0f;
     if (size.y < 1.0f) size.y = 1.0f;
 
-    vt.screenOriginX = pos.x;
-    vt.screenOriginY = pos.y;
-    vt.screenWidth   = size.x;
-    vt.screenHeight  = size.y;
+    vt.viewport.originX = pos.x;
+    vt.viewport.originY = pos.y;
+    vt.viewport.width   = size.x;
+    vt.viewport.height  = size.y;
 
     // Reserve the plot area as an invisible button so we capture mouse events
     ImGui::InvisibleButton("##plot_area", size,
@@ -100,45 +101,13 @@ void PlotPanel::render(std::vector<FormulaEntry>& formulas,
     dl->AddRectFilled(pos, ImVec2(pos.x + size.x, pos.y + size.y),
                       ImGui::ColorConvertFloat4ToU32(ImVec4(bg[0], bg[1], bg[2], bg[3])));
 
-    bool hasSurface = false;
-    bool has2DFormula = false;
-    for (const auto& formula : formulas) {
-        if (!formula.visible || !formula.isValid()) {
-            continue;
-        }
-
-        if (formula.renderKind == FormulaRenderKind::Surface3D ||
-            (formula.renderKind == FormulaRenderKind::ScalarField3D && formula.isEquation)) {
-            hasSurface = true;
-        }
-
-        switch (formula.renderKind) {
-            case FormulaRenderKind::Curve2D:
-            case FormulaRenderKind::Implicit2D:
-                has2DFormula = true;
-                break;
-            case FormulaRenderKind::ScalarField3D:
-                if (!formula.isEquation) {
-                    has2DFormula = true;
-                }
-                break;
-            default:
-                break;
-        }
-
-        if (hasSurface && has2DFormula) {
-            break;
-        }
-    }
-
-    const XYRenderMode effectiveRenderMode =
-        settings.resolveXYRenderMode(has2DFormula, hasSurface);
+    const XYRenderMode effectiveRenderMode = settings.resolveXYRenderMode(scene);
     const bool is3DMode = (effectiveRenderMode == XYRenderMode::Surface3D);
     const bool use3DGridPlaneInterleave = is3DMode && showGrid;
 
     // Apply auto-rotation BEFORE any 3D drawing so the grid, axes, and surfaces
     // all use the same azimuth for this frame (avoids a 1-frame visual tear).
-    if (hasSurface && is3DMode && settings.autoRotate) {
+    if (scene.hasVisible3D() && is3DMode && settings.autoRotate) {
         settings.azimuthDeg += ImGui::GetIO().DeltaTime * settings.autoRotateSpeedDegPerSec;
         if (settings.azimuthDeg > 180.0f) {
             settings.azimuthDeg -= 360.0f;
@@ -160,7 +129,8 @@ void PlotPanel::render(std::vector<FormulaEntry>& formulas,
     const bool isDraggingLeft = isActive && ImGui::IsMouseDragging(ImGuiMouseButton_Left);
     const bool isZoomingView = isHovered && (ImGui::GetIO().MouseWheel != 0.0f);
     const bool useInteractive3DThrottle =
-        settings.optimizeRendering && hasSurface && is3DMode && (isDraggingLeft || isZoomingView);
+        settings.optimizeRendering && scene.hasVisible3D() && is3DMode &&
+        (isDraggingLeft || isZoomingView);
 
     // Panning/zooming implicit F(x,y,z)=0 changes the sampled domain, which invalidates the mesh cache
     // and can force a full O(N^3) remesh every mouse move. Temporarily lowering mesh density (and
@@ -324,8 +294,8 @@ void PlotPanel::render(std::vector<FormulaEntry>& formulas,
             // Adjust center so cursor stays over the same world point
             double wxAfter, wyAfter;
             vt.screenToWorld(mousePos.x, mousePos.y, wxAfter, wyAfter);
-            vt.centerX += (wxBefore - wxAfter);
-            vt.centerY += (wyBefore - wyAfter);
+            vt.state.centerX += (wxBefore - wxAfter);
+            vt.state.centerY += (wyBefore - wyAfter);
         }
     }
 
@@ -376,7 +346,7 @@ void PlotPanel::render(std::vector<FormulaEntry>& formulas,
             hudLines.emplace_back(line);
             std::snprintf(line, sizeof(line), "Y [%.4g, %.4g]", vt.worldYMin(), vt.worldYMax());
             hudLines.emplace_back(line);
-            std::snprintf(line, sizeof(line), "Scale %.1f x %.1f px/unit", vt.scaleX, vt.scaleY);
+            std::snprintf(line, sizeof(line), "Scale %.1f x %.1f px/unit", vt.state.scaleX, vt.state.scaleY);
             hudLines.emplace_back(line);
             if (is3DMode) {
                 std::snprintf(line, sizeof(line), "Camera az %.1f  el %.1f  z %.2f",
@@ -395,7 +365,7 @@ void PlotPanel::render(std::vector<FormulaEntry>& formulas,
             std::snprintf(line, sizeof(line), "%s x %.4g  y %.4g", sampleLabel, wx, wy);
             hudLines.emplace_back(line);
             std::snprintf(line, sizeof(line), "Scale %.1f px/unit",
-                          std::sqrt(std::max(1e-6, vt.scaleX * vt.scaleY)));
+                          std::sqrt(std::max(1e-6, vt.state.scaleX * vt.state.scaleY)));
             hudLines.emplace_back(line);
         }
 

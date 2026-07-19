@@ -1,6 +1,8 @@
 // PlotSettings.h - Shared plotting settings for 2D and 3D render modes.
 #pragma once
 
+#include "../Model/SceneSummary.h"
+
 #include <algorithm>
 
 namespace XpressFormula::UI {
@@ -72,6 +74,23 @@ inline bool resolveCoordinateOverlayPolicy(bool showCoordinates, bool& showAxisT
     return std::clamp(value, 1, 16);
 }
 
+[[nodiscard]] inline XYRenderMode resolveXYRenderMode(XYRenderModePreference preference,
+                                                      const Model::SceneSummary& scene) {
+    switch (preference) {
+        case XYRenderModePreference::Force3D:
+            return XYRenderMode::Surface3D;
+        case XYRenderModePreference::Force2D:
+            return XYRenderMode::Heatmap2D;
+        case XYRenderModePreference::Auto:
+        default:
+            // Auto mode keeps 2D and 3D mutually exclusive:
+            // mixed visible content defaults to 2D, while purely-3D content activates 3D.
+            return (scene.hasVisible3D() && !scene.hasVisible2D())
+                ? XYRenderMode::Surface3D
+                : XYRenderMode::Heatmap2D;
+    }
+}
+
 struct PlotSettings {
     XYRenderModePreference xyRenderModePreference = XYRenderModePreference::Auto;
     PlotHudMode hudMode = PlotHudMode::Minimal;
@@ -80,21 +99,8 @@ struct PlotSettings {
     bool showCoordinates = true;
     bool showWires = true;
 
-    [[nodiscard]] XYRenderMode resolveXYRenderMode(bool hasVisible2DFormula,
-                                                   bool hasVisible3DFormula) const {
-        switch (xyRenderModePreference) {
-            case XYRenderModePreference::Force3D:
-                return XYRenderMode::Surface3D;
-            case XYRenderModePreference::Force2D:
-                return XYRenderMode::Heatmap2D;
-            case XYRenderModePreference::Auto:
-            default:
-                // Auto mode keeps 2D and 3D mutually exclusive:
-                // mixed visible content defaults to 2D, while purely-3D content activates 3D.
-                return (hasVisible3DFormula && !hasVisible2DFormula)
-                    ? XYRenderMode::Surface3D
-                    : XYRenderMode::Heatmap2D;
-        }
+    [[nodiscard]] XYRenderMode resolveXYRenderMode(const Model::SceneSummary& scene) const {
+        return XpressFormula::UI::resolveXYRenderMode(xyRenderModePreference, scene);
     }
 
     [[nodiscard]] bool effectiveShowAxisTriad() const {

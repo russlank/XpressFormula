@@ -1,6 +1,8 @@
 // ViewTransform.h - Handles world ↔ screen coordinate mapping with zoom and pan.
 #pragma once
 
+#include "../Model/ViewState.h"
+
 namespace XpressFormula::Core {
 
 /// Simple 2D float vector used for screen coordinates.
@@ -15,20 +17,10 @@ struct Vec2 {
 class ViewTransform {
 public:
     ViewTransform();
+    ViewTransform(const Model::ViewState& state, const Model::Viewport& viewport);
 
-    // --- World coordinate of the viewport center ---
-    double centerX = 0.0;
-    double centerY = 0.0;
-
-    // --- Pixels per world unit (zoom level) ---
-    double scaleX = 60.0;
-    double scaleY = 60.0;
-
-    // --- Plot area in screen coordinates ---
-    float screenWidth   = 800.0f;
-    float screenHeight  = 600.0f;
-    float screenOriginX = 0.0f;   // top-left X of the plot area
-    float screenOriginY = 0.0f;   // top-left Y of the plot area
+    Model::ViewState state;
+    Model::Viewport viewport;
 
     // Coordinate conversions
     Vec2   worldToScreen(double wx, double wy) const;

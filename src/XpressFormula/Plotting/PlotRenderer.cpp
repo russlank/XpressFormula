@@ -152,11 +152,11 @@ void drawViewportAxisTriad3D(ImDrawList* dl,
     float maxDy = std::max({ 0.0f, tipX.y, tipY.y, tipZ.y });
 
     ImVec2 origin(
-        vt.screenOriginX + 22.0f - minDx,
-        vt.screenOriginY + vt.screenHeight - 22.0f - maxDy);
+        vt.viewport.originX + 22.0f - minDx,
+        vt.viewport.originY + vt.viewport.height - 22.0f - maxDy);
 
-    const float xMaxAllowed = vt.screenOriginX + vt.screenWidth - 26.0f;
-    const float yMinAllowed = vt.screenOriginY + 26.0f;
+    const float xMaxAllowed = vt.viewport.originX + vt.viewport.width - 26.0f;
+    const float yMinAllowed = vt.viewport.originY + 26.0f;
     if (origin.x + maxDx > xMaxAllowed) {
         origin.x -= (origin.x + maxDx - xMaxAllowed);
     }
@@ -164,9 +164,9 @@ void drawViewportAxisTriad3D(ImDrawList* dl,
         origin.y += (yMinAllowed - (origin.y + minDy));
     }
 
-    ImVec2 clipMin(vt.screenOriginX, vt.screenOriginY);
-    ImVec2 clipMax(vt.screenOriginX + vt.screenWidth,
-                   vt.screenOriginY + vt.screenHeight);
+    ImVec2 clipMin(vt.viewport.originX, vt.viewport.originY);
+    ImVec2 clipMax(vt.viewport.originX + vt.viewport.width,
+                   vt.viewport.originY + vt.viewport.height);
     dl->PushClipRect(clipMin, clipMax, true);
 
     const ImU32 back = IM_COL32(18, 20, 24, 120);
@@ -232,7 +232,7 @@ void PlotRenderer::drawGrid3D(ImDrawList* dl, const Core::ViewTransform& vt,
     const double sinA = std::sin(azimuth);
     const double cosE = std::cos(elevation);
     const double sinE = std::sin(elevation);
-    const double scale = std::max(1e-6, std::min(vt.scaleX, vt.scaleY));
+    const double scale = std::max(1e-6, std::min(vt.state.scaleX, vt.state.scaleY));
     const Core::Vec2 origin = vt.worldToScreen(0.0, 0.0);
 
     auto projectPoint = [&](double wx, double wy, double wz) -> Core::Vec2 {
@@ -246,9 +246,9 @@ void PlotRenderer::drawGrid3D(ImDrawList* dl, const Core::ViewTransform& vt,
             origin.y - static_cast<float>(yProj * scale));
     };
 
-    ImVec2 clipMin(vt.screenOriginX, vt.screenOriginY);
-    ImVec2 clipMax(vt.screenOriginX + vt.screenWidth,
-                   vt.screenOriginY + vt.screenHeight);
+    ImVec2 clipMin(vt.viewport.originX, vt.viewport.originY);
+    ImVec2 clipMax(vt.viewport.originX + vt.viewport.width,
+                   vt.viewport.originY + vt.viewport.height);
     dl->PushClipRect(clipMin, clipMax, true);
 
     // Project the XY plane frame (z = 0) and draw a subtle translucent fill so the grid plane
@@ -346,7 +346,7 @@ void PlotRenderer::drawAxes3D(ImDrawList* dl, const Core::ViewTransform& vt,
     const double sinA = std::sin(azimuth);
     const double cosE = std::cos(elevation);
     const double sinE = std::sin(elevation);
-    const double scale = std::max(1e-6, std::min(vt.scaleX, vt.scaleY));
+    const double scale = std::max(1e-6, std::min(vt.state.scaleX, vt.state.scaleY));
     const Core::Vec2 originScreen = vt.worldToScreen(0.0, 0.0);
 
     auto projectPoint = [&](double wx, double wy, double wz) -> Core::Vec2 {
@@ -384,9 +384,9 @@ void PlotRenderer::drawAxes3D(ImDrawList* dl, const Core::ViewTransform& vt,
             col);
     };
 
-    ImVec2 clipMin(vt.screenOriginX, vt.screenOriginY);
-    ImVec2 clipMax(vt.screenOriginX + vt.screenWidth,
-                   vt.screenOriginY + vt.screenHeight);
+    ImVec2 clipMin(vt.viewport.originX, vt.viewport.originY);
+    ImVec2 clipMax(vt.viewport.originX + vt.viewport.width,
+                   vt.viewport.originY + vt.viewport.height);
     dl->PushClipRect(clipMin, clipMax, true);
 
     const Core::Vec2 xNeg = projectPoint(xMin, 0.0, 0.0);
@@ -427,8 +427,8 @@ void PlotRenderer::drawAxisLabels(ImDrawList* dl, const Core::ViewTransform& vt)
         }
         Core::Vec2 p = vt.worldToScreen(wx, 0);
         // Keep labels within the plot area vertically
-        const float yLo = vt.screenOriginY;
-        const float yHi = vt.screenOriginY + vt.screenHeight - 16.0f;
+        const float yLo = vt.viewport.originY;
+        const float yHi = vt.viewport.originY + vt.viewport.height - 16.0f;
         const float ly = std::clamp(origin.y + 4.0f,
                                     std::min(yLo, yHi),
                                     std::max(yLo, yHi));
@@ -443,8 +443,8 @@ void PlotRenderer::drawAxisLabels(ImDrawList* dl, const Core::ViewTransform& vt)
             continue;
         }
         Core::Vec2 p = vt.worldToScreen(0, wy);
-        const float xLo = vt.screenOriginX;
-        const float xHi = vt.screenOriginX + vt.screenWidth - 48.0f;
+        const float xLo = vt.viewport.originX;
+        const float xHi = vt.viewport.originX + vt.viewport.width - 48.0f;
         const float lx = std::clamp(origin.x + 4.0f,
                                     std::min(xLo, xHi),
                                     std::max(xLo, xHi));
@@ -468,14 +468,14 @@ void PlotRenderer::drawCurve2D(ImDrawList* dl, const Core::ViewTransform& vt,
     Core::Evaluator::Variables vars;
     const double xMin = vt.worldXMin();
     const double xMax = vt.worldXMax();
-    const int numSamples = static_cast<int>(vt.screenWidth) * 2;
+    const int numSamples = static_cast<int>(vt.viewport.width) * 2;
     const double dx = (xMax - xMin) / numSamples;
     const ImU32 col = colorU32(color);
 
     // Clipping rectangle for the plot area
-    ImVec2 clipMin(vt.screenOriginX, vt.screenOriginY);
-    ImVec2 clipMax(vt.screenOriginX + vt.screenWidth,
-                   vt.screenOriginY + vt.screenHeight);
+    ImVec2 clipMin(vt.viewport.originX, vt.viewport.originY);
+    ImVec2 clipMax(vt.viewport.originX + vt.viewport.width,
+                   vt.viewport.originY + vt.viewport.height);
     dl->PushClipRect(clipMin, clipMax, true);
 
     struct Point {
@@ -500,7 +500,7 @@ void PlotRenderer::drawCurve2D(ImDrawList* dl, const Core::ViewTransform& vt,
     }
 
     // Draw connected segments, breaking at NaN/Inf and large jumps
-    const float maxPixelJump = vt.screenHeight * 2.0f;
+    const float maxPixelJump = vt.viewport.height * 2.0f;
     for (size_t i = 1; i < points.size(); ++i) {
         if (!points[i].valid || !points[i - 1].valid) {
             continue;
@@ -559,9 +559,9 @@ void PlotRenderer::drawHeatmap(ImDrawList* dl, const Core::ViewTransform& vt,
     }
 
     // Clip
-    ImVec2 clipMin(vt.screenOriginX, vt.screenOriginY);
-    ImVec2 clipMax(vt.screenOriginX + vt.screenWidth,
-                   vt.screenOriginY + vt.screenHeight);
+    ImVec2 clipMin(vt.viewport.originX, vt.viewport.originY);
+    ImVec2 clipMax(vt.viewport.originX + vt.viewport.width,
+                   vt.viewport.originY + vt.viewport.height);
     dl->PushClipRect(clipMin, clipMax, true);
 
     // Second pass: draw rectangles
@@ -623,9 +623,9 @@ void PlotRenderer::drawCrossSection(ImDrawList* dl, const Core::ViewTransform& v
         hi = 1.0;
     }
 
-    ImVec2 clipMin(vt.screenOriginX, vt.screenOriginY);
-    ImVec2 clipMax(vt.screenOriginX + vt.screenWidth,
-                   vt.screenOriginY + vt.screenHeight);
+    ImVec2 clipMin(vt.viewport.originX, vt.viewport.originY);
+    ImVec2 clipMax(vt.viewport.originX + vt.viewport.width,
+                   vt.viewport.originY + vt.viewport.height);
     dl->PushClipRect(clipMin, clipMax, true);
 
     for (int iy = 0; iy < resY; ++iy) {
@@ -766,7 +766,7 @@ void PlotRenderer::drawSurface3D(ImDrawList* dl, const Core::ViewTransform& vt,
     // the 3D scene appear to "swim" relative to the 2D coordinates.
     // We also reuse the 2D pixel/unit scale (ViewTransform) so moving the view changes both the
     // overlays and the 3D geometry consistently.
-    const double scale = std::max(1e-6, std::min(vt.scaleX, vt.scaleY));
+    const double scale = std::max(1e-6, std::min(vt.state.scaleX, vt.state.scaleY));
     const float sxCenter = vt.worldToScreen(0.0, 0.0).x;
     const float syCenter = vt.worldToScreen(0.0, 0.0).y;
 
@@ -889,9 +889,9 @@ void PlotRenderer::drawSurface3D(ImDrawList* dl, const Core::ViewTransform& vt,
     std::sort(faces.begin(), faces.end(),
               [](const Face& a, const Face& b) { return a.depth < b.depth; });
 
-    ImVec2 clipMin(vt.screenOriginX, vt.screenOriginY);
-    ImVec2 clipMax(vt.screenOriginX + vt.screenWidth,
-                   vt.screenOriginY + vt.screenHeight);
+    ImVec2 clipMin(vt.viewport.originX, vt.viewport.originY);
+    ImVec2 clipMax(vt.viewport.originX + vt.viewport.width,
+                   vt.viewport.originY + vt.viewport.height);
     dl->PushClipRect(clipMin, clipMax, true);
 
     for (const Face& face : faces) {
@@ -1598,7 +1598,7 @@ void PlotRenderer::drawImplicitSurface3D(ImDrawList* dl, const Core::ViewTransfo
     }
 
     // Anchor implicit 3D projection to world origin for stable alignment with the 2D grid/axes.
-    const double scale = std::max(1e-6, std::min(vt.scaleX, vt.scaleY));
+    const double scale = std::max(1e-6, std::min(vt.state.scaleX, vt.state.scaleY));
     const float sxCenter = vt.worldToScreen(0.0, 0.0).x;
     const float syCenter = vt.worldToScreen(0.0, 0.0).y;
 
@@ -1705,9 +1705,9 @@ void PlotRenderer::drawImplicitSurface3D(ImDrawList* dl, const Core::ViewTransfo
                   return a.depth < b.depth;
               });
 
-    ImVec2 clipMin(vt.screenOriginX, vt.screenOriginY);
-    ImVec2 clipMax(vt.screenOriginX + vt.screenWidth,
-                   vt.screenOriginY + vt.screenHeight);
+    ImVec2 clipMin(vt.viewport.originX, vt.viewport.originY);
+    ImVec2 clipMax(vt.viewport.originX + vt.viewport.width,
+                   vt.viewport.originY + vt.viewport.height);
     dl->PushClipRect(clipMin, clipMax, true);
 
     if (!(surfZMin < surfZMax)) {
@@ -1895,9 +1895,9 @@ void PlotRenderer::drawImplicitContour2D(ImDrawList* dl, const Core::ViewTransfo
 
     const ImU32 contourColor = colorU32(color);
 
-    ImVec2 clipMin(vt.screenOriginX, vt.screenOriginY);
-    ImVec2 clipMax(vt.screenOriginX + vt.screenWidth,
-                   vt.screenOriginY + vt.screenHeight);
+    ImVec2 clipMin(vt.viewport.originX, vt.viewport.originY);
+    ImVec2 clipMax(vt.viewport.originX + vt.viewport.width,
+                   vt.viewport.originY + vt.viewport.height);
     dl->PushClipRect(clipMin, clipMax, true);
 
     for (int iy = 0; iy < resY; ++iy) {

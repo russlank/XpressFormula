@@ -3,6 +3,7 @@
 #pragma once
 
 #include "../Core/ViewTransform.h"
+#include "../Model/ViewState.h"
 #include "ExportMetadata.h"
 #include "FormulaEntry.h"
 #include "PlotSettings.h"
@@ -38,12 +39,7 @@ struct ProjectFormulaRecord {
     float zSlice = 0.0f;
 };
 
-struct ProjectViewRecord {
-    double centerX = 0.0;
-    double centerY = 0.0;
-    double scaleX = 60.0;
-    double scaleY = 60.0;
-};
+using ProjectViewRecord = Model::ViewState;
 
 struct ProjectSession {
     int schemaVersion = kProjectSessionSchemaVersion;
@@ -632,10 +628,10 @@ inline ProjectSession makeProjectSession(const std::vector<FormulaEntry>& formul
         session.formulas.push_back(std::move(record));
     }
 
-    session.view.centerX = view.centerX;
-    session.view.centerY = view.centerY;
-    session.view.scaleX = view.scaleX;
-    session.view.scaleY = view.scaleY;
+    session.view.centerX = view.state.centerX;
+    session.view.centerY = view.state.centerY;
+    session.view.scaleX = view.state.scaleX;
+    session.view.scaleY = view.state.scaleY;
     session.plot = plot;
     return session;
 }
@@ -843,11 +839,11 @@ inline void applyProjectSession(const ProjectSession& session,
         formulas.push_back(std::move(entry));
     }
 
-    view.centerX = std::isfinite(session.view.centerX) ? session.view.centerX : 0.0;
-    view.centerY = std::isfinite(session.view.centerY) ? session.view.centerY : 0.0;
-    view.scaleX = std::clamp(std::isfinite(session.view.scaleX) ? session.view.scaleX : 60.0,
+    view.state.centerX = std::isfinite(session.view.centerX) ? session.view.centerX : 0.0;
+    view.state.centerY = std::isfinite(session.view.centerY) ? session.view.centerY : 0.0;
+    view.state.scaleX = std::clamp(std::isfinite(session.view.scaleX) ? session.view.scaleX : 60.0,
                              0.1, 100000.0);
-    view.scaleY = std::clamp(std::isfinite(session.view.scaleY) ? session.view.scaleY : 60.0,
+    view.state.scaleY = std::clamp(std::isfinite(session.view.scaleY) ? session.view.scaleY : 60.0,
                              0.1, 100000.0);
 
     plot = session.plot;

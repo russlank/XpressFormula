@@ -16,14 +16,14 @@ static void assertClose(double expected, double actual,
 
 static ViewTransform makeDefault() {
     ViewTransform vt;
-    vt.screenWidth = 800;
-    vt.screenHeight = 600;
-    vt.screenOriginX = 0;
-    vt.screenOriginY = 0;
-    vt.centerX = 0;
-    vt.centerY = 0;
-    vt.scaleX = 100;
-    vt.scaleY = 100;
+    vt.viewport.width = 800;
+    vt.viewport.height = 600;
+    vt.viewport.originX = 0;
+    vt.viewport.originY = 0;
+    vt.state.centerX = 0;
+    vt.state.centerY = 0;
+    vt.state.scaleX = 100;
+    vt.state.scaleY = 100;
     return vt;
 }
 
@@ -59,7 +59,7 @@ TEST_CASE(WorldToScreen_PositiveY) {
         assertClose(0.0, wy);
     }
 
-    TEST_CASE(ScreenToWorld_Roundtrip) {
+TEST_CASE(ScreenToWorld_Roundtrip) {
         auto vt = makeDefault();
         double origX = 2.5, origY = -1.3;
         Vec2 s = vt.worldToScreen(origX, origY);
@@ -69,49 +69,75 @@ TEST_CASE(WorldToScreen_PositiveY) {
         assertClose(origY, wy);
     }
 
+    TEST_CASE(ViewTransform_StateAndViewportRoundtripAfterSplit) {
+        XpressFormula::Model::ViewState state;
+        state.centerX = 2.0;
+        state.centerY = -3.0;
+        state.scaleX = 75.0;
+        state.scaleY = 125.0;
+
+        XpressFormula::Model::Viewport viewport;
+        viewport.originX = 10.0f;
+        viewport.originY = 20.0f;
+        viewport.width = 640.0f;
+        viewport.height = 480.0f;
+
+        ViewTransform vt(state, viewport);
+        const Vec2 screen = vt.worldToScreen(4.5, -1.25);
+        double wx = 0.0;
+        double wy = 0.0;
+        vt.screenToWorld(screen.x, screen.y, wx, wy);
+
+        assertClose(4.5, wx);
+        assertClose(-1.25, wy);
+        assertClose(2.0, vt.state.centerX);
+        assertClose(75.0, vt.state.scaleX);
+        assertClose(640.0, vt.viewport.width);
+    }
+
     TEST_CASE(ZoomAll_Increases) {
         auto vt = makeDefault();
-        double oldScale = vt.scaleX;
+        double oldScale = vt.state.scaleX;
         vt.zoomAll(2.0);
-        Assert::IsTrue(vt.scaleX > oldScale);
-        Assert::IsTrue(vt.scaleY > oldScale);
+        Assert::IsTrue(vt.state.scaleX > oldScale);
+        Assert::IsTrue(vt.state.scaleY > oldScale);
     }
 
     TEST_CASE(ZoomAll_Factor) {
         auto vt = makeDefault();
         vt.zoomAll(2.0);
-        assertClose(200.0, vt.scaleX);
-        assertClose(200.0, vt.scaleY);
+        assertClose(200.0, vt.state.scaleX);
+        assertClose(200.0, vt.state.scaleY);
     }
 
     TEST_CASE(ZoomX_OnlyAffectsX) {
         auto vt = makeDefault();
-        double oldScaleY = vt.scaleY;
+        double oldScaleY = vt.state.scaleY;
         vt.zoomX(2.0);
-        assertClose(200.0, vt.scaleX);
-        assertClose(oldScaleY, vt.scaleY);
+        assertClose(200.0, vt.state.scaleX);
+        assertClose(oldScaleY, vt.state.scaleY);
     }
 
     TEST_CASE(ZoomY_OnlyAffectsY) {
         auto vt = makeDefault();
-        double oldScaleX = vt.scaleX;
+        double oldScaleX = vt.state.scaleX;
         vt.zoomY(2.0);
-        assertClose(oldScaleX, vt.scaleX);
-        assertClose(200.0, vt.scaleY);
+        assertClose(oldScaleX, vt.state.scaleX);
+        assertClose(200.0, vt.state.scaleY);
     }
 
     TEST_CASE(Pan_ShiftsCenter) {
         auto vt = makeDefault();
         vt.pan(1.0, 2.0);
-        assertClose(1.0, vt.centerX);
-        assertClose(2.0, vt.centerY);
+        assertClose(1.0, vt.state.centerX);
+        assertClose(2.0, vt.state.centerY);
     }
 
     TEST_CASE(PanPixels_ShiftsCenter) {
         auto vt = makeDefault();
         // Panning 100 pixels right at scale 100 = -1 world unit
         vt.panPixels(100.0f, 0.0f);
-        assertClose(-1.0, vt.centerX);
+        assertClose(-1.0, vt.state.centerX);
     }
 
     TEST_CASE(Reset_RestoresDefaults) {
@@ -119,9 +145,9 @@ TEST_CASE(WorldToScreen_PositiveY) {
         vt.pan(5.0, 5.0);
         vt.zoomAll(10.0);
         vt.reset();
-        assertClose(0.0, vt.centerX);
-        assertClose(0.0, vt.centerY);
-        assertClose(60.0, vt.scaleX); // DEFAULT_SCALE
+        assertClose(0.0, vt.state.centerX);
+        assertClose(0.0, vt.state.centerY);
+        assertClose(60.0, vt.state.scaleX); // DEFAULT_SCALE
     }
 
     TEST_CASE(WorldRange_Symmetric) {
@@ -159,8 +185,8 @@ TEST_CASE(WorldToScreen_PositiveY) {
 
 TEST_CASE(WithOffset_OriginShifted) {
     auto vt = makeDefault();
-    vt.screenOriginX = 100;
-    vt.screenOriginY = 50;
+    vt.viewport.originX = 100;
+    vt.viewport.originY = 50;
     Vec2 s = vt.worldToScreen(0, 0);
     assertClose(500.0, s.x); // 100 + 800/2
     assertClose(350.0, s.y); // 50 + 600/2
@@ -172,45 +198,45 @@ TEST_CASE(ZoomAll_ClampMin) {
     auto vt = makeDefault();
     // Scale starts at 100. Zoom with very small factor to hit MIN_SCALE (0.1)
     vt.zoomAll(0.0001);
-    assertClose(0.1, vt.scaleX);
-    assertClose(0.1, vt.scaleY);
+    assertClose(0.1, vt.state.scaleX);
+    assertClose(0.1, vt.state.scaleY);
 }
 
 TEST_CASE(ZoomAll_ClampMax) {
     auto vt = makeDefault();
     // Scale starts at 100. Zoom with very large factor to hit MAX_SCALE (100000)
     vt.zoomAll(10000.0);
-    assertClose(100000.0, vt.scaleX);
-    assertClose(100000.0, vt.scaleY);
+    assertClose(100000.0, vt.state.scaleX);
+    assertClose(100000.0, vt.state.scaleY);
 }
 
 TEST_CASE(ZoomX_ClampMin) {
     auto vt = makeDefault();
     vt.zoomX(0.0001);
-    assertClose(0.1, vt.scaleX);
-    assertClose(100.0, vt.scaleY); // Y unchanged
+    assertClose(0.1, vt.state.scaleX);
+    assertClose(100.0, vt.state.scaleY); // Y unchanged
 }
 
 TEST_CASE(ZoomY_ClampMax) {
     auto vt = makeDefault();
     vt.zoomY(10000.0);
-    assertClose(100.0, vt.scaleX); // X unchanged
-    assertClose(100000.0, vt.scaleY);
+    assertClose(100.0, vt.state.scaleX); // X unchanged
+    assertClose(100000.0, vt.state.scaleY);
 }
 
 TEST_CASE(PanPixels_YDirection) {
     auto vt = makeDefault();
     // Panning 100 pixels down at scale 100 = +1 world unit (Y inverted)
     vt.panPixels(0.0f, 100.0f);
-    assertClose(0.0, vt.centerX);
-    assertClose(1.0, vt.centerY);
+    assertClose(0.0, vt.state.centerX);
+    assertClose(1.0, vt.state.centerY);
 }
 
 TEST_CASE(PanPixels_Diagonal) {
     auto vt = makeDefault();
     vt.panPixels(200.0f, 200.0f);
-    assertClose(-2.0, vt.centerX); // 200/100 panned left
-    assertClose(2.0, vt.centerY);  // 200/100 panned up
+    assertClose(-2.0, vt.state.centerX); // 200/100 panned left
+    assertClose(2.0, vt.state.centerY);  // 200/100 panned up
 }
 
 TEST_CASE(ScreenToWorld_TopLeft) {
@@ -232,8 +258,8 @@ TEST_CASE(ScreenToWorld_BottomRight) {
 
 TEST_CASE(NegativeCenter) {
     auto vt = makeDefault();
-    vt.centerX = -5.0;
-    vt.centerY = -3.0;
+    vt.state.centerX = -5.0;
+    vt.state.centerY = -3.0;
     Vec2 s = vt.worldToScreen(-5.0, -3.0);
     // Center of screen
     assertClose(400.0, s.x);
@@ -242,8 +268,8 @@ TEST_CASE(NegativeCenter) {
 
 TEST_CASE(AsymmetricScale) {
     auto vt = makeDefault();
-    vt.scaleX = 50;
-    vt.scaleY = 200;
+    vt.state.scaleX = 50;
+    vt.state.scaleY = 200;
     double wx, wy;
     // Roundtrip with asymmetric scale
     Vec2 s = vt.worldToScreen(2.0, 1.0);
@@ -263,7 +289,7 @@ TEST_CASE(WorldRange_AfterPan) {
 
 TEST_CASE(WorldRange_AsymmetricScale) {
     auto vt = makeDefault();
-    vt.scaleX = 400; // more zoomed in on X
+    vt.state.scaleX = 400; // more zoomed in on X
     double xRange = vt.worldXMax() - vt.worldXMin();
     double yRange = vt.worldYMax() - vt.worldYMin();
     // X range should be smaller than Y range
@@ -272,7 +298,7 @@ TEST_CASE(WorldRange_AsymmetricScale) {
 
 TEST_CASE(GridSpacing_HighZoom) {
     auto vt = makeDefault();
-    vt.scaleX = 10000.0; // very zoomed in
+    vt.state.scaleX = 10000.0; // very zoomed in
     double gs = vt.gridSpacingX();
     Assert::IsTrue(gs > 0);
     Assert::IsTrue(gs < 0.1); // small grid spacing for high zoom
@@ -280,7 +306,7 @@ TEST_CASE(GridSpacing_HighZoom) {
 
 TEST_CASE(GridSpacing_LowZoom) {
     auto vt = makeDefault();
-    vt.scaleX = 1.0; // very zoomed out
+    vt.state.scaleX = 1.0; // very zoomed out
     double gs = vt.gridSpacingX();
     Assert::IsTrue(gs > 0);
     Assert::IsTrue(gs >= 50.0); // large grid spacing for low zoom
@@ -290,8 +316,8 @@ TEST_CASE(Pan_Cumulative) {
     auto vt = makeDefault();
     vt.pan(1.0, 0.0);
     vt.pan(2.0, 3.0);
-    assertClose(3.0, vt.centerX);
-    assertClose(3.0, vt.centerY);
+    assertClose(3.0, vt.state.centerX);
+    assertClose(3.0, vt.state.centerY);
 }
 
 TEST_CASE(ZoomAll_Multiple) {
@@ -299,8 +325,8 @@ TEST_CASE(ZoomAll_Multiple) {
     vt.zoomAll(2.0);
     vt.zoomAll(0.5);
     // Should return to original scale
-    assertClose(100.0, vt.scaleX);
-    assertClose(100.0, vt.scaleY);
+    assertClose(100.0, vt.state.scaleX);
+    assertClose(100.0, vt.state.scaleY);
 }
 
 TEST_CASE(Reset_AfterPanAndZoom) {
@@ -308,10 +334,10 @@ TEST_CASE(Reset_AfterPanAndZoom) {
     vt.pan(10.0, -5.0);
     vt.zoomAll(50.0);
     vt.reset();
-    assertClose(0.0, vt.centerX);
-    assertClose(0.0, vt.centerY);
-    assertClose(60.0, vt.scaleX); // DEFAULT_SCALE
-    assertClose(60.0, vt.scaleY);
+    assertClose(0.0, vt.state.centerX);
+    assertClose(0.0, vt.state.centerY);
+    assertClose(60.0, vt.state.scaleX); // DEFAULT_SCALE
+    assertClose(60.0, vt.state.scaleY);
 }
 
 TEST_CASE(WorldToScreen_NegativeCoord) {

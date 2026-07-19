@@ -3,6 +3,7 @@
 #pragma once
 
 #include "../Core/ViewTransform.h"
+#include "../Model/SceneSummary.h"
 #include "PlotSettings.h"
 #include <string>
 
@@ -16,8 +17,7 @@ struct ControlPanelActions {
 class ControlPanel {
 public:
     ControlPanelActions render(Core::ViewTransform& vt, PlotSettings& settings,
-                               bool has2DFormula,
-                               bool hasSurfaceFormula,
+                               const Model::SceneSummary& scene,
                                const std::string& exportStatus);
 
 private:

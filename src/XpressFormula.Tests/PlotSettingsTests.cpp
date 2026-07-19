@@ -6,8 +6,16 @@
 
 using namespace Microsoft::VisualStudio::CppUnitTestFramework;
 using namespace XpressFormula::UI;
+namespace XFModel = XpressFormula::Model;
 
 namespace XpressFormulaTests {
+
+static XFModel::SceneSummary sceneWith(bool has2D, bool has3D) {
+    XFModel::SceneSummary scene;
+    scene.hasVisibleCurve2D = has2D;
+    scene.hasVisibleExplicitSurface3D = has3D;
+    return scene;
+}
 
 TEST_CASE(CoordinateOverlayPolicy_DisablesAxisTriadWhenCoordinatesAreOn) {
     bool showAxisTriad = true;
@@ -79,6 +87,28 @@ TEST_CASE(PlotSettings_ApplyCoordinateOverlayPolicyMutatesConflict) {
     Assert::IsTrue(changed);
     Assert::IsFalse(settings.showAxisTriad);
     Assert::IsFalse(settings.effectiveShowAxisTriad());
+}
+
+TEST_CASE(PlotSettings_AutoModeKeepsExistingScenePolicy) {
+    Assert::AreEqual(XYRenderMode::Heatmap2D,
+                     resolveXYRenderMode(XYRenderModePreference::Auto, sceneWith(false, false)));
+    Assert::AreEqual(XYRenderMode::Heatmap2D,
+                     resolveXYRenderMode(XYRenderModePreference::Auto, sceneWith(true, false)));
+    Assert::AreEqual(XYRenderMode::Surface3D,
+                     resolveXYRenderMode(XYRenderModePreference::Auto, sceneWith(false, true)));
+    Assert::AreEqual(XYRenderMode::Heatmap2D,
+                     resolveXYRenderMode(XYRenderModePreference::Auto, sceneWith(true, true)));
+}
+
+TEST_CASE(PlotSettings_ForceModesOverrideSceneCapabilities) {
+    Assert::AreEqual(XYRenderMode::Surface3D,
+                     resolveXYRenderMode(XYRenderModePreference::Force3D, sceneWith(false, false)));
+    Assert::AreEqual(XYRenderMode::Surface3D,
+                     resolveXYRenderMode(XYRenderModePreference::Force3D, sceneWith(true, true)));
+    Assert::AreEqual(XYRenderMode::Heatmap2D,
+                     resolveXYRenderMode(XYRenderModePreference::Force2D, sceneWith(false, true)));
+    Assert::AreEqual(XYRenderMode::Heatmap2D,
+                     resolveXYRenderMode(XYRenderModePreference::Force2D, sceneWith(true, true)));
 }
 
 } // namespace XpressFormulaTests

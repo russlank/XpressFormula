@@ -144,6 +144,7 @@
     <ClCompile Include="EvaluatorTests.cpp" />
     <ClCompile Include="ViewTransformTests.cpp" />
     <ClCompile Include="FormulaCompilerTests.cpp" />
+    <ClCompile Include="SceneSummaryTests.cpp" />
     <ClCompile Include="FormulaEntryTests.cpp" />
     <ClCompile Include="UpdateVersionUtilsTests.cpp" />
     <ClCompile Include="ExportSettingsTests.cpp" />

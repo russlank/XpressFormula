@@ -3,11 +3,12 @@
 
 ## High-Level Design
 
-XpressFormula is organized into three primary layers:
+XpressFormula is moving toward explicit production modules around the existing source layout:
 
-- `Core`: expression tokenization, parsing, evaluation, coordinate transforms
-- `UI`: ImGui panels and application orchestration
+- `Expression`: expression tokenization, parsing, AST queries, compilation/classification, and evaluation
+- `Model`: durable formula/view models and pure scene analysis
 - `Plotting`: draw routines for grid/axes/curves/heat maps/implicit contours and 3D surfaces (explicit + implicit)
+- `UI`/`App`: ImGui panels, application orchestration, and current platform/rendering side effects
 
 The architecture modernization now adds build-enforced production library boundaries around the existing source layout. See [`architecture-dependencies.md`](architecture-dependencies.md) for the current project graph, forbidden dependencies, and migration exceptions.
 
@@ -16,7 +17,7 @@ The architecture modernization now adds build-enforced production library bounda
 Current production projects:
 
 - `XpressFormula.Expression`: expression tokenization, parsing, shared AST queries, formula compilation/classification, evaluation, function metadata, examples, and version parsing helpers.
-- `XpressFormula.Model`: stable formula identity/state headers and durable model-side sources, currently anchored by `ViewTransform` while settings models are still header-only.
+- `XpressFormula.Model`: stable formula identity/state headers, scene-summary analysis, persistent view state, transient viewport geometry, and `ViewTransform`.
 - `XpressFormula.Plotting`: plotting renderer implementation.
 - `XpressFormula.Infrastructure`: temporary boundary for header-only persistence/export infrastructure until JSON/file/project sources are extracted.
 - `XpressFormula.UI`: ImGui panels, components, UiKit, and Dear ImGui core sources.
@@ -51,10 +52,14 @@ This first boundary step references existing files from new static-library proje
   - Formula trimming, expression/equation parsing, equation normalization, unsupported-variable validation, and formula-kind classification.
 - [`src/XpressFormula/Model/Formula.h`](../src/XpressFormula/Model/Formula.h)
   - Stable formula identity and string-backed domain formula state.
+- [`src/XpressFormula/Model/SceneSummary.h`](../src/XpressFormula/Model/SceneSummary.h) and [`src/XpressFormula/Model/SceneSummary.cpp`](../src/XpressFormula/Model/SceneSummary.cpp)
+  - Pure visible-scene capability analysis for render-mode planning, toolbar state, idle redraw scheduling, and plot rendering.
+- [`src/XpressFormula/Model/ViewState.h`](../src/XpressFormula/Model/ViewState.h)
+  - Persistent center/scale view state and transient viewport geometry types.
 - [`src/XpressFormula/Core/Evaluator.h`](../src/XpressFormula/Core/Evaluator.h) and [`src/XpressFormula/Core/Evaluator.cpp`](../src/XpressFormula/Core/Evaluator.cpp)
   - Evaluates AST values for provided variables.
 - [`src/XpressFormula/Core/ViewTransform.h`](../src/XpressFormula/Core/ViewTransform.h) and [`src/XpressFormula/Core/ViewTransform.cpp`](../src/XpressFormula/Core/ViewTransform.cpp)
-  - Handles world-to-screen mapping, zoom, pan, and grid spacing.
+  - Handles world-to-screen mapping, zoom, pan, and grid spacing from explicit `ViewState` plus `Viewport`.
 - [`src/XpressFormula/Core/UpdateVersionUtils.h`](../src/XpressFormula/Core/UpdateVersionUtils.h)
   - Small header-only utilities for semantic-version parsing/comparison and extracting GitHub release fields from API JSON.
 - [`src/XpressFormula/UI/Application.h`](../src/XpressFormula/UI/Application.h) and [`src/XpressFormula/UI/Application.cpp`](../src/XpressFormula/UI/Application.cpp)
@@ -67,6 +72,8 @@ This first boundary step references existing files from new static-library proje
   - Formula list management, editor modal workflow, collection mutations, and action handling returned by formula-card components.
 - [`src/XpressFormula/UI/FormulaEntry.h`](../src/XpressFormula/UI/FormulaEntry.h) and [`src/XpressFormula/UI/FormulaPresentation.h`](../src/XpressFormula/UI/FormulaPresentation.h)
   - UI compatibility adapter and presentation labels around the expression compiler. `FormulaEntry` keeps legacy fields available for current renderers, while stored formula text is a `std::string`.
+- [`src/XpressFormula/UI/FormulaSceneAdapter.h`](../src/XpressFormula/UI/FormulaSceneAdapter.h)
+  - Thin adapter from `FormulaEntry` lists to model scene-summary analysis.
 - [`src/XpressFormula/UI/ControlPanel.h`](../src/XpressFormula/UI/ControlPanel.h) and [`src/XpressFormula/UI/ControlPanel.cpp`](../src/XpressFormula/UI/ControlPanel.cpp)
   - Global 2D view controls, display toggles (grid/coordinates/wires), reusable property-grid rows for 3D/heatmap controls, and export dialog launch action.
 - [`src/XpressFormula/UI/PlotPanel.h`](../src/XpressFormula/UI/PlotPanel.h) and [`src/XpressFormula/UI/PlotPanel.cpp`](../src/XpressFormula/UI/PlotPanel.cpp)
@@ -84,11 +91,12 @@ This first boundary step references existing files from new static-library proje
 2. `Application::initialize()` creates Win32 window, D3D11 swap chain/device, and ImGui context.
 3. `Application::run()` drives the message loop and rendering frames (including idle redraw optimization).
 4. `FormulaPanel` updates formula text and triggers parse.
-5. `PlotPanel` updates `ViewTransform` from current viewport and delegates drawing to `PlotRenderer`.
-6. `PlotRenderer` evaluates formulas through `Core::Evaluator` and draws based on variable dimensionality and equation form.
-7. `Application` also polls a background GitHub release check future and updates sidebar notification state when a result arrives.
-8. Export requests resolve aspect/framing settings, trigger a plot-only offscreen render pass (temporary D3D11 render target) with export-specific overrides, then post-processing (pixel-format normalization, optional resize/grayscale) before file/clipboard output.
-9. Project New/Open/Save/Save As workflows stay in `Application`; `.xfplot` parsing completes before active formulas, view, or plot settings are mutated.
+5. `Application` builds a `SceneSummary` from the edited formula list and passes it to the control panel, toolbar, and plot panel.
+6. `PlotPanel` updates only the transient viewport geometry on `ViewTransform` and delegates drawing to `PlotRenderer`.
+7. `PlotRenderer` evaluates formulas through `Core::Evaluator` and draws based on variable dimensionality and equation form.
+8. `Application` also polls a background GitHub release check future and updates sidebar notification state when a result arrives.
+9. Export requests resolve aspect/framing settings, trigger a plot-only offscreen render pass (temporary D3D11 render target and viewport) with export-specific overrides, then post-processing (pixel-format normalization, optional resize/grayscale) before file/clipboard output.
+10. Project New/Open/Save/Save As workflows stay in `Application`; `.xfplot` parsing completes before active formulas, view, or plot settings are mutated.
 
 ## Project Persistence Boundary
 
@@ -100,6 +108,7 @@ Important rules:
 - Parse and validate a full project file before mutating active application state.
 - Retain invalid loaded formulas where possible and report load warnings after reparsing.
 - Clamp or ignore unsafe numeric values before applying them to the live view and plot settings.
+- Persist only `ViewState` center/scale values; viewport origin/size is frame layout state and is not written to `.xfplot`.
 - Keep unknown fields tolerated for schema version 1 so future writers can add data without breaking older builds.
 - Write project files through a temporary file followed by replacement so failed writes do not leave a partial target file.
 - Treat dirty state as a serialized-state comparison against the last clean snapshot.
@@ -138,9 +147,11 @@ Render mapping:
 
 Effective mode policy:
 
-- `Auto`: if both 2D and 3D formulas are visible, rendering resolves to 2D.
-- `Auto`: if only 3D-capable formulas are visible, rendering resolves to 3D.
+- `Auto`: if both 2D and 3D scene capabilities are visible, rendering resolves to 2D.
+- `Auto`: if only 3D-capable scene content is visible, rendering resolves to 3D.
 - `Force3D` / `Force2D`: user override of auto behavior.
+
+This policy is centralized as a pure `resolveXYRenderMode(preference, SceneSummary)` helper.
 
 ## Current 3D Implicit Surface Notes
 

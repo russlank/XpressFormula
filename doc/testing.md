@@ -21,7 +21,9 @@ The test project links the production static libraries (`XpressFormula.Expressio
 - Evaluation
   - arithmetic, function domain behavior, constants, variable substitution
 - View transform
-  - coordinate conversion, zoom/pan/reset, grid spacing behavior
+  - coordinate conversion, zoom/pan/reset, grid spacing behavior, and persistent state versus transient viewport round trips
+- Scene summary / render mode policy
+  - visible scene analysis for empty, invalid, hidden, 2D-only, 3D-only, scalar-field, and mixed scenes; centralized Auto/Force2D/Force3D resolution
 - Formula entry / mode selection
   - formula compiler diagnostics, equation parsing (`left=right`), implicit equation compilation, render-mode classification, stable formula identity, and UI adapter compatibility
 - Export settings and metadata

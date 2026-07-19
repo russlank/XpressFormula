@@ -64,10 +64,10 @@ static void assertParseFails(std::string_view json) {
 TEST_CASE(ProjectSession_RoundTripPreservesCoreState) {
     std::vector<FormulaEntry> formulas = { makeFormula("sin(x)") };
     XFCore::ViewTransform view;
-    view.centerX = 2.5;
-    view.centerY = -1.25;
-    view.scaleX = 80.0;
-    view.scaleY = 90.0;
+    view.state.centerX = 2.5;
+    view.state.centerY = -1.25;
+    view.state.scaleX = 80.0;
+    view.state.scaleY = 90.0;
 
     PlotSettings plot;
     plot.xyRenderModePreference = XYRenderModePreference::Force3D;
@@ -96,6 +96,47 @@ TEST_CASE(ProjectSession_RoundTripPreservesCoreState) {
     Assert::IsTrue(parsed.session.plot.showAxisTriad);
     Assert::AreEqual(88, parsed.session.plot.surfaceResolution);
     Assert::AreEqual(4, parsed.session.plot.wireStride);
+}
+
+TEST_CASE(ProjectSession_PersistsViewStateButLeavesViewportTransient) {
+    std::vector<FormulaEntry> formulas;
+    XFCore::ViewTransform view;
+    view.state.centerX = -4.0;
+    view.state.centerY = 3.5;
+    view.state.scaleX = 42.0;
+    view.state.scaleY = 84.0;
+    view.viewport.originX = 111.0f;
+    view.viewport.originY = 222.0f;
+    view.viewport.width = 333.0f;
+    view.viewport.height = 444.0f;
+
+    PlotSettings plot;
+    const std::string json = serializeCurrentProjectSession(formulas, view, plot);
+
+    Assert::IsTrue(json.find("originX") == std::string::npos);
+    Assert::IsTrue(json.find("originY") == std::string::npos);
+    Assert::IsTrue(json.find("width") == std::string::npos);
+    Assert::IsTrue(json.find("height") == std::string::npos);
+
+    const ProjectSessionParseResult parsed = parseProjectSession(json);
+    Assert::IsTrue(parsed.success);
+
+    XFCore::ViewTransform restoredView;
+    restoredView.viewport.originX = 11.0f;
+    restoredView.viewport.originY = 22.0f;
+    restoredView.viewport.width = 33.0f;
+    restoredView.viewport.height = 44.0f;
+    std::vector<std::string> warnings;
+    applyProjectSession(parsed.session, formulas, restoredView, plot, warnings);
+
+    Assert::AreEqual(-4.0, restoredView.state.centerX);
+    Assert::AreEqual(3.5, restoredView.state.centerY);
+    Assert::AreEqual(42.0, restoredView.state.scaleX);
+    Assert::AreEqual(84.0, restoredView.state.scaleY);
+    Assert::AreEqual(11.0f, restoredView.viewport.originX);
+    Assert::AreEqual(22.0f, restoredView.viewport.originY);
+    Assert::AreEqual(33.0f, restoredView.viewport.width);
+    Assert::AreEqual(44.0f, restoredView.viewport.height);
 }
 
 TEST_CASE(ProjectSession_HighPrecisionValuesRoundTrip) {
@@ -482,10 +523,10 @@ TEST_CASE(ProjectSession_AppliesSafeClampsAndCoordinatePolicy) {
     std::vector<std::string> warnings;
     applyProjectSession(session, formulas, view, plot, warnings);
 
-    Assert::AreEqual(0.0, view.centerX);
-    Assert::AreEqual(0.0, view.centerY);
-    Assert::AreEqual(0.1, view.scaleX);
-    Assert::AreEqual(100000.0, view.scaleY);
+    Assert::AreEqual(0.0, view.state.centerX);
+    Assert::AreEqual(0.0, view.state.centerY);
+    Assert::AreEqual(0.1, view.state.scaleX);
+    Assert::AreEqual(100000.0, view.state.scaleY);
     Assert::AreEqual(256, plot.surfaceResolution);
     Assert::AreEqual(16, plot.implicitSurfaceResolution);
     Assert::AreEqual(1.0f, plot.surfaceOpacity);

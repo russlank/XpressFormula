@@ -5,6 +5,7 @@
 #include "../Version.h"
 #include "../resource.h"
 #include "ExportMetadata.h"
+#include "FormulaSceneAdapter.h"
 #include "Components/PlotToolbar.h"
 #include "UiKit/Splitter.h"
 #include "UiKit/UiMetrics.h"
@@ -353,6 +354,7 @@ void Application::resetToDefaultProject() {
     std::memcpy(defaultEntry.color, kDefaultPalette[0], sizeof(defaultEntry.color));
     defaultEntry.parse();
     m_formulas.push_back(std::move(defaultEntry));
+    refreshSceneSummary();
 
     m_viewTransform.reset();
     m_plotSettings = PlotSettings{};
@@ -361,6 +363,10 @@ void Application::resetToDefaultProject() {
     m_exportDialogSettings = ExportDialogSettings{};
     m_exportDialogSizeInitialized = false;
     markExportPreviewOutOfDate();
+}
+
+void Application::refreshSceneSummary() {
+    m_sceneSummary = analyzeFormulaScene(m_formulas);
 }
 
 ProjectSession Application::currentProjectSession() const {
@@ -643,6 +649,7 @@ bool Application::openProjectFromPath(const std::wstring& path, std::string& err
     std::vector<std::string> warnings = parsed.warnings;
     applyProjectSession(parsed.session, m_formulas, m_viewTransform, m_plotSettings, warnings);
     m_formulaPanel.resetColorCycle(static_cast<int>(m_formulas.size()));
+    refreshSceneSummary();
     m_projectPath = std::filesystem::absolute(std::filesystem::path(path)).wstring();
     addRecentProjectPath(m_projectPath);
     markProjectClean();
@@ -978,41 +985,11 @@ int Application::run() {
             continue;
         }
 
-        bool hasSurfaceFormula = false;
-        bool has2DFormula = false;
-        for (const FormulaEntry& formula : m_formulas) {
-            if (!formula.visible || !formula.isValid()) {
-                continue;
-            }
-
-            if (formula.uses3DSurface()) {
-                hasSurfaceFormula = true;
-            }
-
-            switch (formula.renderKind) {
-                case FormulaRenderKind::Curve2D:
-                case FormulaRenderKind::Implicit2D:
-                    has2DFormula = true;
-                    break;
-                case FormulaRenderKind::ScalarField3D:
-                    if (!formula.isEquation) {
-                        has2DFormula = true;
-                    }
-                    break;
-                default:
-                    break;
-            }
-
-            if (hasSurfaceFormula && has2DFormula) {
-                break;
-            }
-        }
-
-        const XYRenderMode effectiveRenderMode =
-            m_plotSettings.resolveXYRenderMode(has2DFormula, hasSurfaceFormula);
+        const Model::SceneSummary& scene = m_sceneSummary;
+        const XYRenderMode effectiveRenderMode = m_plotSettings.resolveXYRenderMode(scene);
         const bool continuousRender =
             m_plotSettings.autoRotate &&
-            hasSurfaceFormula &&
+            scene.hasVisible3D() &&
             effectiveRenderMode == XYRenderMode::Surface3D;
         const bool optimizeRendering = m_plotSettings.optimizeRendering;
         if (optimizeRendering && !m_redrawRequested && !continuousRender) {
@@ -1127,39 +1104,12 @@ void Application::renderFrame() {
     ImGui::Separator();
     ImGui::Spacing();
     m_formulaPanel.render(m_formulas);
-    bool hasSurfaceFormula = false;
-    bool has2DFormula = false;
-    for (const FormulaEntry& formula : m_formulas) {
-        if (!formula.visible || !formula.isValid()) {
-            continue;
-        }
-
-        if (formula.uses3DSurface()) {
-            hasSurfaceFormula = true;
-        }
-
-        switch (formula.renderKind) {
-            case FormulaRenderKind::Curve2D:
-            case FormulaRenderKind::Implicit2D:
-                has2DFormula = true;
-                break;
-            case FormulaRenderKind::ScalarField3D:
-                if (!formula.isEquation) {
-                    has2DFormula = true;
-                }
-                break;
-            default:
-                break;
-        }
-
-        if (hasSurfaceFormula && has2DFormula) {
-            break;
-        }
-    }
+    refreshSceneSummary();
+    const Model::SceneSummary& scene = m_sceneSummary;
     ImGui::Spacing();
     ImGui::Spacing();
     ControlPanelActions actions = m_controlPanel.render(
-        m_viewTransform, m_plotSettings, has2DFormula, hasSurfaceFormula, m_exportStatus);
+        m_viewTransform, m_plotSettings, scene, m_exportStatus);
     m_exportDialogOpenRequested = m_exportDialogOpenRequested || actions.requestOpenExportDialog;
 
     ImGui::Spacing();
@@ -1278,7 +1228,7 @@ void Application::renderFrame() {
                  ImGuiWindowFlags_NoMove     | ImGuiWindowFlags_NoCollapse |
                  ImGuiWindowFlags_NoScrollbar);
     handlePlotShortcuts();
-    renderPlotToolbar(has2DFormula, hasSurfaceFormula);
+    renderPlotToolbar(scene);
     PlotRenderOverrides exportOverrides;
     if (m_pendingSavePlotImage || m_pendingCopyPlotImage) {
         exportOverrides.active = true;
@@ -1293,7 +1243,7 @@ void Application::renderFrame() {
         exportOverrides.showCanvasBorder = false;
         exportOverrides.backgroundColor = resolveExportBackgroundColor(m_pendingExportSettings);
     }
-    m_plotPanel.render(m_formulas, m_viewTransform, m_plotSettings,
+    m_plotPanel.render(m_formulas, m_viewTransform, m_plotSettings, scene,
                        exportOverrides.active ? &exportOverrides : nullptr);
     ImGui::End();
 
@@ -1310,9 +1260,8 @@ void Application::renderFrame() {
     m_swapChainOccluded = (hr == DXGI_STATUS_OCCLUDED);
 }
 
-void Application::renderPlotToolbar(bool has2DFormula, bool hasSurfaceFormula) {
-    const XYRenderMode effectiveRenderMode =
-        m_plotSettings.resolveXYRenderMode(has2DFormula, hasSurfaceFormula);
+void Application::renderPlotToolbar(const Model::SceneSummary& scene) {
+    const XYRenderMode effectiveRenderMode = m_plotSettings.resolveXYRenderMode(scene);
     const bool is3DMode = (effectiveRenderMode == XYRenderMode::Surface3D);
 
     Components::PlotToolbarContext context;
@@ -1372,14 +1321,14 @@ void Application::handlePlotShortcuts() {
 void Application::fitDefaultView() {
     constexpr double targetWorldSpan = 20.0;
     constexpr double marginScale = 0.94;
-    const double fitScaleX = (std::max)(1.0f, m_viewTransform.screenWidth) / targetWorldSpan;
-    const double fitScaleY = (std::max)(1.0f, m_viewTransform.screenHeight) / targetWorldSpan;
+    const double fitScaleX = (std::max)(1.0f, m_viewTransform.viewport.width) / targetWorldSpan;
+    const double fitScaleY = (std::max)(1.0f, m_viewTransform.viewport.height) / targetWorldSpan;
     const double fitScale = (std::max)(0.1, (std::min)(fitScaleX, fitScaleY) * marginScale);
 
-    m_viewTransform.centerX = 0.0;
-    m_viewTransform.centerY = 0.0;
-    m_viewTransform.scaleX = fitScale;
-    m_viewTransform.scaleY = fitScale;
+    m_viewTransform.state.centerX = 0.0;
+    m_viewTransform.state.centerY = 0.0;
+    m_viewTransform.state.scaleX = fitScale;
+    m_viewTransform.state.scaleY = fitScale;
     m_redrawRequested = true;
 }
 
@@ -1484,8 +1433,8 @@ void Application::initialiseExportDialogSize() {
         return;
     }
 
-    int width = static_cast<int>(std::lround((std::max)(1.0f, m_viewTransform.screenWidth)));
-    int height = static_cast<int>(std::lround((std::max)(1.0f, m_viewTransform.screenHeight)));
+    int width = static_cast<int>(std::lround((std::max)(1.0f, m_viewTransform.viewport.width)));
+    int height = static_cast<int>(std::lround((std::max)(1.0f, m_viewTransform.viewport.height)));
     if (width <= 0) width = 1024;
     if (height <= 0) height = 768;
 
@@ -1555,8 +1504,8 @@ void Application::renderExportDialog(float, float) {
     bool open = m_exportDialogOpen;
     if (ImGui::BeginPopupModal(kExportDialogPopupId, &open, ImGuiWindowFlags_NoCollapse)) {
         bool previewChanged = false;
-        const int sourceWidth = static_cast<int>(std::lround((std::max)(1.0f, m_viewTransform.screenWidth)));
-        const int sourceHeight = static_cast<int>(std::lround((std::max)(1.0f, m_viewTransform.screenHeight)));
+        const int sourceWidth = static_cast<int>(std::lround((std::max)(1.0f, m_viewTransform.viewport.width)));
+        const int sourceHeight = static_cast<int>(std::lround((std::max)(1.0f, m_viewTransform.viewport.height)));
         const ExportWorldBounds sourceBounds{
             m_viewTransform.worldXMin(), m_viewTransform.worldXMax(),
             m_viewTransform.worldYMin(), m_viewTransform.worldYMax()
@@ -2796,10 +2745,10 @@ bool Application::capturePlotPixels(std::vector<std::uint8_t>& pixels, int& widt
     D3D11_TEXTURE2D_DESC backDesc = {};
     backBuffer->GetDesc(&backDesc);
 
-    int left = static_cast<int>(std::floor(m_viewTransform.screenOriginX));
-    int top = static_cast<int>(std::floor(m_viewTransform.screenOriginY));
-    int right = left + static_cast<int>(std::floor(m_viewTransform.screenWidth));
-    int bottom = top + static_cast<int>(std::floor(m_viewTransform.screenHeight));
+    int left = static_cast<int>(std::floor(m_viewTransform.viewport.originX));
+    int top = static_cast<int>(std::floor(m_viewTransform.viewport.originY));
+    int right = left + static_cast<int>(std::floor(m_viewTransform.viewport.width));
+    int bottom = top + static_cast<int>(std::floor(m_viewTransform.viewport.height));
 
     left = std::clamp(left, 0, static_cast<int>(backDesc.Width));
     top = std::clamp(top, 0, static_cast<int>(backDesc.Height));
@@ -3029,10 +2978,11 @@ bool Application::renderPlotPixelsOffscreen(const Application::ExportDialogSetti
             }
         }
 
-        exportView.centerX = (resolvedView.visibleBounds.xMin + resolvedView.visibleBounds.xMax) * 0.5;
-        exportView.centerY = (resolvedView.visibleBounds.yMin + resolvedView.visibleBounds.yMax) * 0.5;
-        exportView.scaleX = resolvedView.scaleX;
-        exportView.scaleY = resolvedView.scaleY;
+        exportView.state.centerX = (resolvedView.visibleBounds.xMin + resolvedView.visibleBounds.xMax) * 0.5;
+        exportView.state.centerY = (resolvedView.visibleBounds.yMin + resolvedView.visibleBounds.yMax) * 0.5;
+        exportView.state.scaleX = resolvedView.scaleX;
+        exportView.state.scaleY = resolvedView.scaleY;
+        const Model::SceneSummary& scene = m_sceneSummary;
 
         PlotRenderOverrides exportOverrides;
         exportOverrides.active = true;
@@ -3061,7 +3011,7 @@ bool Application::renderPlotPixelsOffscreen(const Application::ExportDialogSetti
                               ImGuiWindowFlags_NoSavedSettings |
                               ImGuiWindowFlags_NoInputs |
                               ImGuiWindowFlags_NoBackground)) {
-            m_plotPanel.render(m_formulas, exportView, exportSettings, &exportOverrides);
+            m_plotPanel.render(m_formulas, exportView, exportSettings, scene, &exportOverrides);
         }
         ImGui::EndChild();
         ImGui::PopStyleColor();
@@ -3179,14 +3129,14 @@ std::string Application::buildExportMetadataJson(const ExportDialogSettings& set
     }
     out << "  ],\n";
     out << "  \"view\": {\n";
-    out << "    \"center\": { \"x\": " << m_viewTransform.centerX
-        << ", \"y\": " << m_viewTransform.centerY << " },\n";
-    out << "    \"scale\": { \"x\": " << m_viewTransform.scaleX
-        << ", \"y\": " << m_viewTransform.scaleY << " },\n";
-    out << "    \"screen\": { \"width\": " << m_viewTransform.screenWidth
-        << ", \"height\": " << m_viewTransform.screenHeight
-        << ", \"originX\": " << m_viewTransform.screenOriginX
-        << ", \"originY\": " << m_viewTransform.screenOriginY << " },\n";
+    out << "    \"center\": { \"x\": " << m_viewTransform.state.centerX
+        << ", \"y\": " << m_viewTransform.state.centerY << " },\n";
+    out << "    \"scale\": { \"x\": " << m_viewTransform.state.scaleX
+        << ", \"y\": " << m_viewTransform.state.scaleY << " },\n";
+    out << "    \"screen\": { \"width\": " << m_viewTransform.viewport.width
+        << ", \"height\": " << m_viewTransform.viewport.height
+        << ", \"originX\": " << m_viewTransform.viewport.originX
+        << ", \"originY\": " << m_viewTransform.viewport.originY << " },\n";
     out << "    \"worldBounds\": { \"xMin\": " << m_viewTransform.worldXMin()
         << ", \"xMax\": " << m_viewTransform.worldXMax()
         << ", \"yMin\": " << m_viewTransform.worldYMin()

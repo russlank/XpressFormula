@@ -11,6 +11,7 @@
 #include "PlotSettings.h"
 #include "ProjectSession.h"
 #include "../Core/ViewTransform.h"
+#include "../Model/SceneSummary.h"
 
 #include <chrono>
 #include <cstdint>
@@ -106,6 +107,7 @@ private:
     void requestProjectAction(PendingProjectAction action, std::wstring path = {});
     void executeProjectAction(PendingProjectAction action, const std::wstring& path);
     void resetToDefaultProject();
+    void refreshSceneSummary();
     ProjectSession currentProjectSession() const;
     void refreshProjectDirtyState();
     void markProjectClean();
@@ -121,7 +123,7 @@ private:
     void saveRecentProjectPaths() const;
     std::filesystem::path recentProjectStorePath() const;
     std::string projectDisplayName() const;
-    void renderPlotToolbar(bool has2DFormula, bool hasSurfaceFormula);
+    void renderPlotToolbar(const Model::SceneSummary& scene);
     void handlePlotShortcuts();
     void fitDefaultView();
     void resetViewAndCamera();
@@ -190,6 +192,7 @@ private:
 
     // Application state
     std::vector<FormulaEntry> m_formulas;
+    Model::SceneSummary       m_sceneSummary;
     Core::ViewTransform       m_viewTransform;
     PlotSettings              m_plotSettings;
     std::wstring              m_projectPath;
