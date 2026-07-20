@@ -1,11 +1,12 @@
 // PlotPanel.cpp - Interactive plot panel implementation.
 #include "PlotPanel.h"
+#include "../Plotting/PlotRenderPlan.h"
 #include "../Plotting/PlotRenderer.h"
-#include "FormulaPresentation.h"
 #include "imgui.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -82,29 +83,27 @@ void PlotPanel::render(const std::vector<Model::Formula>& formulas,
     bool isHovered = ImGui::IsItemHovered();
     bool isActive  = ImGui::IsItemActive();
 
-    const XYRenderMode requestedRenderMode = settings.resolveXYRenderMode(scene);
-    const bool requested3DMode = (requestedRenderMode == XYRenderMode::Surface3D);
-
-    // Apply auto-rotation BEFORE any 3D drawing so the grid, axes, and surfaces
-    // all use the same azimuth for this frame (avoids a 1-frame visual tear).
-    if (scene.hasVisible3D() && requested3DMode && settings.autoRotate) {
-        settings.azimuthDeg += ImGui::GetIO().DeltaTime * settings.autoRotateSpeedDegPerSec;
-        if (settings.azimuthDeg > 180.0f) {
-            settings.azimuthDeg -= 360.0f;
-        }
-    }
-
     const bool isDraggingLeft = isActive && ImGui::IsMouseDragging(ImGuiMouseButton_Left);
     const bool isZoomingView = isHovered && (ImGui::GetIO().MouseWheel != 0.0f);
-    const bool useInteractive3DThrottle =
-        settings.optimizeRendering && scene.hasVisible3D() && requested3DMode &&
-        (isDraggingLeft || isZoomingView);
+    std::vector<Model::FormulaId> formulaIds;
+    formulaIds.reserve(formulas.size());
+    for (const Model::Formula& formula : formulas) {
+        formulaIds.push_back(formula.id);
+    }
+    m_implicitMeshCache.retainFormulaIds(
+        std::span<const Model::FormulaId>(formulaIds.data(), formulaIds.size()));
 
-    PlotRenderOverrides renderOverrides = overrides ? *overrides : PlotRenderOverrides{};
-    PlotQualityDecision quality = qualityDecision ? *qualityDecision : PlotQualityDecision{};
-    quality.interactiveThrottle = quality.interactiveThrottle || useInteractive3DThrottle;
-    const EffectivePlotSettings effective =
-        resolveEffectivePlotSettings(settings, renderOverrides, quality, scene);
+    const Plotting::PlotRenderPlan plan = Plotting::buildPlotRenderPlan(
+        Plotting::PlotRenderPlanInput{
+            std::span<const Model::Formula>(formulas.data(), formulas.size()),
+            settings,
+            scene,
+            Plotting::PlotInteractionState{ isDraggingLeft, isZoomingView },
+            overrides,
+            qualityDecision,
+            Plotting::PlotQualityPurpose::Interactive
+        });
+    const EffectivePlotSettings& effective = plan.effective;
 
     // Draw background
     ImDrawList* dl = ImGui::GetWindowDrawList();
@@ -113,8 +112,8 @@ void PlotPanel::render(const std::vector<Model::Formula>& formulas,
                       ImGui::ColorConvertFloat4ToU32(ImVec4(bg[0], bg[1], bg[2], bg[3])));
 
     const XYRenderMode effectiveRenderMode = effective.renderMode;
-    const bool is3DMode = effective.is3DMode;
-    const bool use3DGridPlaneInterleave = is3DMode && effective.showGrid;
+    const bool is3DMode = plan.is3DMode;
+    const bool use3DGridPlaneInterleave = plan.gridPlaneInterleave;
 
     // 2D grid/axes/labels are drawn up-front. In 3D mode the projected grid can be interleaved
     // between below-plane and above-plane geometry later to preserve XY-plane depth ordering.
@@ -132,9 +131,9 @@ void PlotPanel::render(const std::vector<Model::Formula>& formulas,
     // the same field list for Surface3D and ScalarField3D render kinds).
     auto make3DOptions = [&]() {
         Plotting::PlotRenderer::Surface3DOptions options;
-        options.azimuthDeg = effective.azimuthDeg;
-        options.elevationDeg = effective.elevationDeg;
-        options.zScale = effective.zScale;
+        options.azimuthDeg = plan.camera.azimuthDeg;
+        options.elevationDeg = plan.camera.elevationDeg;
+        options.zScale = plan.camera.zScale;
         options.resolution = effective.surfaceResolution;
         options.implicitResolution = effective.implicitSurfaceResolution;
         options.opacity = effective.surfaceOpacity;
@@ -151,55 +150,62 @@ void PlotPanel::render(const std::vector<Model::Formula>& formulas,
 
     auto drawFormulas = [&](Plotting::PlotRenderer::SurfacePlanePass3D planePass,
                             bool enable3DOverlays) {
-        for (const auto& f : formulas) {
-            if (!f.visible || !f.isValid()) continue;
-            switch (formulaRenderKindFor(f.compiled.kind)) {
-                case FormulaRenderKind::Curve2D:
-                    if (!is3DMode) {
-                        Plotting::PlotRenderer::drawCurve2D(dl, vt, f.compiled.ast, f.color.data());
-                    }
+        for (const Plotting::PlotFormulaDispatch& dispatch : plan.formulas) {
+            if (dispatch.kind == Plotting::PlotFormulaDispatchKind::None ||
+                dispatch.formulaIndex >= formulas.size()) {
+                continue;
+            }
+            const Model::Formula& f = formulas[dispatch.formulaIndex];
+            switch (dispatch.kind) {
+                case Plotting::PlotFormulaDispatchKind::Curve2D:
+                    Plotting::PlotRenderer::drawCurve2D(dl, vt, f.compiled.ast, f.color.data());
                     break;
-                case FormulaRenderKind::Surface3D:
-                    if (is3DMode) {
-                        auto options = make3DOptions();
-                        options.planePass = planePass;
-                        if (!enable3DOverlays) {
-                            options.showEnvelope = false;
-                            options.showAxisTriad = false;
-                        }
-                        Plotting::PlotRenderer::drawSurface3D(
-                            dl, vt, f.compiled.ast, f.color.data(), options);
-                    } else {
-                        Plotting::PlotRenderer::drawHeatmap(
-                            dl, vt, f.compiled.ast, f.color.data(), effective.heatmapOpacity);
-                    }
+                case Plotting::PlotFormulaDispatchKind::Heatmap2D:
+                    Plotting::PlotRenderer::drawHeatmap(
+                        dl, vt, f.compiled.ast, f.color.data(), effective.heatmapOpacity);
                     break;
-                case FormulaRenderKind::Implicit2D:
-                    if (!is3DMode) {
-                        Plotting::PlotRenderer::drawImplicitContour2D(
-                            dl, vt, f.compiled.ast, f.color.data(), 2.0f);
-                    }
+                case Plotting::PlotFormulaDispatchKind::ImplicitContour2D:
+                    Plotting::PlotRenderer::drawImplicitContour2D(
+                        dl, vt, f.compiled.ast, f.color.data(), 2.0f);
                     break;
-                case FormulaRenderKind::ScalarField3D:
-                    if (f.compiled.equation && is3DMode) {
-                        auto options = make3DOptions();
-                        options.implicitZCenter = static_cast<float>(f.zSlice);
-                        options.planePass = planePass;
-                        if (!enable3DOverlays) {
-                            options.showEnvelope = false;
-                            options.showAxisTriad = false;
-                        }
-                        Plotting::PlotRenderer::drawImplicitSurface3D(
-                            dl, vt, f.compiled.ast, f.color.data(), options);
-                    } else if (!is3DMode) {
-                        Plotting::PlotRenderer::drawCrossSection(
-                            dl,
-                            vt,
-                            f.compiled.ast,
-                            static_cast<float>(f.zSlice),
-                            f.color.data(),
-                            effective.heatmapOpacity);
+                case Plotting::PlotFormulaDispatchKind::ExplicitSurface3D: {
+                    auto options = make3DOptions();
+                    options.planePass = planePass;
+                    if (!enable3DOverlays) {
+                        options.showEnvelope = false;
+                        options.showAxisTriad = false;
                     }
+                    Plotting::PlotRenderer::drawSurface3D(
+                        dl, vt, f.compiled.ast, f.color.data(), options);
+                    break;
+                }
+                case Plotting::PlotFormulaDispatchKind::ImplicitSurface3D: {
+                    auto options = make3DOptions();
+                    options.implicitZCenter = static_cast<float>(f.zSlice);
+                    options.planePass = planePass;
+                    if (!enable3DOverlays) {
+                        options.showEnvelope = false;
+                        options.showAxisTriad = false;
+                    }
+                    Plotting::PlotRenderer::drawImplicitSurface3D(
+                        dl,
+                        vt,
+                        f.compiled.ast,
+                        f.color.data(),
+                        options,
+                        m_implicitMeshCache,
+                        f.id,
+                        f.compilationRevision);
+                    break;
+                }
+                case Plotting::PlotFormulaDispatchKind::CrossSection2D:
+                    Plotting::PlotRenderer::drawCrossSection(
+                        dl,
+                        vt,
+                        f.compiled.ast,
+                        static_cast<float>(f.zSlice),
+                        f.color.data(),
+                        effective.heatmapOpacity);
                     break;
                 default:
                     break;
@@ -209,9 +215,9 @@ void PlotPanel::render(const std::vector<Model::Formula>& formulas,
 
     if (is3DMode) {
         Plotting::PlotRenderer::Surface3DOptions reference3D;
-        reference3D.azimuthDeg = effective.azimuthDeg;
-        reference3D.elevationDeg = effective.elevationDeg;
-        reference3D.zScale = effective.zScale;
+        reference3D.azimuthDeg = plan.camera.azimuthDeg;
+        reference3D.elevationDeg = plan.camera.elevationDeg;
+        reference3D.zScale = plan.camera.zScale;
 
         if (use3DGridPlaneInterleave) {
             drawFormulas(Plotting::PlotRenderer::SurfacePlanePass3D::BelowGridPlane, false);

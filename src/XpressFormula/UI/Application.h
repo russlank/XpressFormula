@@ -73,6 +73,7 @@ private:
     bool createDeviceD3D(HWND hWnd);
     void cleanupDeviceD3D();
     void renderFrame();
+    void updatePlotCamera(float deltaSeconds);
     void handleProjectShortcuts();
     void handleMainWindowActions(const MainWindowActions& actions);
     void syncDocumentDependentState();

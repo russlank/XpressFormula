@@ -5,6 +5,7 @@
 #include "../Core/ViewTransform.h"
 #include "../Model/Formula.h"
 #include "../Model/SceneSummary.h"
+#include "../Plotting/Meshing/ImplicitMeshCache.h"
 #include <vector>
 
 namespace XpressFormula::UI {
@@ -20,6 +21,7 @@ public:
 
 private:
     double m_lastHudInteractionTime = -1000.0;
+    Plotting::Meshing::ImplicitMeshCache m_implicitMeshCache;
 };
 
 } // namespace XpressFormula::UI

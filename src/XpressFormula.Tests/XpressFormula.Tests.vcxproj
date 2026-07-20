@@ -162,6 +162,7 @@
     <ClCompile Include="UpdateControllerTests.cpp" />
     <ClCompile Include="PlatformWindowsServicesTests.cpp" />
     <ClCompile Include="PlotSettingsTests.cpp" />
+    <ClCompile Include="PlottingFoundationTests.cpp" />
     <ClCompile Include="FormulaListActionsTests.cpp" />
     <ClCompile Include="UiKitLayoutTests.cpp" />
   </ItemGroup>

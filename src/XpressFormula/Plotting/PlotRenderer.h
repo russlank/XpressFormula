@@ -1,8 +1,12 @@
 // PlotRenderer.h - Renders grid, axes, and formula plots onto an ImGui DrawList.
 #pragma once
 
+#include "Meshing/ImplicitMeshCache.h"
 #include "../Core/ViewTransform.h"
 #include "../Core/ASTNode.h"
+#include "../Model/FormulaId.h"
+
+#include <cstdint>
 
 struct ImDrawList;
 
@@ -82,7 +86,10 @@ public:
     /// then project/draw it as depth-sorted triangles in ImGui.
     static void drawImplicitSurface3D(ImDrawList* dl, const Core::ViewTransform& vt,
                                       const Core::ASTNodePtr& ast, const float color[4],
-                                      const Surface3DOptions& options);
+                                      const Surface3DOptions& options,
+                                      Meshing::ImplicitMeshCache& meshCache,
+                                      Model::FormulaId formulaId,
+                                      std::uint64_t compilationRevision);
 
     /// Plot the zero contour F(x,y)=0 for implicit equations.
     static void drawImplicitContour2D(ImDrawList* dl, const Core::ViewTransform& vt,

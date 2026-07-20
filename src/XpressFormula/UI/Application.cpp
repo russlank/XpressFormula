@@ -473,6 +473,7 @@ void Application::renderFrame() {
     ImGui_ImplDX11_NewFrame();
     ImGui_ImplWin32_NewFrame();
     ImGui::NewFrame();
+    updatePlotCamera(ImGui::GetIO().DeltaTime);
     handleProjectShortcuts();
 
     PlotRenderOverrides exportOverrides;
@@ -529,6 +530,33 @@ void Application::renderFrame() {
 
     HRESULT hr = m_swapChain->Present(1, 0); // VSync
     m_swapChainOccluded = (hr == DXGI_STATUS_OCCLUDED);
+}
+
+void Application::updatePlotCamera(float deltaSeconds) {
+    if (!(deltaSeconds > 0.0f) || !std::isfinite(deltaSeconds)) {
+        return;
+    }
+
+    PlotSettings settingsSnapshot = m_document.plotSettings();
+    normalizePlotSettings(settingsSnapshot);
+    const XYRenderMode renderMode = settingsSnapshot.resolveXYRenderMode(m_state.sceneSummary);
+    if (!m_state.sceneSummary.hasVisible3D() ||
+        renderMode != XYRenderMode::Surface3D ||
+        !settingsSnapshot.autoRotate) {
+        return;
+    }
+
+    auto plot = m_document.editPlotSettings();
+    PlotSettings& settings = plot.get();
+    settings.azimuthDeg =
+        settingsSnapshot.azimuthDeg + deltaSeconds * settingsSnapshot.autoRotateSpeedDegPerSec;
+    while (settings.azimuthDeg > 180.0f) {
+        settings.azimuthDeg -= 360.0f;
+    }
+    while (settings.azimuthDeg < -180.0f) {
+        settings.azimuthDeg += 360.0f;
+    }
+    m_state.redrawRequested = true;
 }
 
 void Application::initialiseExportDialogSize() {

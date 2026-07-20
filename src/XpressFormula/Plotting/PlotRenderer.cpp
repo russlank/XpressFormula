@@ -1,5 +1,6 @@
 // PlotRenderer.cpp - Rendering implementation for grids, axes, and curves.
 #include "PlotRenderer.h"
+#include "Projection3D.h"
 #include "../Core/Evaluator.h"
 #include "../Model/PlotPolicy.h"
 #include "imgui.h"
@@ -7,6 +8,7 @@
 #include <cmath>
 #include <cstdio>
 #include <limits>
+#include <utility>
 #include <vector>
 
 namespace XpressFormula::Plotting {
@@ -75,30 +77,22 @@ void PlotRenderer::formatLabel(char* buf, size_t len, double v) {
 
 namespace {
 
+Camera3D cameraFromOptions(const PlotRenderer::Surface3DOptions& options) noexcept {
+    return Camera3D{ options.azimuthDeg, options.elevationDeg, options.zScale };
+}
+
 void drawViewportAxisTriad3D(ImDrawList* dl,
                              const XpressFormula::Core::ViewTransform& vt,
                              const XpressFormula::Plotting::PlotRenderer::Surface3DOptions& options) {
-    const double azimuth = static_cast<double>(options.azimuthDeg) * 3.14159265358979323846 / 180.0;
-    const double elevation = static_cast<double>(options.elevationDeg) * 3.14159265358979323846 / 180.0;
-    const double cosA = std::cos(azimuth);
-    const double sinA = std::sin(azimuth);
-    const double cosE = std::cos(elevation);
-    const double sinE = std::sin(elevation);
+    const Projection3D projection(cameraFromOptions(options));
 
     auto projectDirection = [&](double wx, double wy, double wz, ImVec2& outDir) -> bool {
-        const double zWorld = wz * options.zScale;
-        const double xYaw = cosA * wx - sinA * wy;
-        const double yYaw = sinA * wx + cosA * wy;
-        const double xProj = xYaw;
-        const double yProj = cosE * yYaw - sinE * zWorld;
-        const float dx = static_cast<float>(xProj);
-        const float dy = static_cast<float>(-yProj); // screen Y grows downward
-        const float len = std::sqrt(dx * dx + dy * dy);
-        if (len < 1e-4f) {
+        Geometry::Vec2 direction;
+        if (!projection.projectDirection2D(Geometry::Vec3{ wx, wy, wz }, direction)) {
             outDir = ImVec2(0.0f, 0.0f);
             return false;
         }
-        outDir = ImVec2(dx / len, dy / len);
+        outDir = ImVec2(static_cast<float>(direction.x), static_cast<float>(direction.y));
         return true;
     };
 
@@ -227,24 +221,15 @@ void PlotRenderer::drawGrid3D(ImDrawList* dl, const Core::ViewTransform& vt,
     const double yMin = vt.worldYMin();
     const double yMax = vt.worldYMax();
 
-    const double azimuth = static_cast<double>(options.azimuthDeg) * 3.14159265358979323846 / 180.0;
-    const double elevation = static_cast<double>(options.elevationDeg) * 3.14159265358979323846 / 180.0;
-    const double cosA = std::cos(azimuth);
-    const double sinA = std::sin(azimuth);
-    const double cosE = std::cos(elevation);
-    const double sinE = std::sin(elevation);
-    const double scale = std::max(1e-6, std::min(vt.state.scaleX, vt.state.scaleY));
-    const Core::Vec2 origin = vt.worldToScreen(0.0, 0.0);
+    const Projection3D projection(cameraFromOptions(options));
+    const ProjectionScreenAnchor anchor = projectionScreenAnchorFor(vt);
 
     auto projectPoint = [&](double wx, double wy, double wz) -> Core::Vec2 {
-        const double zWorld = wz * options.zScale;
-        const double xYaw = cosA * wx - sinA * wy;
-        const double yYaw = sinA * wx + cosA * wy;
-        const double xProj = xYaw;
-        const double yProj = cosE * yYaw - sinE * zWorld;
+        const ScreenPoint3D screen =
+            projection.projectToScreen(Geometry::Vec3{ wx, wy, wz }, anchor);
         return Core::Vec2(
-            origin.x + static_cast<float>(xProj * scale),
-            origin.y - static_cast<float>(yProj * scale));
+            static_cast<float>(screen.screen.x),
+            static_cast<float>(screen.screen.y));
     };
 
     ImVec2 clipMin(vt.viewport.originX, vt.viewport.originY);
@@ -341,24 +326,18 @@ void PlotRenderer::drawAxes3D(ImDrawList* dl, const Core::ViewTransform& vt,
     const double ySpan = std::max(1e-6, yMax - yMin);
     const double zSpan = std::max(xSpan, ySpan) * 0.35;
 
-    const double azimuth = static_cast<double>(options.azimuthDeg) * 3.14159265358979323846 / 180.0;
-    const double elevation = static_cast<double>(options.elevationDeg) * 3.14159265358979323846 / 180.0;
-    const double cosA = std::cos(azimuth);
-    const double sinA = std::sin(azimuth);
-    const double cosE = std::cos(elevation);
-    const double sinE = std::sin(elevation);
-    const double scale = std::max(1e-6, std::min(vt.state.scaleX, vt.state.scaleY));
-    const Core::Vec2 originScreen = vt.worldToScreen(0.0, 0.0);
+    const Projection3D projection(cameraFromOptions(options));
+    const ProjectionScreenAnchor anchor = projectionScreenAnchorFor(vt);
+    const Core::Vec2 originScreen(
+        static_cast<float>(anchor.originScreen.x),
+        static_cast<float>(anchor.originScreen.y));
 
     auto projectPoint = [&](double wx, double wy, double wz) -> Core::Vec2 {
-        const double zWorld = wz * options.zScale;
-        const double xYaw = cosA * wx - sinA * wy;
-        const double yYaw = sinA * wx + cosA * wy;
-        const double xProj = xYaw;
-        const double yProj = cosE * yYaw - sinE * zWorld;
+        const ScreenPoint3D screen =
+            projection.projectToScreen(Geometry::Vec3{ wx, wy, wz }, anchor);
         return Core::Vec2(
-            originScreen.x + static_cast<float>(xProj * scale),
-            originScreen.y - static_cast<float>(yProj * scale));
+            static_cast<float>(screen.screen.x),
+            static_cast<float>(screen.screen.y));
     };
 
     auto drawArrow = [&](const Core::Vec2& from, const Core::Vec2& to, ImU32 col, float thickness) {
@@ -716,12 +695,8 @@ void PlotRenderer::drawSurface3D(ImDrawList* dl, const Core::ViewTransform& vt,
         zMax = 1.0;
     }
 
-    const double azimuth = static_cast<double>(options.azimuthDeg) * 3.14159265358979323846 / 180.0;
-    const double elevation = static_cast<double>(options.elevationDeg) * 3.14159265358979323846 / 180.0;
-    const double cosA = std::cos(azimuth);
-    const double sinA = std::sin(azimuth);
-    const double cosE = std::cos(elevation);
-    const double sinE = std::sin(elevation);
+    const Projection3D projection(cameraFromOptions(options));
+    const ProjectionScreenAnchor anchor = projectionScreenAnchorFor(vt);
 
     std::vector<Vertex> projected((nx + 1) * (ny + 1));
     int validPointCount = 0;
@@ -741,16 +716,11 @@ void PlotRenderer::drawSurface3D(ImDrawList* dl, const Core::ViewTransform& vt,
             // Keep X/Y in world coordinates so the projected 3D geometry remains anchored to the
             // same origin used by the 2D grid/axes (ViewTransform). Subtracting the current view
             // center here would re-center the mesh every frame and cause visible "swimming".
-            const double x = wx;
-            const double y = wy;
-            const double zWorld = z * options.zScale;
-
-            const double xYaw = cosA * x - sinA * y;
-            const double yYaw = sinA * x + cosA * y;
-
-            v.xProj = xYaw;
-            v.yProj = cosE * yYaw - sinE * zWorld;
-            v.depth = sinE * yYaw + cosE * zWorld;
+            const ProjectedPoint3D projectedPoint =
+                projection.project(Geometry::Vec3{ wx, wy, z });
+            v.xProj = projectedPoint.x;
+            v.yProj = projectedPoint.y;
+            v.depth = projectedPoint.depth;
             v.value = z;
             v.valid = true;
             validPointCount++;
@@ -767,10 +737,6 @@ void PlotRenderer::drawSurface3D(ImDrawList* dl, const Core::ViewTransform& vt,
     // the 3D scene appear to "swim" relative to the 2D coordinates.
     // We also reuse the 2D pixel/unit scale (ViewTransform) so moving the view changes both the
     // overlays and the 3D geometry consistently.
-    const double scale = std::max(1e-6, std::min(vt.state.scaleX, vt.state.scaleY));
-    const float sxCenter = vt.worldToScreen(0.0, 0.0).x;
-    const float syCenter = vt.worldToScreen(0.0, 0.0).y;
-
     std::vector<ScreenVertex> screenVerts((nx + 1) * (ny + 1));
     for (size_t i = 0; i < projected.size(); ++i) {
         const Vertex& v = projected[i];
@@ -779,8 +745,10 @@ void PlotRenderer::drawSurface3D(ImDrawList* dl, const Core::ViewTransform& vt,
             s.valid = false;
             continue;
         }
-        s.x = sxCenter + static_cast<float>(v.xProj * scale);
-        s.y = syCenter - static_cast<float>(v.yProj * scale);
+        const ScreenPoint3D screen =
+            projection.toScreen(ProjectedPoint3D{ v.xProj, v.yProj, v.depth }, anchor);
+        s.x = static_cast<float>(screen.screen.x);
+        s.y = static_cast<float>(screen.screen.y);
         s.depth = v.depth;
         s.value = v.value;
         s.valid = true;
@@ -993,20 +961,12 @@ void PlotRenderer::drawSurface3D(ImDrawList* dl, const Core::ViewTransform& vt,
         };
 
         auto projectEnvelopePoint = [&](double wx, double wy, double wz) {
-            const double x = wx;
-            const double y = wy;
-            const double zWorld = wz * options.zScale;
-
-            const double xYaw = cosA * x - sinA * y;
-            const double yYaw = sinA * x + cosA * y;
-
-            const double xProj = xYaw;
-            const double yProj = cosE * yYaw - sinE * zWorld;
-            const double depth = sinE * yYaw + cosE * zWorld;
-
-            const float sx = sxCenter + static_cast<float>(xProj * scale);
-            const float sy = syCenter - static_cast<float>(yProj * scale);
-            return EnvelopePoint{ ImVec2(sx, sy), depth };
+            const ScreenPoint3D screen =
+                projection.projectToScreen(Geometry::Vec3{ wx, wy, wz }, anchor);
+            return EnvelopePoint{
+                ImVec2(static_cast<float>(screen.screen.x), static_cast<float>(screen.screen.y)),
+                screen.depth
+            };
         };
 
         EnvelopePoint corners[8] = {
@@ -1074,16 +1034,17 @@ void PlotRenderer::drawSurface3D(ImDrawList* dl, const Core::ViewTransform& vt,
 void PlotRenderer::drawImplicitSurface3D(ImDrawList* dl, const Core::ViewTransform& vt,
                                          const Core::ASTNodePtr& ast,
                                          const float color[4],
-                                         const Surface3DOptions& options) {
+                                         const Surface3DOptions& options,
+                                         Meshing::ImplicitMeshCache& meshCache,
+                                         Model::FormulaId formulaId,
+                                         std::uint64_t compilationRevision) {
     if (!ast) {
         return;
     }
 
-    struct Point3 {
-        double x;
-        double y;
-        double z;
-    };
+    using Point3 = Geometry::Vec3;
+    using WorldFace = Meshing::ImplicitMeshTriangle;
+
     struct ProjectedVertex {
         double wx;
         double wy;
@@ -1114,39 +1075,6 @@ void PlotRenderer::drawImplicitSurface3D(ImDrawList* dl, const Core::ViewTransfo
         double yProj;
         double depth;
         double wz;
-    };
-    // Stored in world coordinates so we can reuse the extracted mesh across camera changes
-    // (azimuth/elevation/zScale/opacity/wireframe) and only re-project when needed.
-    struct WorldFace {
-        Point3 p0;
-        Point3 p1;
-        Point3 p2;
-    };
-    // Cache invalidation is intentionally tied to AST identity + sampling domain + grid size.
-    // Camera and visual styling are excluded because they only affect projection/shading.
-    struct MeshCacheKey {
-        const void* astPtr;
-        int gridRes;
-        double xMin;
-        double xMax;
-        double yMin;
-        double yMax;
-        double zCenter;
-        double zMinDomain;
-        double zMaxDomain;
-    };
-    struct MeshCacheData {
-        MeshCacheKey key{};
-        std::vector<WorldFace> faces;
-        // Bounds of the extracted surface (not the whole sampling box). Used for envelope box
-        // and to stabilize z-based coloring without rescanning all triangles every frame.
-        double surfXMin = 0.0;
-        double surfXMax = 0.0;
-        double surfYMin = 0.0;
-        double surfYMax = 0.0;
-        double surfZMin = 0.0;
-        double surfZMax = 0.0;
-        bool valid = false;
     };
     struct EnvelopePoint {
         ImVec2 screen;
@@ -1187,48 +1115,24 @@ void PlotRenderer::drawImplicitSurface3D(ImDrawList* dl, const Core::ViewTransfo
         return static_cast<size_t>(((iz * (ny + 1)) + iy) * (nx + 1) + ix);
     };
     // Rebuild the implicit mesh only when the sampled field/domain changes.
-    const MeshCacheKey cacheKey{
-        ast.get(), gridRes,
-        xMin, xMax, yMin, yMax, zCenter, zMinDomain, zMaxDomain
+    // Camera and visual styling are excluded because they only affect projection/shading.
+    const Meshing::ImplicitMeshKey cacheKey{
+        formulaId,
+        compilationRevision,
+        ast.get(),
+        gridRes,
+        xMin,
+        xMax,
+        yMin,
+        yMax,
+        zCenter,
+        zMinDomain,
+        zMaxDomain
     };
-    static MeshCacheData s_meshCache;
-    const bool cacheHit = s_meshCache.valid &&
-        s_meshCache.key.astPtr == cacheKey.astPtr &&
-        s_meshCache.key.gridRes == cacheKey.gridRes &&
-        s_meshCache.key.xMin == cacheKey.xMin &&
-        s_meshCache.key.xMax == cacheKey.xMax &&
-        s_meshCache.key.yMin == cacheKey.yMin &&
-        s_meshCache.key.yMax == cacheKey.yMax &&
-        s_meshCache.key.zCenter == cacheKey.zCenter &&
-        s_meshCache.key.zMinDomain == cacheKey.zMinDomain &&
-        s_meshCache.key.zMaxDomain == cacheKey.zMaxDomain;
+    const Meshing::ImplicitMeshEntry* cachedMesh = meshCache.find(cacheKey);
 
-    const double azimuth = static_cast<double>(options.azimuthDeg) * 3.14159265358979323846 / 180.0;
-    const double elevation = static_cast<double>(options.elevationDeg) * 3.14159265358979323846 / 180.0;
-    const double cosA = std::cos(azimuth);
-    const double sinA = std::sin(azimuth);
-    const double cosE = std::cos(elevation);
-    const double sinE = std::sin(elevation);
-
-    // Shared 3D->2D projection used for mesh triangles and the optional envelope/axis-triad overlay.
-    // The projection is world-origin anchored (no per-frame centering by sampled-box center)
-    // so implicit meshes remain aligned with the 2D grid/axes during panning and zooming.
-    auto projectPoint = [&](double wx, double wy, double wz,
-                            double& outXProj, double& outYProj, double& outDepth) {
-        // This helper projects a world-space point using the current 3D camera but keeps the same
-        // world origin reference as the 2D axes/grid. It is shared by triangles, envelope edges,
-        // and the axis triad so those overlays remain aligned.
-        const double x = wx;
-        const double y = wy;
-        const double zWorld = wz * options.zScale;
-
-        const double xYaw = cosA * x - sinA * y;
-        const double yYaw = sinA * x + cosA * y;
-
-        outXProj = xYaw;
-        outYProj = cosE * yYaw - sinE * zWorld;
-        outDepth = sinE * yYaw + cosE * zWorld;
-    };
+    const Projection3D projection(cameraFromOptions(options));
+    const ProjectionScreenAnchor anchor = projectionScreenAnchorFor(vt);
 
     // Standard cube corner indexing (voxel cell corners) and edge topology.
     static const int kCubeOffsets[8][3] = {
@@ -1251,12 +1155,7 @@ void PlotRenderer::drawImplicitSurface3D(ImDrawList* dl, const Core::ViewTransfo
                        static_cast<size_t>(nz) * 2u);
     const std::vector<WorldFace>* meshFaces = nullptr;
 
-    double surfXMin = std::numeric_limits<double>::max();
-    double surfXMax = std::numeric_limits<double>::lowest();
-    double surfYMin = std::numeric_limits<double>::max();
-    double surfYMax = std::numeric_limits<double>::lowest();
-    double surfZMin = std::numeric_limits<double>::max();
-    double surfZMax = std::numeric_limits<double>::lowest();
+    Geometry::Bounds3D surfaceBounds;
 
     // Zero-crossing test for an edge endpoint pair. `true` means the isosurface may cross
     // the segment, including the degenerate case where one endpoint is exactly zero.
@@ -1334,25 +1233,15 @@ void PlotRenderer::drawImplicitSurface3D(ImDrawList* dl, const Core::ViewTransfo
         worldFaces.push_back(WorldFace{ a, b, c });
         const Point3* verts[3] = { &a, &b, &c };
         for (const Point3* v : verts) {
-            surfXMin = std::min(surfXMin, v->x);
-            surfXMax = std::max(surfXMax, v->x);
-            surfYMin = std::min(surfYMin, v->y);
-            surfYMax = std::max(surfYMax, v->y);
-            surfZMin = std::min(surfZMin, v->z);
-            surfZMax = std::max(surfZMax, v->z);
+            surfaceBounds.include(*v);
         }
     };
 
-    if (cacheHit) {
+    if (cachedMesh != nullptr) {
         // Fast path: reuse previously extracted mesh and its bounds. This avoids re-evaluating
         // the scalar field on the 3D grid and re-running the surface extraction.
-        meshFaces = &s_meshCache.faces;
-        surfXMin = s_meshCache.surfXMin;
-        surfXMax = s_meshCache.surfXMax;
-        surfYMin = s_meshCache.surfYMin;
-        surfYMax = s_meshCache.surfYMax;
-        surfZMin = s_meshCache.surfZMin;
-        surfZMax = s_meshCache.surfZMax;
+        meshFaces = &cachedMesh->faces;
+        surfaceBounds = cachedMesh->surfaceBounds;
     } else {
         // Slow path: sample F(x,y,z) over the current 3D grid. This is the dominant cost and is
         // intentionally skipped on cache hits (camera/style changes only).
@@ -1528,16 +1417,13 @@ void PlotRenderer::drawImplicitSurface3D(ImDrawList* dl, const Core::ViewTransfo
         }
 
         // Publish cache only after a full successful extraction.
-        s_meshCache.key = cacheKey;
-        s_meshCache.faces = worldFaces;
-        s_meshCache.surfXMin = surfXMin;
-        s_meshCache.surfXMax = surfXMax;
-        s_meshCache.surfYMin = surfYMin;
-        s_meshCache.surfYMax = surfYMax;
-        s_meshCache.surfZMin = surfZMin;
-        s_meshCache.surfZMax = surfZMax;
-        s_meshCache.valid = true;
-        meshFaces = &s_meshCache.faces;
+        Meshing::ImplicitMeshEntry entry;
+        entry.faces = std::move(worldFaces);
+        entry.surfaceBounds = surfaceBounds;
+        const Meshing::ImplicitMeshEntry& storedEntry =
+            meshCache.store(cacheKey, std::move(entry));
+        meshFaces = &storedEntry.faces;
+        surfaceBounds = storedEntry.surfaceBounds;
     }
 
     if (meshFaces == nullptr) {
@@ -1574,17 +1460,19 @@ void PlotRenderer::drawImplicitSurface3D(ImDrawList* dl, const Core::ViewTransfo
         face.v0.wx = wf.p0.x; face.v0.wy = wf.p0.y; face.v0.wz = wf.p0.z;
         face.v1.wx = wf.p1.x; face.v1.wy = wf.p1.y; face.v1.wz = wf.p1.z;
         face.v2.wx = wf.p2.x; face.v2.wy = wf.p2.y; face.v2.wz = wf.p2.z;
-        projectPoint(wf.p0.x, wf.p0.y, wf.p0.z, face.v0.xProj, face.v0.yProj, face.v0.depth);
-        projectPoint(wf.p1.x, wf.p1.y, wf.p1.z, face.v1.xProj, face.v1.yProj, face.v1.depth);
-        projectPoint(wf.p2.x, wf.p2.y, wf.p2.z, face.v2.xProj, face.v2.yProj, face.v2.depth);
+        const ProjectedPoint3D p0 = projection.project(wf.p0);
+        const ProjectedPoint3D p1 = projection.project(wf.p1);
+        const ProjectedPoint3D p2 = projection.project(wf.p2);
+        face.v0.xProj = p0.x; face.v0.yProj = p0.y; face.v0.depth = p0.depth;
+        face.v1.xProj = p1.x; face.v1.yProj = p1.y; face.v1.depth = p1.depth;
+        face.v2.xProj = p2.x; face.v2.yProj = p2.y; face.v2.depth = p2.depth;
         face.depth = (face.v0.depth + face.v1.depth + face.v2.depth) / 3.0;
         face.zAvg = (wf.p0.z + wf.p1.z + wf.p2.z) / 3.0;
 
-        const double nxYaw = cosA * normal.x - sinA * normal.y;
-        const double nyYaw = sinA * normal.x + cosA * normal.y;
-        const double nViewX = nxYaw;
-        const double nViewY = cosE * nyYaw - sinE * normal.z;
-        const double nViewZ = sinE * nyYaw + cosE * normal.z;
+        const ViewVector3D normalView = projection.rotateScaledVectorToView(normal);
+        const double nViewX = normalView.x;
+        const double nViewY = normalView.y;
+        const double nViewZ = normalView.z;
         const double nvLen = std::sqrt(nViewX * nViewX + nViewY * nViewY + nViewZ * nViewZ);
         const double invNvLen = (nvLen > 1e-12) ? (1.0 / nvLen) : 1.0;
         const double ndotl = (nViewX * lightX + nViewY * lightY + nViewZ * lightZ) * invNvLen;
@@ -1598,11 +1486,6 @@ void PlotRenderer::drawImplicitSurface3D(ImDrawList* dl, const Core::ViewTransfo
         return;
     }
 
-    // Anchor implicit 3D projection to world origin for stable alignment with the 2D grid/axes.
-    const double scale = std::max(1e-6, std::min(vt.state.scaleX, vt.state.scaleY));
-    const float sxCenter = vt.worldToScreen(0.0, 0.0).x;
-    const float syCenter = vt.worldToScreen(0.0, 0.0).y;
-
     const bool usePlaneSplitPass = (options.planePass != SurfacePlanePass3D::All);
     const double planeZ = options.gridPlaneZ;
     std::vector<ScreenFace> screenFaces;
@@ -1613,13 +1496,16 @@ void PlotRenderer::drawImplicitSurface3D(ImDrawList* dl, const Core::ViewTransfo
                                  const ClipProjectedVertex& c,
                                  float shade,
                                  size_t wireOrdinal) {
+        const ScreenPoint3D aScreen =
+            projection.toScreen(ProjectedPoint3D{ a.xProj, a.yProj, a.depth }, anchor);
+        const ScreenPoint3D bScreen =
+            projection.toScreen(ProjectedPoint3D{ b.xProj, b.yProj, b.depth }, anchor);
+        const ScreenPoint3D cScreen =
+            projection.toScreen(ProjectedPoint3D{ c.xProj, c.yProj, c.depth }, anchor);
         screenFaces.push_back({
-            ImVec2(sxCenter + static_cast<float>(a.xProj * scale),
-                   syCenter - static_cast<float>(a.yProj * scale)),
-            ImVec2(sxCenter + static_cast<float>(b.xProj * scale),
-                   syCenter - static_cast<float>(b.yProj * scale)),
-            ImVec2(sxCenter + static_cast<float>(c.xProj * scale),
-                   syCenter - static_cast<float>(c.yProj * scale)),
+            ImVec2(static_cast<float>(aScreen.screen.x), static_cast<float>(aScreen.screen.y)),
+            ImVec2(static_cast<float>(bScreen.screen.x), static_cast<float>(bScreen.screen.y)),
+            ImVec2(static_cast<float>(cScreen.screen.x), static_cast<float>(cScreen.screen.y)),
             (a.depth + b.depth + c.depth) / 3.0,
             (a.wz + b.wz + c.wz) / 3.0,
             shade,
@@ -1711,6 +1597,12 @@ void PlotRenderer::drawImplicitSurface3D(ImDrawList* dl, const Core::ViewTransfo
                    vt.viewport.originY + vt.viewport.height);
     dl->PushClipRect(clipMin, clipMax, true);
 
+    double surfXMin = surfaceBounds.xMin;
+    double surfXMax = surfaceBounds.xMax;
+    double surfYMin = surfaceBounds.yMin;
+    double surfYMax = surfaceBounds.yMax;
+    double surfZMin = surfaceBounds.zMin;
+    double surfZMax = surfaceBounds.zMax;
     if (!(surfZMin < surfZMax)) {
         surfZMin = zMinDomain;
         surfZMax = zMaxDomain;
@@ -1765,11 +1657,12 @@ void PlotRenderer::drawImplicitSurface3D(ImDrawList* dl, const Core::ViewTransfo
         if (!(surfZMin < surfZMax)) { surfZMin = zMinDomain; surfZMax = zMaxDomain; }
 
         auto projectEnvelopePoint = [&](double wx, double wy, double wz) {
-            double xp, yp, depth;
-            projectPoint(wx, wy, wz, xp, yp, depth);
-            const float sx = sxCenter + static_cast<float>(xp * scale);
-            const float sy = syCenter - static_cast<float>(yp * scale);
-            return EnvelopePoint{ ImVec2(sx, sy), depth };
+            const ScreenPoint3D screen =
+                projection.projectToScreen(Geometry::Vec3{ wx, wy, wz }, anchor);
+            return EnvelopePoint{
+                ImVec2(static_cast<float>(screen.screen.x), static_cast<float>(screen.screen.y)),
+                screen.depth
+            };
         };
 
         EnvelopePoint corners[8] = {
