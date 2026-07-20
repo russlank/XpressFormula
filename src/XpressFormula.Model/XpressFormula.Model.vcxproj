@@ -96,12 +96,14 @@
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="..\XpressFormula\Model\Document.cpp" />
     <ClCompile Include="..\XpressFormula\Model\PlotPolicy.cpp" />
     <ClCompile Include="..\XpressFormula\Model\SceneSummary.cpp" />
     <ClCompile Include="..\XpressFormula\Core\ViewTransform.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\XpressFormula\Model\Color.h" />
+    <ClInclude Include="..\XpressFormula\Model\Document.h" />
     <ClInclude Include="..\XpressFormula\Model\Formula.h" />
     <ClInclude Include="..\XpressFormula\Model\FormulaId.h" />
     <ClInclude Include="..\XpressFormula\Model\PlotPolicy.h" />

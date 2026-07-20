@@ -10,10 +10,9 @@
 #include "PlotSettings.h"
 #include "../Application/ExportController.h"
 #include "../Application/ExportPreviewTexture.h"
+#include "../Application/ProjectController.h"
 #include "../Core/ViewTransform.h"
-#include "../Infrastructure/Persistence/ProjectMapper.h"
-#include "../Infrastructure/Persistence/ProjectRepository.h"
-#include "../Infrastructure/Persistence/RecentProjectsStore.h"
+#include "../Model/Document.h"
 #include "../Model/Formula.h"
 #include "../Model/SceneSummary.h"
 #include "../Platform/Windows/ClipboardService.h"
@@ -28,6 +27,7 @@
 #include <filesystem>
 #include <future>
 #include <string>
+#include <string_view>
 #include <vector>
 
 struct HWND__;
@@ -71,12 +71,17 @@ public:
     UINT resizeHeight = 0;
 
 private:
-    enum class PendingProjectAction {
-        None,
-        NewProject,
-        OpenDialog,
-        OpenRecent,
-        CloseApp
+    class ProjectFileDialogAdapter final : public XpressFormula::Application::IProjectFileDialog {
+    public:
+        explicit ProjectFileDialogAdapter(Application& application) noexcept
+            : m_application(application) {}
+
+        [[nodiscard]] Platform::Windows::DialogResult openProject() override;
+        [[nodiscard]] Platform::Windows::DialogResult saveProject(
+            std::wstring_view currentPath) override;
+
+    private:
+        Application& m_application;
     };
 
     bool createDeviceD3D(HWND hWnd);
@@ -85,22 +90,9 @@ private:
     void renderProjectControls();
     void renderProjectDiscardDialog();
     void handleProjectShortcuts();
-    void requestProjectAction(PendingProjectAction action, std::wstring path = {});
-    void executeProjectAction(PendingProjectAction action, const std::wstring& path);
-    void resetToDefaultProject();
+    void syncDocumentDependentState();
+    void consumeProjectControllerEffects();
     void refreshSceneSummary();
-    Infrastructure::Persistence::ProjectSession currentProjectSession() const;
-    void refreshProjectDirtyState();
-    void markProjectClean();
-    bool saveProject();
-    bool saveProjectAs();
-    bool saveProjectToPath(const std::wstring& path, std::string& error);
-    bool openProjectFromDialog();
-    bool openProjectFromPath(const std::wstring& path, std::string& error);
-    void addRecentProjectPath(const std::wstring& path);
-    void loadRecentProjectPaths();
-    void saveRecentProjectPaths() const;
-    std::string projectDisplayName() const;
     void renderPlotToolbar(const Model::SceneSummary& scene);
     void handlePlotShortcuts();
     void fitDefaultView();
@@ -139,24 +131,17 @@ private:
     bool                      m_closeRequestedAfterFrame = false;
 
     // Application state
-    std::vector<Model::Formula> m_formulas;
+    Model::Document            m_document;
+    Model::Document::Revision  m_observedDocumentRevision = 0;
     Model::SceneSummary       m_sceneSummary;
-    Core::ViewTransform       m_viewTransform;
-    PlotSettings              m_plotSettings;
-    std::wstring              m_projectPath;
-    bool                      m_projectDirty = false;
-    std::string               m_savedProjectSnapshot;
-    std::string               m_projectStatus;
-    std::vector<std::wstring> m_recentProjectPaths;
     Infrastructure::Persistence::ProjectRepository m_projectRepository;
     Infrastructure::Persistence::RecentProjectsStore m_recentProjectsStore;
     Platform::Windows::FileDialogService m_fileDialogService;
     Platform::Windows::ShellService m_shellService;
     Platform::Windows::ClipboardService m_clipboardService;
     Platform::Windows::WicImageEncoder m_imageEncoder;
-    PendingProjectAction      m_pendingProjectAction = PendingProjectAction::None;
-    std::wstring              m_pendingProjectPath;
-    bool                      m_openProjectDiscardPopupNextFrame = false;
+    ProjectFileDialogAdapter  m_projectFileDialogAdapter;
+    XpressFormula::Application::ProjectController m_projectController;
     float                     m_sidebarWidth = 360.0f;
     XpressFormula::Application::ExportController m_exportController;
     XpressFormula::Application::ExportPreviewTexture m_exportPreview;

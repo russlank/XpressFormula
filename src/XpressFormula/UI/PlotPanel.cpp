@@ -56,7 +56,7 @@ void drawCornerHud(ImDrawList* dl,
 
 } // namespace
 
-void PlotPanel::render(std::vector<Model::Formula>& formulas,
+void PlotPanel::render(const std::vector<Model::Formula>& formulas,
                        Core::ViewTransform& vt,
                        PlotSettings& settings,
                        const Model::SceneSummary& scene,
@@ -151,7 +151,7 @@ void PlotPanel::render(std::vector<Model::Formula>& formulas,
 
     auto drawFormulas = [&](Plotting::PlotRenderer::SurfacePlanePass3D planePass,
                             bool enable3DOverlays) {
-        for (auto& f : formulas) {
+        for (const auto& f : formulas) {
             if (!f.visible || !f.isValid()) continue;
             switch (formulaRenderKindFor(f.compiled.kind)) {
                 case FormulaRenderKind::Curve2D:

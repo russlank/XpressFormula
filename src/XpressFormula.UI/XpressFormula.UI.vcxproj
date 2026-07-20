@@ -99,6 +99,7 @@
     <ClCompile Include="..\XpressFormula\UI\Components\FormulaCard.cpp" />
     <ClCompile Include="..\XpressFormula\UI\Components\ExportDialog.cpp" />
     <ClCompile Include="..\XpressFormula\UI\Components\PlotToolbar.cpp" />
+    <ClCompile Include="..\XpressFormula\UI\Components\ProjectControls.cpp" />
     <ClCompile Include="..\XpressFormula\UI\FormulaPanel.cpp" />
     <ClCompile Include="..\XpressFormula\UI\ControlPanel.cpp" />
     <ClCompile Include="..\XpressFormula\UI\PlotPanel.cpp" />
@@ -116,6 +117,7 @@
     <ClInclude Include="..\XpressFormula\UI\Components\FormulaCard.h" />
     <ClInclude Include="..\XpressFormula\UI\Components\ExportDialog.h" />
     <ClInclude Include="..\XpressFormula\UI\Components\PlotToolbar.h" />
+    <ClInclude Include="..\XpressFormula\UI\Components\ProjectControls.h" />
     <ClInclude Include="..\XpressFormula\UI\ExportMetadata.h" />
     <ClInclude Include="..\XpressFormula\UI\ExportSettings.h" />
     <ClInclude Include="..\XpressFormula\UI\FormulaEditorState.h" />

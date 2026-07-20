@@ -12,7 +12,7 @@ namespace XpressFormula::UI {
 /// Renders the main plot canvas with mouse interaction (pan & zoom).
 class PlotPanel {
 public:
-    void render(std::vector<Model::Formula>& formulas, Core::ViewTransform& vt,
+    void render(const std::vector<Model::Formula>& formulas, Core::ViewTransform& vt,
                 PlotSettings& settings,
                 const Model::SceneSummary& scene,
                 const PlotRenderOverrides* overrides = nullptr,

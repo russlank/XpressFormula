@@ -15,6 +15,7 @@
 #include "FormulaEntry.h"
 #include "Components/ExportDialog.h"
 #include "Components/PlotToolbar.h"
+#include "Components/ProjectControls.h"
 #include "UiKit/Splitter.h"
 #include "UiKit/UiMetrics.h"
 
@@ -53,7 +54,6 @@ extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(
 static XpressFormula::UI::Application* g_app = nullptr;
 
 namespace XFExport = XpressFormula::Infrastructure::Export;
-namespace XFPersistence = XpressFormula::Infrastructure::Persistence;
 namespace XFWin = XpressFormula::Platform::Windows;
 namespace XFWUtf = XpressFormula::Platform::Windows;
 
@@ -65,6 +65,27 @@ constexpr const wchar_t* kGitHubReleasesUrlW = L"https://github.com/russlank/Xpr
 constexpr const char* kGitHubReleasesUrlUtf8 = "https://github.com/russlank/XpressFormula/releases";
 constexpr const wchar_t* kBuyMeACoffeeUrlW = L"https://buymeacoffee.com/russlank";
 constexpr const char* kBuyMeACoffeeUrlUtf8 = "https://buymeacoffee.com/russlank";
+
+XpressFormula::Model::Document makeDefaultProjectDocument() {
+    XpressFormula::Model::Formula defaultEntry;
+    defaultEntry.setExpression("sin(sqrt(x^2+y^2))");
+    for (std::size_t channel = 0; channel < defaultEntry.color.size(); ++channel) {
+        defaultEntry.color[channel] = XpressFormula::UI::kDefaultPalette[0][channel];
+    }
+    defaultEntry.compile();
+
+    XpressFormula::Core::ViewTransform view;
+    view.reset();
+    XpressFormula::Model::PlotSettings plot;
+    plot.applyCoordinateOverlayPolicy();
+
+    std::vector<XpressFormula::Model::Formula> formulas;
+    formulas.push_back(std::move(defaultEntry));
+
+    XpressFormula::Model::Document document;
+    document.replaceState(std::move(formulas), view, plot, true);
+    return document;
+}
 
 // Background worker: query GitHub Releases API, parse the latest tag/url, and compare against the
 // app semantic version. This runs off the UI thread so startup and manual checks do not stall ImGui.
@@ -166,346 +187,120 @@ static LRESULT WINAPI WndProc(HWND hWnd, UINT msg,
 
 namespace XpressFormula::UI {
 
-Application::Application()  = default;
+Application::Application()
+    : m_projectFileDialogAdapter(*this),
+      m_projectController(
+          m_projectRepository,
+          m_recentProjectsStore,
+          m_projectFileDialogAdapter,
+          [] { return makeDefaultProjectDocument(); }) {
+}
+
 Application::~Application() = default;
 
-void Application::resetToDefaultProject() {
-    m_formulas.clear();
+XFWin::DialogResult Application::ProjectFileDialogAdapter::openProject() {
+    return m_application.m_fileDialogService.openProject(m_application.m_hWnd);
+}
 
-    Model::Formula defaultEntry;
-    defaultEntry.setExpression("sin(sqrt(x^2+y^2))");
-    for (std::size_t channel = 0; channel < defaultEntry.color.size(); ++channel) {
-        defaultEntry.color[channel] = kDefaultPalette[0][channel];
-    }
-    defaultEntry.compile();
-    m_formulas.push_back(std::move(defaultEntry));
-    refreshSceneSummary();
-
-    m_viewTransform.reset();
-    m_plotSettings = PlotSettings{};
-    m_plotSettings.applyCoordinateOverlayPolicy();
-    m_formulaPanel.resetColorCycle(1);
-    m_exportController.dialogSettings() = defaultExportSettings();
-    m_exportController.setSizeInitialized(false);
-    markExportPreviewOutOfDate();
+XFWin::DialogResult Application::ProjectFileDialogAdapter::saveProject(
+    std::wstring_view currentPath) {
+    return m_application.m_fileDialogService.saveProject(m_application.m_hWnd, currentPath);
 }
 
 void Application::refreshSceneSummary() {
     m_sceneSummary = Model::analyzeScene(
-        std::span<const Model::Formula>(m_formulas.data(), m_formulas.size()));
+        std::span<const Model::Formula>(m_document.formulas().data(), m_document.formulas().size()));
 }
 
-XFPersistence::ProjectSession Application::currentProjectSession() const {
-    return XFPersistence::makeProjectSession(m_formulas, m_viewTransform, m_plotSettings);
-}
-
-void Application::markProjectClean() {
-    m_savedProjectSnapshot =
-        XFPersistence::serializeCurrentProjectSession(m_formulas, m_viewTransform, m_plotSettings);
-    m_projectDirty = false;
-}
-
-void Application::refreshProjectDirtyState() {
-    if (m_savedProjectSnapshot.empty()) {
-        markProjectClean();
-        return;
-    }
-    m_projectDirty =
-        (XFPersistence::serializeCurrentProjectSession(m_formulas, m_viewTransform, m_plotSettings) !=
-         m_savedProjectSnapshot);
-}
-
-std::string Application::projectDisplayName() const {
-    std::string name = m_projectPath.empty()
-        ? std::string("Untitled.xfplot")
-        : XFWUtf::utf16ToUtf8OrEmpty(std::filesystem::path(m_projectPath).filename().wstring());
-    if (name.empty()) {
-        name = "Untitled.xfplot";
-    }
-    if (m_projectDirty) {
-        name += " *";
-    }
-    return name;
-}
-
-void Application::loadRecentProjectPaths() {
-    m_recentProjectPaths = m_recentProjectsStore.load().paths;
-}
-
-void Application::saveRecentProjectPaths() const {
-    m_recentProjectsStore.save(m_recentProjectPaths);
-}
-
-void Application::addRecentProjectPath(const std::wstring& path) {
-    m_recentProjectsStore.add(m_recentProjectPaths, path);
-}
-
-bool Application::saveProjectToPath(const std::wstring& path, std::string& error) {
-    error.clear();
-    const std::filesystem::path projectPath(path);
-    const XFPersistence::ProjectSaveResult saveResult =
-        m_projectRepository.save(projectPath, currentProjectSession());
-    if (!saveResult) {
-        error = "Could not save project file: " + saveResult.error;
-        return false;
+void Application::syncDocumentDependentState() {
+    if (m_projectController.consumeDocumentReplaced()) {
+        m_formulaPanel.resetColorCycle(static_cast<int>(m_document.formulas().size()));
+        m_exportController.dialogSettings() = defaultExportSettings();
+        m_exportController.setSizeInitialized(false);
     }
 
-    m_projectPath = projectPath.wstring();
-    addRecentProjectPath(m_projectPath);
-    markProjectClean();
-    m_projectStatus = "Saved project: " + XFWUtf::utf16ToUtf8OrEmpty(m_projectPath);
-    m_redrawRequested = true;
-    return true;
-}
-
-bool Application::saveProjectAs() {
-    const XFWin::DialogResult dialog = m_fileDialogService.saveProject(m_hWnd, m_projectPath);
-    if (dialog.cancelled()) {
-        m_projectStatus = "Save project canceled.";
-        return false;
-    }
-    if (!dialog.selected()) {
-        m_projectStatus = "Save project failed: " + dialog.error;
-        return false;
-    }
-
-    std::string error;
-    if (!saveProjectToPath(dialog.path, error)) {
-        m_projectStatus = "Save project failed: " + error;
-        return false;
-    }
-    return true;
-}
-
-bool Application::saveProject() {
-    if (m_projectPath.empty()) {
-        return saveProjectAs();
-    }
-
-    std::string error;
-    if (!saveProjectToPath(m_projectPath, error)) {
-        m_projectStatus = "Save project failed: " + error;
-        return false;
-    }
-    return true;
-}
-
-bool Application::openProjectFromPath(const std::wstring& path, std::string& error) {
-    error.clear();
-    const XFPersistence::ProjectLoadResult loaded =
-        m_projectRepository.load(std::filesystem::path(path));
-    if (!loaded) {
-        error = loaded.error;
-        return false;
-    }
-
-    XFPersistence::ProjectMapResult mapped =
-        XFPersistence::mapProjectSessionToDocument(loaded.session);
-    std::vector<std::string> warnings = loaded.warnings;
-    warnings.insert(warnings.end(), mapped.warnings.begin(), mapped.warnings.end());
-
-    m_formulas = std::move(mapped.document.formulas);
-    m_viewTransform.state = mapped.document.view.state;
-    m_plotSettings = mapped.document.plot;
-    m_formulaPanel.resetColorCycle(static_cast<int>(m_formulas.size()));
-    refreshSceneSummary();
-    m_projectPath = std::filesystem::absolute(std::filesystem::path(path)).wstring();
-    addRecentProjectPath(m_projectPath);
-    markProjectClean();
-    markExportPreviewOutOfDate();
-
-    std::ostringstream status;
-    status << "Opened project: " << XFWUtf::utf16ToUtf8OrEmpty(m_projectPath);
-    if (!warnings.empty()) {
-        status << " (" << warnings.size() << " warning";
-        if (warnings.size() != 1) {
-            status << "s";
-        }
-        status << ": " << warnings.front() << ")";
-    }
-    m_projectStatus = status.str();
-    m_redrawRequested = true;
-    return true;
-}
-
-bool Application::openProjectFromDialog() {
-    const XFWin::DialogResult dialog = m_fileDialogService.openProject(m_hWnd);
-    if (dialog.cancelled()) {
-        m_projectStatus = "Open project canceled.";
-        return false;
-    }
-    if (!dialog.selected()) {
-        m_projectStatus = "Open project failed: " + dialog.error;
-        return false;
-    }
-
-    std::string error;
-    if (!openProjectFromPath(dialog.path, error)) {
-        m_projectStatus = "Open project failed: " + error;
-        return false;
-    }
-    return true;
-}
-
-void Application::executeProjectAction(PendingProjectAction action, const std::wstring& path) {
-    switch (action) {
-        case PendingProjectAction::NewProject:
-            resetToDefaultProject();
-            m_projectPath.clear();
-            markProjectClean();
-            m_projectStatus = "Started a new project.";
-            break;
-        case PendingProjectAction::OpenDialog:
-            openProjectFromDialog();
-            break;
-        case PendingProjectAction::OpenRecent: {
-            std::string error;
-            if (!openProjectFromPath(path, error)) {
-                m_projectStatus = "Open recent project failed: " + error;
-                std::error_code pathError;
-                if (!std::filesystem::exists(std::filesystem::path(path), pathError)) {
-                    m_recentProjectsStore.remove(m_recentProjectPaths, path);
-                }
-            }
-            break;
-        }
-        case PendingProjectAction::CloseApp:
-            m_closeRequestedAfterFrame = true;
-            break;
-        case PendingProjectAction::None:
-        default:
-            break;
-    }
-    m_redrawRequested = true;
-}
-
-void Application::requestProjectAction(PendingProjectAction action, std::wstring path) {
-    refreshProjectDirtyState();
-    if (m_projectDirty) {
-        m_pendingProjectAction = action;
-        m_pendingProjectPath = std::move(path);
-        m_openProjectDiscardPopupNextFrame = true;
+    const Model::Document::Revision revision = m_document.revision();
+    if (revision != m_observedDocumentRevision) {
+        refreshSceneSummary();
+        markExportPreviewOutOfDate();
+        m_observedDocumentRevision = revision;
         m_redrawRequested = true;
-        return;
     }
+}
 
-    executeProjectAction(action, path);
+void Application::consumeProjectControllerEffects() {
+    if (m_projectController.consumeCloseRequest()) {
+        m_closeRequestedAfterFrame = true;
+    }
+    syncDocumentDependentState();
+    m_redrawRequested = true;
 }
 
 bool Application::requestClose() {
-    refreshProjectDirtyState();
-    if (!m_projectDirty) {
-        m_closeRequestedAfterFrame = true;
-        m_redrawRequested = true;
-        return false;
-    }
-
-    m_pendingProjectAction = PendingProjectAction::CloseApp;
-    m_pendingProjectPath.clear();
-    m_openProjectDiscardPopupNextFrame = true;
-    m_redrawRequested = true;
+    m_projectController.requestClose(m_document);
+    consumeProjectControllerEffects();
     return false;
 }
 
 void Application::renderProjectControls() {
-    ImGui::TextUnformatted("Project");
-    ImGui::Separator();
-    ImGui::TextWrapped("%s", projectDisplayName().c_str());
-    if (!m_projectPath.empty()) {
-        ImGui::SetItemTooltip("%s", XFWUtf::utf16ToUtf8OrEmpty(m_projectPath).c_str());
+    const Components::ProjectControlsAction action = Components::renderProjectControls({
+        m_projectController.displayName(m_document),
+        m_projectController.currentPathUtf8(),
+        m_projectController.status(),
+        &m_projectController.recentProjectPaths()
+    });
+
+    switch (action.command) {
+        case Components::ProjectControlCommand::NewProject:
+            m_projectController.requestNew(m_document);
+            break;
+        case Components::ProjectControlCommand::OpenProject:
+            m_projectController.requestOpenDialog(m_document);
+            break;
+        case Components::ProjectControlCommand::Save:
+            (void)m_projectController.save(m_document);
+            break;
+        case Components::ProjectControlCommand::SaveAs:
+            (void)m_projectController.saveAs(m_document);
+            break;
+        case Components::ProjectControlCommand::OpenRecent:
+            m_projectController.requestOpenRecent(m_document, action.recentPath);
+            break;
+        case Components::ProjectControlCommand::None:
+        default:
+            break;
     }
 
-    const float buttonWidth = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
-    if (ImGui::Button("New", ImVec2(buttonWidth, 0.0f))) {
-        requestProjectAction(PendingProjectAction::NewProject);
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Open...", ImVec2(buttonWidth, 0.0f))) {
-        requestProjectAction(PendingProjectAction::OpenDialog);
-    }
-    if (ImGui::Button("Save", ImVec2(buttonWidth, 0.0f))) {
-        saveProject();
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Save As...", ImVec2(buttonWidth, 0.0f))) {
-        saveProjectAs();
-    }
-
-    if (!m_projectStatus.empty()) {
-        ImGui::TextWrapped("%s", m_projectStatus.c_str());
-    }
-
-    if (!m_recentProjectPaths.empty() &&
-        ImGui::CollapsingHeader("Recent Projects", ImGuiTreeNodeFlags_DefaultOpen)) {
-        for (int i = 0; i < static_cast<int>(m_recentProjectPaths.size()); ++i) {
-            ImGui::PushID(i);
-            const std::wstring& path = m_recentProjectPaths[static_cast<std::size_t>(i)];
-            std::string label = XFWUtf::utf16ToUtf8OrEmpty(std::filesystem::path(path).filename().wstring());
-            if (label.empty()) {
-                label = XFWUtf::utf16ToUtf8OrEmpty(path);
-            }
-            std::error_code pathError;
-            const bool pathExists = std::filesystem::exists(std::filesystem::path(path), pathError);
-            if (!pathExists) {
-                ImGui::BeginDisabled();
-            }
-            if (ImGui::SmallButton(label.c_str()) && pathExists) {
-                requestProjectAction(PendingProjectAction::OpenRecent, path);
-            }
-            if (!pathExists) {
-                ImGui::EndDisabled();
-            }
-            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-                if (pathExists) {
-                    ImGui::SetTooltip("%s", XFWUtf::utf16ToUtf8OrEmpty(path).c_str());
-                } else {
-                    ImGui::SetTooltip("Missing: %s", XFWUtf::utf16ToUtf8OrEmpty(path).c_str());
-                }
-            }
-            ImGui::PopID();
-        }
+    if (action.command != Components::ProjectControlCommand::None) {
+        consumeProjectControllerEffects();
     }
 }
 
 void Application::renderProjectDiscardDialog() {
-    static constexpr const char* kDiscardPopupId = "Unsaved Project Changes";
+    const bool openNextFrame = m_projectController.consumeUnsavedPromptRequest();
+    const Components::UnsavedProjectDialogChoice choice =
+        Components::renderUnsavedProjectDialog(openNextFrame);
 
-    if (m_openProjectDiscardPopupNextFrame) {
-        ImGui::OpenPopup(kDiscardPopupId);
-        m_openProjectDiscardPopupNextFrame = false;
+    XpressFormula::Application::UnsavedProjectChoice controllerChoice =
+        XpressFormula::Application::UnsavedProjectChoice::None;
+    switch (choice) {
+        case Components::UnsavedProjectDialogChoice::Save:
+            controllerChoice = XpressFormula::Application::UnsavedProjectChoice::Save;
+            break;
+        case Components::UnsavedProjectDialogChoice::Discard:
+            controllerChoice = XpressFormula::Application::UnsavedProjectChoice::Discard;
+            break;
+        case Components::UnsavedProjectDialogChoice::Cancel:
+            controllerChoice = XpressFormula::Application::UnsavedProjectChoice::Cancel;
+            break;
+        case Components::UnsavedProjectDialogChoice::None:
+        default:
+            break;
     }
 
-    if (ImGui::BeginPopupModal(kDiscardPopupId, nullptr, ImGuiWindowFlags_NoSavedSettings)) {
-        ImGui::TextWrapped("The current project has unsaved changes.");
-        ImGui::TextWrapped("Save before continuing, discard the changes, or cancel.");
-        ImGui::Spacing();
-
-        if (ImGui::Button("Save", ImVec2(96.0f, 0.0f))) {
-            if (saveProject()) {
-                const PendingProjectAction action = m_pendingProjectAction;
-                const std::wstring path = m_pendingProjectPath;
-                m_pendingProjectAction = PendingProjectAction::None;
-                m_pendingProjectPath.clear();
-                ImGui::CloseCurrentPopup();
-                executeProjectAction(action, path);
-            }
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Discard", ImVec2(96.0f, 0.0f))) {
-            const PendingProjectAction action = m_pendingProjectAction;
-            const std::wstring path = m_pendingProjectPath;
-            m_pendingProjectAction = PendingProjectAction::None;
-            m_pendingProjectPath.clear();
-            ImGui::CloseCurrentPopup();
-            executeProjectAction(action, path);
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Cancel", ImVec2(96.0f, 0.0f))) {
-            m_pendingProjectAction = PendingProjectAction::None;
-            m_pendingProjectPath.clear();
-            ImGui::CloseCurrentPopup();
-        }
-        ImGui::EndPopup();
+    if (controllerChoice != XpressFormula::Application::UnsavedProjectChoice::None) {
+        m_projectController.handleUnsavedChoice(m_document, controllerChoice);
+        consumeProjectControllerEffects();
     }
 }
 
@@ -523,15 +318,18 @@ void Application::handleProjectShortcuts() {
     }
 
     if (ImGui::IsKeyPressed(ImGuiKey_N)) {
-        requestProjectAction(PendingProjectAction::NewProject);
+        m_projectController.requestNew(m_document);
+        consumeProjectControllerEffects();
     } else if (ImGui::IsKeyPressed(ImGuiKey_O)) {
-        requestProjectAction(PendingProjectAction::OpenDialog);
+        m_projectController.requestOpenDialog(m_document);
+        consumeProjectControllerEffects();
     } else if (ImGui::IsKeyPressed(ImGuiKey_S)) {
         if (shift) {
-            saveProjectAs();
+            (void)m_projectController.saveAs(m_document);
         } else {
-            saveProject();
+            (void)m_projectController.save(m_document);
         }
+        consumeProjectControllerEffects();
     }
 }
 
@@ -605,9 +403,10 @@ bool Application::initialize(HINSTANCE hInstance, int width, int height) {
     ImGui_ImplWin32_Init(m_hWnd);
     ImGui_ImplDX11_Init(m_device, m_deviceContext);
 
-    resetToDefaultProject();
-    markProjectClean();
-    loadRecentProjectPaths();
+    m_projectController.startNewCleanDocument(m_document);
+    m_formulaPanel.resetColorCycle(static_cast<int>(m_document.formulas().size()));
+    syncDocumentDependentState();
+    m_projectController.loadRecentProjectPaths();
 
     // Record startup time so we can defer the automatic update check.
     // Delaying the network call avoids triggering antivirus heuristics that flag
@@ -640,12 +439,13 @@ int Application::run() {
         }
 
         const Model::SceneSummary& scene = m_sceneSummary;
-        const XYRenderMode effectiveRenderMode = m_plotSettings.resolveXYRenderMode(scene);
+        const Model::PlotSettings& plotSettings = m_document.plotSettings();
+        const XYRenderMode effectiveRenderMode = plotSettings.resolveXYRenderMode(scene);
         const bool continuousRender =
-            m_plotSettings.autoRotate &&
+            plotSettings.autoRotate &&
             scene.hasVisible3D() &&
             effectiveRenderMode == XYRenderMode::Surface3D;
-        const bool optimizeRendering = m_plotSettings.optimizeRendering;
+        const bool optimizeRendering = plotSettings.optimizeRendering;
         if (optimizeRendering && !m_redrawRequested && !continuousRender) {
             // Event-driven idle mode: avoid presenting frames when nothing changes.
             ::WaitMessage();
@@ -715,7 +515,6 @@ void Application::renderFrame() {
     ImGui_ImplDX11_NewFrame();
     ImGui_ImplWin32_NewFrame();
     ImGui::NewFrame();
-    refreshProjectDirtyState();
     handleProjectShortcuts();
 
     // We fill the entire OS window with the sidebar, a splitter, and the plot.
@@ -744,16 +543,24 @@ void Application::renderFrame() {
     ImGui::Spacing();
     ImGui::Separator();
     ImGui::Spacing();
-    m_formulaPanel.render(m_formulas);
-    refreshSceneSummary();
+    {
+        auto formulas = m_document.editFormulas();
+        m_formulaPanel.render(formulas.get());
+    }
+    syncDocumentDependentState();
     const Model::SceneSummary& scene = m_sceneSummary;
     ImGui::Spacing();
     ImGui::Spacing();
-    ControlPanelActions actions = m_controlPanel.render(
-        m_viewTransform, m_plotSettings, scene, m_exportController.status());
-    if (actions.requestOpenExportDialog) {
-        m_exportController.requestOpen();
+    {
+        auto view = m_document.editViewTransform();
+        auto plot = m_document.editPlotSettings();
+        ControlPanelActions actions = m_controlPanel.render(
+            view.get(), plot.get(), scene, m_exportController.status());
+        if (actions.requestOpenExportDialog) {
+            m_exportController.requestOpen();
+        }
     }
+    syncDocumentDependentState();
 
     ImGui::Spacing();
     ImGui::Separator();
@@ -876,8 +683,13 @@ void Application::renderFrame() {
     if (m_exportController.pendingSave() || m_exportController.pendingCopy()) {
         exportOverrides = plotRenderOverridesForExport(m_exportController.pendingSettings());
     }
-    m_plotPanel.render(m_formulas, m_viewTransform, m_plotSettings, scene,
-                       exportOverrides.active ? &exportOverrides : nullptr);
+    {
+        auto view = m_document.editViewTransform();
+        auto plot = m_document.editPlotSettings();
+        m_plotPanel.render(m_document.formulas(), view.get(), plot.get(), scene,
+                           exportOverrides.active ? &exportOverrides : nullptr);
+    }
+    syncDocumentDependentState();
     ImGui::End();
 
     // ---- Render ----
@@ -887,14 +699,16 @@ void Application::renderFrame() {
     m_deviceContext->ClearRenderTargetView(m_renderTargetView, clearColor);
     ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
     processPendingExportActions();
-    refreshProjectDirtyState();
+    syncDocumentDependentState();
 
     HRESULT hr = m_swapChain->Present(1, 0); // VSync
     m_swapChainOccluded = (hr == DXGI_STATUS_OCCLUDED);
 }
 
 void Application::renderPlotToolbar(const Model::SceneSummary& scene) {
-    const XYRenderMode effectiveRenderMode = m_plotSettings.resolveXYRenderMode(scene);
+    auto plot = m_document.editPlotSettings();
+    PlotSettings& plotSettings = plot.get();
+    const XYRenderMode effectiveRenderMode = plotSettings.resolveXYRenderMode(scene);
     const bool is3DMode = (effectiveRenderMode == XYRenderMode::Surface3D);
 
     Components::PlotToolbarContext context;
@@ -903,7 +717,7 @@ void Application::renderPlotToolbar(const Model::SceneSummary& scene) {
     context.availableSize = ImGui::GetContentRegionAvail();
 
     const Components::PlotToolbarActions actions =
-        Components::renderPlotToolbar(m_plotSettings, context);
+        Components::renderPlotToolbar(plotSettings, context);
     if (actions.requestFit) {
         fitDefaultView();
     }
@@ -920,6 +734,7 @@ void Application::renderPlotToolbar(const Model::SceneSummary& scene) {
     if (actions.requestRedraw) {
         m_redrawRequested = true;
     }
+    syncDocumentDependentState();
 }
 
 void Application::handlePlotShortcuts() {
@@ -939,11 +754,13 @@ void Application::handlePlotShortcuts() {
         resetViewAndCamera();
     }
     if (ImGui::IsKeyPressed(ImGuiKey_G, false)) {
-        m_plotSettings.showGrid = !m_plotSettings.showGrid;
+        auto plot = m_document.editPlotSettings();
+        plot.get().showGrid = !plot.get().showGrid;
         m_redrawRequested = true;
     }
     if (ImGui::IsKeyPressed(ImGuiKey_W, false)) {
-        m_plotSettings.showWires = !m_plotSettings.showWires;
+        auto plot = m_document.editPlotSettings();
+        plot.get().showWires = !plot.get().showWires;
         m_redrawRequested = true;
     }
     if (ImGui::IsKeyPressed(ImGuiKey_E, false)) {
@@ -955,30 +772,35 @@ void Application::handlePlotShortcuts() {
 void Application::fitDefaultView() {
     constexpr double targetWorldSpan = 20.0;
     constexpr double marginScale = 0.94;
-    const double fitScaleX = (std::max)(1.0f, m_viewTransform.viewport.width) / targetWorldSpan;
-    const double fitScaleY = (std::max)(1.0f, m_viewTransform.viewport.height) / targetWorldSpan;
+    auto view = m_document.editViewTransform();
+    Core::ViewTransform& viewTransform = view.get();
+    const double fitScaleX = (std::max)(1.0f, viewTransform.viewport.width) / targetWorldSpan;
+    const double fitScaleY = (std::max)(1.0f, viewTransform.viewport.height) / targetWorldSpan;
     const double fitScale = (std::max)(0.1, (std::min)(fitScaleX, fitScaleY) * marginScale);
 
-    m_viewTransform.state.centerX = 0.0;
-    m_viewTransform.state.centerY = 0.0;
-    m_viewTransform.state.scaleX = fitScale;
-    m_viewTransform.state.scaleY = fitScale;
+    viewTransform.state.centerX = 0.0;
+    viewTransform.state.centerY = 0.0;
+    viewTransform.state.scaleX = fitScale;
+    viewTransform.state.scaleY = fitScale;
     m_redrawRequested = true;
 }
 
 void Application::resetViewAndCamera() {
-    m_viewTransform.reset();
-    m_plotSettings.azimuthDeg = kDefaultAzimuthDeg;
-    m_plotSettings.elevationDeg = kDefaultElevationDeg;
-    m_plotSettings.zScale = kDefaultZScale;
-    m_plotSettings.autoRotate = false;
+    auto view = m_document.editViewTransform();
+    auto plot = m_document.editPlotSettings();
+    view.get().reset();
+    plot.get().azimuthDeg = kDefaultAzimuthDeg;
+    plot.get().elevationDeg = kDefaultElevationDeg;
+    plot.get().zScale = kDefaultZScale;
+    plot.get().autoRotate = false;
     m_redrawRequested = true;
 }
 
 void Application::applyCameraPreset(float azimuthDeg, float elevationDeg) {
-    m_plotSettings.azimuthDeg = azimuthDeg;
-    m_plotSettings.elevationDeg = elevationDeg;
-    m_plotSettings.autoRotate = false;
+    auto plot = m_document.editPlotSettings();
+    plot.get().azimuthDeg = azimuthDeg;
+    plot.get().elevationDeg = elevationDeg;
+    plot.get().autoRotate = false;
     m_redrawRequested = true;
 }
 
@@ -1067,8 +889,9 @@ void Application::initialiseExportDialogSize() {
         return;
     }
 
-    int width = static_cast<int>(std::lround((std::max)(1.0f, m_viewTransform.viewport.width)));
-    int height = static_cast<int>(std::lround((std::max)(1.0f, m_viewTransform.viewport.height)));
+    const Core::ViewTransform& viewTransform = m_document.viewTransform();
+    int width = static_cast<int>(std::lround((std::max)(1.0f, viewTransform.viewport.width)));
+    int height = static_cast<int>(std::lround((std::max)(1.0f, viewTransform.viewport.height)));
     if (width <= 0) width = 1024;
     if (height <= 0) height = 768;
 
@@ -1086,7 +909,7 @@ void Application::renderExportDialog(float, float) {
     if (m_exportController.consumeOpenRequest()) {
         auto& settings = m_exportController.dialogSettings();
         if (settings.profile == ExportProfile::CurrentView) {
-            applyCurrentViewScene(settings, exportSceneSettingsFromPlot(m_plotSettings));
+            applyCurrentViewScene(settings, exportSceneSettingsFromPlot(m_document.plotSettings()));
         }
         normalizeExportSettings(settings);
     }
@@ -1121,11 +944,12 @@ void Application::renderExportDialog(float, float) {
 
     bool open = m_exportController.dialogOpen();
     if (ImGui::BeginPopupModal(kExportDialogPopupId, &open, ImGuiWindowFlags_NoCollapse)) {
-        const int sourceWidth = static_cast<int>(std::lround((std::max)(1.0f, m_viewTransform.viewport.width)));
-        const int sourceHeight = static_cast<int>(std::lround((std::max)(1.0f, m_viewTransform.viewport.height)));
+        const Core::ViewTransform& viewTransform = m_document.viewTransform();
+        const int sourceWidth = static_cast<int>(std::lround((std::max)(1.0f, viewTransform.viewport.width)));
+        const int sourceHeight = static_cast<int>(std::lround((std::max)(1.0f, viewTransform.viewport.height)));
         const ExportWorldBounds sourceBounds{
-            m_viewTransform.worldXMin(), m_viewTransform.worldXMax(),
-            m_viewTransform.worldYMin(), m_viewTransform.worldYMax()
+            viewTransform.worldXMin(), viewTransform.worldXMax(),
+            viewTransform.worldYMin(), viewTransform.worldYMax()
         };
 
         Components::ExportDialogContext context{
@@ -1141,7 +965,7 @@ void Application::renderExportDialog(float, float) {
         context.sourceWidth = sourceWidth;
         context.sourceHeight = sourceHeight;
         context.sourceBounds = sourceBounds;
-        context.currentScene = exportSceneSettingsFromPlot(m_plotSettings);
+        context.currentScene = exportSceneSettingsFromPlot(m_document.plotSettings());
         context.previewDirty = m_exportController.previewDirty();
         context.previewRefreshRequested = m_exportController.previewRefreshRequested();
         context.hasPreviewTexture = m_exportPreview.hasTexture();
@@ -1387,10 +1211,11 @@ bool Application::capturePlotPixels(std::vector<std::uint8_t>& pixels, int& widt
     D3D11_TEXTURE2D_DESC backDesc = {};
     backBuffer->GetDesc(&backDesc);
 
-    int left = static_cast<int>(std::floor(m_viewTransform.viewport.originX));
-    int top = static_cast<int>(std::floor(m_viewTransform.viewport.originY));
-    int right = left + static_cast<int>(std::floor(m_viewTransform.viewport.width));
-    int bottom = top + static_cast<int>(std::floor(m_viewTransform.viewport.height));
+    const Core::ViewTransform& viewTransform = m_document.viewTransform();
+    int left = static_cast<int>(std::floor(viewTransform.viewport.originX));
+    int top = static_cast<int>(std::floor(viewTransform.viewport.originY));
+    int right = left + static_cast<int>(std::floor(viewTransform.viewport.width));
+    int bottom = top + static_cast<int>(std::floor(viewTransform.viewport.height));
 
     left = std::clamp(left, 0, static_cast<int>(backDesc.Width));
     top = std::clamp(top, 0, static_cast<int>(backDesc.Height));
@@ -1512,7 +1337,11 @@ bool Application::renderPlotPixelsOffscreen(const ExportSettings& settings,
     }
 
     XFExport::ExportRenderRequest request =
-        XFExport::buildExportRenderRequest(settings, m_viewTransform, m_plotSettings, m_sceneSummary);
+        XFExport::buildExportRenderRequest(
+            settings,
+            m_document.viewTransform(),
+            m_document.plotSettings(),
+            m_sceneSummary);
 
     D3D11_TEXTURE2D_DESC texDesc = {};
     texDesc.Width = static_cast<UINT>(request.targetWidth);
@@ -1605,7 +1434,7 @@ bool Application::renderPlotPixelsOffscreen(const ExportSettings& settings,
                               ImGuiWindowFlags_NoSavedSettings |
                               ImGuiWindowFlags_NoInputs |
                               ImGuiWindowFlags_NoBackground)) {
-            m_plotPanel.render(m_formulas, request.view, request.plotSettings, request.scene,
+            m_plotPanel.render(m_document.formulas(), request.view, request.plotSettings, request.scene,
                                &request.overrides, &request.quality);
         }
         ImGui::EndChild();
@@ -1655,9 +1484,9 @@ bool Application::writeExportMetadataSidecar(const ExportSettings& settings,
         width,
         height,
         appMetadata,
-        m_formulas,
-        m_viewTransform,
-        m_plotSettings);
+        m_document.formulas(),
+        m_document.viewTransform(),
+        m_document.plotSettings());
     const XFExport::ExportOperationResult writeResult = [&]() {
         const std::string json = XFExport::serializeExportMetadata(metadata);
         const auto result = XpressFormula::Infrastructure::FileSystem::writeTextAtomically(sidecarPath, json);
