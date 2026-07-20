@@ -8,8 +8,10 @@
 #include "ExportSettings.h"
 #include "PlotPanel.h"
 #include "PlotSettings.h"
-#include "ProjectSession.h"
 #include "../Core/ViewTransform.h"
+#include "../Infrastructure/Persistence/ProjectMapper.h"
+#include "../Infrastructure/Persistence/ProjectRepository.h"
+#include "../Infrastructure/Persistence/RecentProjectsStore.h"
 #include "../Model/Formula.h"
 #include "../Model/SceneSummary.h"
 
@@ -81,7 +83,7 @@ private:
     void executeProjectAction(PendingProjectAction action, const std::wstring& path);
     void resetToDefaultProject();
     void refreshSceneSummary();
-    ProjectSession currentProjectSession() const;
+    Infrastructure::Persistence::ProjectSession currentProjectSession() const;
     void refreshProjectDirtyState();
     void markProjectClean();
     bool promptOpenProjectPath(std::wstring& path) const;
@@ -94,7 +96,6 @@ private:
     void addRecentProjectPath(const std::wstring& path);
     void loadRecentProjectPaths();
     void saveRecentProjectPaths() const;
-    std::filesystem::path recentProjectStorePath() const;
     std::string projectDisplayName() const;
     void renderPlotToolbar(const Model::SceneSummary& scene);
     void handlePlotShortcuts();
@@ -171,6 +172,8 @@ private:
     std::string               m_savedProjectSnapshot;
     std::string               m_projectStatus;
     std::vector<std::wstring> m_recentProjectPaths;
+    Infrastructure::Persistence::ProjectRepository m_projectRepository;
+    Infrastructure::Persistence::RecentProjectsStore m_recentProjectsStore;
     PendingProjectAction      m_pendingProjectAction = PendingProjectAction::None;
     std::wstring              m_pendingProjectPath;
     bool                      m_openProjectDiscardPopupNextFrame = false;

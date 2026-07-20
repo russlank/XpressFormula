@@ -125,7 +125,6 @@
     <ClInclude Include="..\XpressFormula\UI\ControlPanel.h" />
     <ClInclude Include="..\XpressFormula\UI\PlotPanel.h" />
     <ClInclude Include="..\XpressFormula\UI\PlotSettings.h" />
-    <ClInclude Include="..\XpressFormula\UI\ProjectSession.h" />
     <ClInclude Include="..\XpressFormula\UI\UiKit\PropertyGrid.h" />
     <ClInclude Include="..\XpressFormula\UI\UiKit\ResponsiveLayout.h" />
     <ClInclude Include="..\XpressFormula\UI\UiKit\ResponsiveRows.h" />

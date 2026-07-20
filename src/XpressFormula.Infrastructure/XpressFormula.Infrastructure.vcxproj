@@ -97,6 +97,10 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="..\XpressFormula\Infrastructure\FileSystem\AtomicFileWriter.cpp" />
+    <ClCompile Include="..\XpressFormula\Infrastructure\Persistence\ProjectMapper.cpp" />
+    <ClCompile Include="..\XpressFormula\Infrastructure\Persistence\ProjectRepository.cpp" />
+    <ClCompile Include="..\XpressFormula\Infrastructure\Persistence\ProjectSerializer.cpp" />
+    <ClCompile Include="..\XpressFormula\Infrastructure\Persistence\RecentProjectsStore.cpp" />
     <ClCompile Include="..\XpressFormula\Infrastructure\Serialization\JsonParser.cpp" />
     <ClCompile Include="..\XpressFormula\Infrastructure\Serialization\JsonWriter.cpp" />
     <ClCompile Include="..\XpressFormula\Platform\Windows\Utf.cpp" />
@@ -104,10 +108,20 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\XpressFormula\Infrastructure\FileSystem\AtomicFileWriter.h" />
+    <ClInclude Include="..\XpressFormula\Infrastructure\Persistence\ProjectMapper.h" />
+    <ClInclude Include="..\XpressFormula\Infrastructure\Persistence\ProjectRepository.h" />
+    <ClInclude Include="..\XpressFormula\Infrastructure\Persistence\ProjectSerializer.h" />
+    <ClInclude Include="..\XpressFormula\Infrastructure\Persistence\ProjectSession.h" />
+    <ClInclude Include="..\XpressFormula\Infrastructure\Persistence\RecentProjectsStore.h" />
     <ClInclude Include="..\XpressFormula\Infrastructure\Serialization\JsonParser.h" />
     <ClInclude Include="..\XpressFormula\Infrastructure\Serialization\JsonValue.h" />
     <ClInclude Include="..\XpressFormula\Infrastructure\Serialization\JsonWriter.h" />
     <ClInclude Include="..\XpressFormula\Platform\Windows\Utf.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\XpressFormula.Model\XpressFormula.Model.vcxproj">
+      <Project>{D893AD0C-E0A8-48D5-95AA-AA890435AACD}</Project>
+    </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />

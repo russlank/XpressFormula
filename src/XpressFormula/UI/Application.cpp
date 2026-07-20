@@ -64,6 +64,7 @@ static XpressFormula::UI::Application* g_app = nullptr;
 
 namespace XFAtomic = XpressFormula::Infrastructure::FileSystem;
 namespace XFJson = XpressFormula::Infrastructure::Serialization;
+namespace XFPersistence = XpressFormula::Infrastructure::Persistence;
 namespace XFWUtf = XpressFormula::Platform::Windows;
 
 namespace {
@@ -289,12 +290,6 @@ static std::wstring shortCommitWide(const char* commit) {
     return commitWide;
 }
 
-static std::wstring normalizePathForRecentComparison(std::wstring value) {
-    std::transform(value.begin(), value.end(), value.begin(),
-                   [](wchar_t ch) { return static_cast<wchar_t>(std::towlower(ch)); });
-    return value;
-}
-
 static LRESULT WINAPI WndProc(HWND hWnd, UINT msg,
                                WPARAM wParam, LPARAM lParam) {
     if (ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam))
@@ -356,12 +351,13 @@ void Application::refreshSceneSummary() {
         std::span<const Model::Formula>(m_formulas.data(), m_formulas.size()));
 }
 
-ProjectSession Application::currentProjectSession() const {
-    return makeProjectSession(m_formulas, m_viewTransform, m_plotSettings);
+XFPersistence::ProjectSession Application::currentProjectSession() const {
+    return XFPersistence::makeProjectSession(m_formulas, m_viewTransform, m_plotSettings);
 }
 
 void Application::markProjectClean() {
-    m_savedProjectSnapshot = serializeProjectSession(currentProjectSession());
+    m_savedProjectSnapshot =
+        XFPersistence::serializeCurrentProjectSession(m_formulas, m_viewTransform, m_plotSettings);
     m_projectDirty = false;
 }
 
@@ -370,7 +366,9 @@ void Application::refreshProjectDirtyState() {
         markProjectClean();
         return;
     }
-    m_projectDirty = (serializeProjectSession(currentProjectSession()) != m_savedProjectSnapshot);
+    m_projectDirty =
+        (XFPersistence::serializeCurrentProjectSession(m_formulas, m_viewTransform, m_plotSettings) !=
+         m_savedProjectSnapshot);
 }
 
 std::string Application::projectDisplayName() const {
@@ -386,111 +384,16 @@ std::string Application::projectDisplayName() const {
     return name;
 }
 
-std::filesystem::path Application::recentProjectStorePath() const {
-    wchar_t* appDataBuffer = nullptr;
-    size_t appDataLength = 0;
-    std::filesystem::path base = std::filesystem::temp_directory_path();
-    if (_wdupenv_s(&appDataBuffer, &appDataLength, L"APPDATA") == 0 &&
-        appDataBuffer && appDataBuffer[0] != L'\0') {
-        base = std::filesystem::path(appDataBuffer);
-    }
-    if (appDataBuffer) {
-        std::free(appDataBuffer);
-    }
-    return base / L"XpressFormula" / L"recent-projects.txt";
-}
-
 void Application::loadRecentProjectPaths() {
-    m_recentProjectPaths.clear();
-    std::ifstream in(recentProjectStorePath(), std::ios::binary);
-    if (!in) {
-        return;
-    }
-
-    bool changed = false;
-    std::string line;
-    while (std::getline(in, line)) {
-        if (line.empty()) {
-            changed = true;
-            continue;
-        }
-        std::wstring path = XFWUtf::utf8ToUtf16OrEmpty(line);
-        if (path.empty()) {
-            changed = true;
-            continue;
-        }
-
-        std::error_code pathError;
-        std::filesystem::path absolutePath =
-            std::filesystem::absolute(std::filesystem::path(path), pathError);
-        if (pathError) {
-            absolutePath = std::filesystem::path(path);
-        }
-        if (!std::filesystem::exists(absolutePath, pathError)) {
-            changed = true;
-            continue;
-        }
-
-        path = absolutePath.wstring();
-        const std::wstring comparable = normalizePathForRecentComparison(path);
-        const bool exists = std::any_of(
-            m_recentProjectPaths.begin(),
-            m_recentProjectPaths.end(),
-            [&](const std::wstring& existing) {
-                return normalizePathForRecentComparison(existing) == comparable;
-            });
-        if (!exists) {
-            m_recentProjectPaths.push_back(std::move(path));
-        } else {
-            changed = true;
-        }
-        if (m_recentProjectPaths.size() >= 8) {
-            break;
-        }
-    }
-
-    in.close();
-    if (changed) {
-        saveRecentProjectPaths();
-    }
+    m_recentProjectPaths = m_recentProjectsStore.load().paths;
 }
 
 void Application::saveRecentProjectPaths() const {
-    const std::filesystem::path storePath = recentProjectStorePath();
-    std::error_code ignored;
-    std::filesystem::create_directories(storePath.parent_path(), ignored);
-
-    std::string storeText;
-    for (const std::wstring& path : m_recentProjectPaths) {
-        storeText += XFWUtf::utf16ToUtf8OrEmpty(path);
-        storeText += '\n';
-    }
-    (void)XFAtomic::writeTextAtomically(storePath, storeText);
+    m_recentProjectsStore.save(m_recentProjectPaths);
 }
 
 void Application::addRecentProjectPath(const std::wstring& path) {
-    if (path.empty()) {
-        return;
-    }
-
-    std::error_code pathError;
-    std::filesystem::path absolutePath =
-        std::filesystem::absolute(std::filesystem::path(path), pathError);
-    std::wstring normalized = (pathError ? std::filesystem::path(path) : absolutePath).wstring();
-    auto samePath = [&](const std::wstring& existing) {
-        return normalizePathForRecentComparison(existing) ==
-            normalizePathForRecentComparison(normalized);
-    };
-
-    m_recentProjectPaths.erase(
-        std::remove_if(m_recentProjectPaths.begin(), m_recentProjectPaths.end(), samePath),
-        m_recentProjectPaths.end());
-    m_recentProjectPaths.insert(m_recentProjectPaths.begin(), std::move(normalized));
-    constexpr std::size_t kMaxRecentProjects = 8;
-    if (m_recentProjectPaths.size() > kMaxRecentProjects) {
-        m_recentProjectPaths.resize(kMaxRecentProjects);
-    }
-    saveRecentProjectPaths();
+    m_recentProjectsStore.add(m_recentProjectPaths, path);
 }
 
 bool Application::promptOpenProjectPath(std::wstring& path) const {
@@ -551,10 +454,10 @@ bool Application::promptSaveProjectPath(std::wstring& path) const {
 bool Application::saveProjectToPath(const std::wstring& path, std::string& error) {
     error.clear();
     const std::filesystem::path projectPath(path);
-    const std::string json = serializeProjectSession(currentProjectSession());
-    const XFAtomic::AtomicWriteResult writeResult = XFAtomic::writeTextAtomically(projectPath, json);
-    if (!writeResult) {
-        error = "Could not save project file: " + writeResult.error;
+    const XFPersistence::ProjectSaveResult saveResult =
+        m_projectRepository.save(projectPath, currentProjectSession());
+    if (!saveResult) {
+        error = "Could not save project file: " + saveResult.error;
         return false;
     }
 
@@ -596,22 +499,21 @@ bool Application::saveProject() {
 
 bool Application::openProjectFromPath(const std::wstring& path, std::string& error) {
     error.clear();
-    std::ifstream in(std::filesystem::path(path), std::ios::binary);
-    if (!in) {
-        error = "Could not open project file.";
-        return false;
-    }
-    std::ostringstream buffer;
-    buffer << in.rdbuf();
-
-    ProjectSessionParseResult parsed = parseProjectSession(buffer.str());
-    if (!parsed.success) {
-        error = parsed.error;
+    const XFPersistence::ProjectLoadResult loaded =
+        m_projectRepository.load(std::filesystem::path(path));
+    if (!loaded) {
+        error = loaded.error;
         return false;
     }
 
-    std::vector<std::string> warnings = parsed.warnings;
-    applyProjectSession(parsed.session, m_formulas, m_viewTransform, m_plotSettings, warnings);
+    XFPersistence::ProjectMapResult mapped =
+        XFPersistence::mapProjectSessionToDocument(loaded.session);
+    std::vector<std::string> warnings = loaded.warnings;
+    warnings.insert(warnings.end(), mapped.warnings.begin(), mapped.warnings.end());
+
+    m_formulas = std::move(mapped.document.formulas);
+    m_viewTransform.state = mapped.document.view.state;
+    m_plotSettings = mapped.document.plot;
     m_formulaPanel.resetColorCycle(static_cast<int>(m_formulas.size()));
     refreshSceneSummary();
     m_projectPath = std::filesystem::absolute(std::filesystem::path(path)).wstring();
@@ -665,16 +567,7 @@ void Application::executeProjectAction(PendingProjectAction action, const std::w
                 m_projectStatus = "Open recent project failed: " + error;
                 std::error_code pathError;
                 if (!std::filesystem::exists(std::filesystem::path(path), pathError)) {
-                    const std::wstring comparable = normalizePathForRecentComparison(path);
-                    m_recentProjectPaths.erase(
-                        std::remove_if(
-                            m_recentProjectPaths.begin(),
-                            m_recentProjectPaths.end(),
-                            [&](const std::wstring& existing) {
-                                return normalizePathForRecentComparison(existing) == comparable;
-                            }),
-                        m_recentProjectPaths.end());
-                    saveRecentProjectPaths();
+                    m_recentProjectsStore.remove(m_recentProjectPaths, path);
                 }
             }
             break;

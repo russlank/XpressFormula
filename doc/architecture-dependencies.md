@@ -16,7 +16,7 @@ XpressFormula.Plotting
   PlotRenderer and plotting draw logic.
 
 XpressFormula.Infrastructure
-  Temporary static-library boundary for header-only persistence/export infrastructure. Later persistence work will replace the anchor with real JSON, file, and persistence sources.
+  JSON parsing/writing, UTF conversion helpers, atomic file replacement, project persistence serialization/repository code, recent-project storage, and other infrastructure services.
 
 XpressFormula.UI
   Formula/control/plot panels, FormulaCard/PlotToolbar components, dynamic formula editor state, formula presentation helpers, UiKit, and Dear ImGui core sources.
@@ -80,7 +80,6 @@ This makes tests consume the same production object code used by the executable.
 
 ## Current Exceptions
 
-- `XpressFormula.Infrastructure` contains an anchor `.cpp` because current persistence/export infrastructure is mostly header-only. Later serialization and persistence phases are expected to replace this with real JSON, atomic file, project serializer, repository, and recent-project sources.
 - `XpressFormula.UI::FormulaEntry` remains only as a transitional alias for `XpressFormula.Model::Formula`; it no longer stores duplicated domain state. Formula labels and display counts are computed through UI presentation helpers.
 - `XpressFormula.Plotting` still includes ImGui because rendering currently writes directly to `ImDrawList`. A later plotting foundation phase is expected to introduce geometry generation before an ImGui backend.
 - `XpressFormula.App` still owns Windows API, D3D, WIC, WinHTTP, shell, clipboard, and file-dialog code. Later platform, export, document-controller, and composition phases are expected to extract these responsibilities.

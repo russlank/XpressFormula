@@ -1,6 +1,8 @@
 // ProjectSessionTests.cpp - Unit tests for versioned .xfplot persistence.
 #include "CppUnitTest.h"
-#include "../XpressFormula/UI/ProjectSession.h"
+#include "../XpressFormula/Infrastructure/Persistence/ProjectMapper.h"
+#include "../XpressFormula/Infrastructure/Persistence/ProjectSerializer.h"
+#include "../XpressFormula/Infrastructure/Serialization/JsonParser.h"
 
 #include <algorithm>
 #include <cmath>
@@ -10,8 +12,10 @@
 #include <vector>
 
 using namespace Microsoft::VisualStudio::CppUnitTestFramework;
-using namespace XpressFormula::UI;
+using namespace XpressFormula::Infrastructure::Persistence;
+using namespace XpressFormula::Model;
 namespace XFCore = XpressFormula::Core;
+namespace XFJson = XpressFormula::Infrastructure::Serialization;
 namespace XFModel = XpressFormula::Model;
 
 namespace XpressFormulaTests {
@@ -601,11 +605,11 @@ TEST_CASE(ProjectSession_BoundedNumberParserHonorsStringViewLength) {
     std::string backing = "12.34";
     std::string_view bounded(backing.data(), 2);
 
-    ProjectSessionDetail::JsonValue value;
-    ProjectSessionDetail::JsonParser parser(bounded);
+    XFJson::JsonValue value;
+    XFJson::JsonParser parser(bounded);
     std::string error;
     Assert::IsTrue(parser.parse(value, error));
-    Assert::AreEqual(ProjectSessionDetail::JsonValue::Type::Number, value.type);
+    Assert::AreEqual(XFJson::JsonValue::Type::Number, value.type);
     Assert::AreEqual(12.0, value.number);
 }
 
