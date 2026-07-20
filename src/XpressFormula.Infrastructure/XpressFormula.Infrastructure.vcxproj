@@ -103,7 +103,12 @@
     <ClCompile Include="..\XpressFormula\Infrastructure\Persistence\RecentProjectsStore.cpp" />
     <ClCompile Include="..\XpressFormula\Infrastructure\Serialization\JsonParser.cpp" />
     <ClCompile Include="..\XpressFormula\Infrastructure\Serialization\JsonWriter.cpp" />
+    <ClCompile Include="..\XpressFormula\Platform\Windows\ClipboardService.cpp" />
+    <ClCompile Include="..\XpressFormula\Platform\Windows\FileDialogService.cpp" />
+    <ClCompile Include="..\XpressFormula\Platform\Windows\ShellService.cpp" />
     <ClCompile Include="..\XpressFormula\Platform\Windows\Utf.cpp" />
+    <ClCompile Include="..\XpressFormula\Platform\Windows\WicImageEncoder.cpp" />
+    <ClCompile Include="..\XpressFormula\Platform\Windows\WinHttpClient.cpp" />
     <ClCompile Include="InfrastructureBoundary.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -116,7 +121,13 @@
     <ClInclude Include="..\XpressFormula\Infrastructure\Serialization\JsonParser.h" />
     <ClInclude Include="..\XpressFormula\Infrastructure\Serialization\JsonValue.h" />
     <ClInclude Include="..\XpressFormula\Infrastructure\Serialization\JsonWriter.h" />
+    <ClInclude Include="..\XpressFormula\Platform\Windows\ClipboardService.h" />
+    <ClInclude Include="..\XpressFormula\Platform\Windows\ComPtr.h" />
+    <ClInclude Include="..\XpressFormula\Platform\Windows\FileDialogService.h" />
+    <ClInclude Include="..\XpressFormula\Platform\Windows\ShellService.h" />
     <ClInclude Include="..\XpressFormula\Platform\Windows\Utf.h" />
+    <ClInclude Include="..\XpressFormula\Platform\Windows\WicImageEncoder.h" />
+    <ClInclude Include="..\XpressFormula\Platform\Windows\WinHttpClient.h" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\XpressFormula.Model\XpressFormula.Model.vcxproj">

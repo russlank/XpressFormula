@@ -4,6 +4,8 @@
 #include "../Core/UpdateVersionUtils.h"
 #include "../Infrastructure/FileSystem/AtomicFileWriter.h"
 #include "../Infrastructure/Serialization/JsonWriter.h"
+#include "../Platform/Windows/ComPtr.h"
+#include "../Platform/Windows/WinHttpClient.h"
 #include "../Platform/Windows/Utf.h"
 #include "../Version.h"
 #include "../resource.h"
@@ -22,19 +24,14 @@
 #define NOMINMAX
 #endif
 #include <Windows.h>
-#include <commdlg.h>
 #include <d3d11.h>
 #include <dxgi.h>
 #include <objbase.h>
-#include <shellapi.h>
 #include <tchar.h>
-#include <winhttp.h>
-#include <wincodec.h>
 #include <algorithm>
 #include <array>
 #include <chrono>
 #include <cmath>
-#include <cstdlib>
 #include <cstring>
 #include <cwchar>
 #include <cwctype>
@@ -47,14 +44,6 @@
 #include <string_view>
 #include <system_error>
 
-#pragma comment(lib, "windowscodecs.lib")
-#pragma comment(lib, "shell32.lib")
-#pragma comment(lib, "winhttp.lib")
-
-#ifndef WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY
-#define WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY WINHTTP_ACCESS_TYPE_DEFAULT_PROXY
-#endif
-
 // Forward-declare the ImGui Win32 message handler
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(
     HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
@@ -65,6 +54,7 @@ static XpressFormula::UI::Application* g_app = nullptr;
 namespace XFAtomic = XpressFormula::Infrastructure::FileSystem;
 namespace XFJson = XpressFormula::Infrastructure::Serialization;
 namespace XFPersistence = XpressFormula::Infrastructure::Persistence;
+namespace XFWin = XpressFormula::Platform::Windows;
 namespace XFWUtf = XpressFormula::Platform::Windows;
 
 namespace {
@@ -75,94 +65,6 @@ constexpr const wchar_t* kGitHubReleasesUrlW = L"https://github.com/russlank/Xpr
 constexpr const char* kGitHubReleasesUrlUtf8 = "https://github.com/russlank/XpressFormula/releases";
 constexpr const wchar_t* kBuyMeACoffeeUrlW = L"https://buymeacoffee.com/russlank";
 constexpr const char* kBuyMeACoffeeUrlUtf8 = "https://buymeacoffee.com/russlank";
-
-std::string readWinHttpResponseBody(HINTERNET requestHandle) {
-    std::string response;
-    if (!requestHandle) {
-        return response;
-    }
-
-    for (;;) {
-        DWORD bytesAvailable = 0;
-        if (!::WinHttpQueryDataAvailable(requestHandle, &bytesAvailable)) {
-            return {};
-        }
-        if (bytesAvailable == 0) {
-            break;
-        }
-
-        const size_t oldSize = response.size();
-        response.resize(oldSize + static_cast<size_t>(bytesAvailable));
-        DWORD bytesRead = 0;
-        if (!::WinHttpReadData(requestHandle, response.data() + oldSize, bytesAvailable, &bytesRead)) {
-            return {};
-        }
-        response.resize(oldSize + static_cast<size_t>(bytesRead));
-        if (bytesRead == 0) {
-            break;
-        }
-    }
-
-    return response;
-}
-
-bool openUrlInBrowser(const wchar_t* url) {
-    if (!url || url[0] == L'\0') {
-        return false;
-    }
-    const HINSTANCE result = ::ShellExecuteW(nullptr, L"open", url, nullptr, nullptr, SW_SHOWNORMAL);
-    return reinterpret_cast<INT_PTR>(result) > 32;
-}
-
-bool openPathWithShell(const std::wstring& path) {
-    if (path.empty()) {
-        return false;
-    }
-    const HINSTANCE result = ::ShellExecuteW(nullptr, L"open", path.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
-    return reinterpret_cast<INT_PTR>(result) > 32;
-}
-
-bool revealPathInExplorer(const std::wstring& path) {
-    if (path.empty()) {
-        return false;
-    }
-    std::wstring args = L"/select,\"";
-    args += path;
-    args += L"\"";
-    const HINSTANCE result = ::ShellExecuteW(nullptr, L"open", L"explorer.exe", args.c_str(),
-                                            nullptr, SW_SHOWNORMAL);
-    return reinterpret_cast<INT_PTR>(result) > 32;
-}
-
-bool copyUnicodeTextToClipboard(HWND owner, const std::wstring& text) {
-    const size_t byteCount = (text.size() + 1u) * sizeof(wchar_t);
-    HGLOBAL memory = ::GlobalAlloc(GMEM_MOVEABLE, byteCount);
-    if (!memory) {
-        return false;
-    }
-
-    void* data = ::GlobalLock(memory);
-    if (!data) {
-        ::GlobalFree(memory);
-        return false;
-    }
-    std::memcpy(data, text.c_str(), byteCount);
-    ::GlobalUnlock(memory);
-
-    if (!::OpenClipboard(owner)) {
-        ::GlobalFree(memory);
-        return false;
-    }
-
-    ::EmptyClipboard();
-    if (!::SetClipboardData(CF_UNICODETEXT, memory)) {
-        ::CloseClipboard();
-        ::GlobalFree(memory);
-        return false;
-    }
-    ::CloseClipboard();
-    return true;
-}
 
 const char* formulaRenderKindLabel(XpressFormula::UI::FormulaRenderKind kind) {
     using XpressFormula::UI::FormulaRenderKind;
@@ -185,95 +87,49 @@ XpressFormula::UI::Application::UpdateCheckResult fetchLatestReleaseFromGitHub(b
     result.manualRequest = manualRequest;
     result.releaseUrl = kGitHubReleasesUrlUtf8;
 
-    HINTERNET session = ::WinHttpOpen(L"XpressFormula/" XF_VERSION_WSTRING,
-                                      WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
-                                      WINHTTP_NO_PROXY_NAME,
-                                      WINHTTP_NO_PROXY_BYPASS,
-                                      0);
-    if (!session) {
-        result.statusMessage = "Update check failed: could not initialize HTTP session.";
-        return result;
-    }
-
-    ::WinHttpSetTimeouts(session, 3000, 3000, 5000, 5000);
-
-    HINTERNET connection = ::WinHttpConnect(session, kGitHubLatestReleaseApiHost,
-                                            INTERNET_DEFAULT_HTTPS_PORT, 0);
-    if (!connection) {
-        ::WinHttpCloseHandle(session);
-        result.statusMessage = "Update check failed: could not connect to GitHub.";
-        return result;
-    }
-
-    HINTERNET request = ::WinHttpOpenRequest(connection, L"GET", kGitHubLatestReleaseApiPath,
-                                             nullptr, WINHTTP_NO_REFERER,
-                                             WINHTTP_DEFAULT_ACCEPT_TYPES,
-                                             WINHTTP_FLAG_SECURE);
-    if (!request) {
-        ::WinHttpCloseHandle(connection);
-        ::WinHttpCloseHandle(session);
-        result.statusMessage = "Update check failed: could not create HTTP request.";
-        return result;
-    }
-
-    const wchar_t* headers =
+    XFWin::WinHttpGetRequest request;
+    request.userAgent = L"XpressFormula/" XF_VERSION_WSTRING;
+    request.host = kGitHubLatestReleaseApiHost;
+    request.path = kGitHubLatestReleaseApiPath;
+    request.headers =
         L"Accept: application/vnd.github+json\r\n"
         L"X-GitHub-Api-Version: 2022-11-28\r\n";
-    BOOL sendOk = ::WinHttpSendRequest(request, headers, static_cast<DWORD>(-1L),
-                                       WINHTTP_NO_REQUEST_DATA, 0, 0, 0);
-    if (sendOk) {
-        sendOk = ::WinHttpReceiveResponse(request, nullptr);
-    }
-    if (!sendOk) {
-        ::WinHttpCloseHandle(request);
-        ::WinHttpCloseHandle(connection);
-        ::WinHttpCloseHandle(session);
-        result.statusMessage = "Update check failed: request to GitHub was not successful.";
+
+    const XFWin::WinHttpResponse response = XFWin::WinHttpClient{}.get(request);
+    if (!response) {
+        result.statusMessage = "Update check failed: " + response.error;
         return result;
     }
 
-    DWORD statusCode = 0;
-    DWORD statusCodeSize = sizeof(statusCode);
-    if (!::WinHttpQueryHeaders(request,
-                               WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
-                               WINHTTP_HEADER_NAME_BY_INDEX,
-                               &statusCode, &statusCodeSize, WINHTTP_NO_HEADER_INDEX) ||
-        statusCode != 200) {
-        ::WinHttpCloseHandle(request);
-        ::WinHttpCloseHandle(connection);
-        ::WinHttpCloseHandle(session);
+    if (response.statusCode != 200) {
         std::ostringstream oss;
-        oss << "Update check failed: GitHub returned HTTP " << statusCode << ".";
+        oss << "Update check failed: GitHub returned HTTP " << response.statusCode << ".";
         result.statusMessage = oss.str();
         return result;
     }
 
-    const std::string body = readWinHttpResponseBody(request);
-    ::WinHttpCloseHandle(request);
-    ::WinHttpCloseHandle(connection);
-    ::WinHttpCloseHandle(session);
-    if (body.empty()) {
+    if (response.body.empty()) {
         result.statusMessage = "Update check failed: empty response from GitHub.";
         return result;
     }
 
-    // We only need two fields from the GitHub JSON payload for the in-app notification.
-    const std::string latestTag = extractJsonStringField(body, "tag_name");
-    const std::string htmlUrl = extractJsonStringField(body, "html_url");
-    if (!htmlUrl.empty()) {
-        result.releaseUrl = htmlUrl;
-    }
-    if (latestTag.empty()) {
-        result.statusMessage = "Update check failed: release tag not found in GitHub response.";
+    const XFWin::GitHubReleaseParseResult parsed =
+        XFWin::parseGitHubLatestReleaseResponse(response.body);
+    if (!parsed) {
+        result.statusMessage = "Update check failed: " + parsed.error;
         return result;
+    }
+    if (!parsed.release.htmlUrl.empty()) {
+        result.releaseUrl = parsed.release.htmlUrl;
     }
 
     result.requestSucceeded = true;
-    result.latestTag = latestTag;
-    result.updateAvailable = isRemoteVersionNewer(XF_VERSION_STRING, latestTag);
+    result.latestTag = parsed.release.tagName;
+    result.updateAvailable = isRemoteVersionNewer(XF_VERSION_STRING, parsed.release.tagName);
 
     if (result.updateAvailable) {
-        result.statusMessage = "Update available: " + latestTag + " (current " XF_VERSION_STRING ").";
+        result.statusMessage = "Update available: " + parsed.release.tagName +
+            " (current " XF_VERSION_STRING ").";
     } else {
         result.statusMessage = "You are running the latest version (" XF_VERSION_STRING ").";
     }
@@ -396,61 +252,6 @@ void Application::addRecentProjectPath(const std::wstring& path) {
     m_recentProjectsStore.add(m_recentProjectPaths, path);
 }
 
-bool Application::promptOpenProjectPath(std::wstring& path) const {
-    std::array<wchar_t, MAX_PATH> fileName = {};
-    wchar_t filter[] =
-        L"XpressFormula Project (*.xfplot)\0*.xfplot\0"
-        L"JSON Files (*.json)\0*.json\0"
-        L"All Files (*.*)\0*.*\0\0";
-
-    OPENFILENAMEW ofn = {};
-    ofn.lStructSize = sizeof(ofn);
-    ofn.hwndOwner = m_hWnd;
-    ofn.lpstrFilter = filter;
-    ofn.lpstrFile = fileName.data();
-    ofn.nMaxFile = static_cast<DWORD>(fileName.size());
-    ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
-    ofn.lpstrDefExt = L"xfplot";
-
-    if (!::GetOpenFileNameW(&ofn)) {
-        return false;
-    }
-    path = fileName.data();
-    return true;
-}
-
-bool Application::promptSaveProjectPath(std::wstring& path) const {
-    std::array<wchar_t, MAX_PATH> fileName = {};
-    if (!m_projectPath.empty()) {
-        wcsncpy_s(fileName.data(), fileName.size(), m_projectPath.c_str(), _TRUNCATE);
-    } else {
-        wcsncpy_s(fileName.data(), fileName.size(), L"untitled.xfplot", _TRUNCATE);
-    }
-
-    wchar_t filter[] =
-        L"XpressFormula Project (*.xfplot)\0*.xfplot\0"
-        L"JSON Files (*.json)\0*.json\0\0";
-
-    OPENFILENAMEW ofn = {};
-    ofn.lStructSize = sizeof(ofn);
-    ofn.hwndOwner = m_hWnd;
-    ofn.lpstrFilter = filter;
-    ofn.lpstrFile = fileName.data();
-    ofn.nMaxFile = static_cast<DWORD>(fileName.size());
-    ofn.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST;
-    ofn.lpstrDefExt = L"xfplot";
-
-    if (!::GetSaveFileNameW(&ofn)) {
-        return false;
-    }
-
-    path = fileName.data();
-    if (std::filesystem::path(path).extension().empty()) {
-        path += L".xfplot";
-    }
-    return true;
-}
-
 bool Application::saveProjectToPath(const std::wstring& path, std::string& error) {
     error.clear();
     const std::filesystem::path projectPath(path);
@@ -470,14 +271,18 @@ bool Application::saveProjectToPath(const std::wstring& path, std::string& error
 }
 
 bool Application::saveProjectAs() {
-    std::wstring path;
-    if (!promptSaveProjectPath(path)) {
+    const XFWin::DialogResult dialog = m_fileDialogService.saveProject(m_hWnd, m_projectPath);
+    if (dialog.cancelled()) {
         m_projectStatus = "Save project canceled.";
+        return false;
+    }
+    if (!dialog.selected()) {
+        m_projectStatus = "Save project failed: " + dialog.error;
         return false;
     }
 
     std::string error;
-    if (!saveProjectToPath(path, error)) {
+    if (!saveProjectToPath(dialog.path, error)) {
         m_projectStatus = "Save project failed: " + error;
         return false;
     }
@@ -536,14 +341,18 @@ bool Application::openProjectFromPath(const std::wstring& path, std::string& err
 }
 
 bool Application::openProjectFromDialog() {
-    std::wstring path;
-    if (!promptOpenProjectPath(path)) {
+    const XFWin::DialogResult dialog = m_fileDialogService.openProject(m_hWnd);
+    if (dialog.cancelled()) {
         m_projectStatus = "Open project canceled.";
+        return false;
+    }
+    if (!dialog.selected()) {
+        m_projectStatus = "Open project failed: " + dialog.error;
         return false;
     }
 
     std::string error;
-    if (!openProjectFromPath(path, error)) {
+    if (!openProjectFromPath(dialog.path, error)) {
         m_projectStatus = "Open project failed: " + error;
         return false;
     }
@@ -1031,7 +840,7 @@ void Application::renderFrame() {
             if (releaseUrlWide.empty()) {
                 releaseUrlWide = kGitHubReleasesUrlW;
             }
-            if (!openUrlInBrowser(releaseUrlWide.c_str())) {
+            if (!m_shellService.openUrl(releaseUrlWide)) {
                 m_updateStatus = "Could not open browser. Visit: " + std::string(kGitHubReleasesUrlUtf8);
             } else if (m_updateAvailable) {
                 m_updateNoticeDismissed = true;
@@ -1039,7 +848,7 @@ void Application::renderFrame() {
             m_redrawRequested = true;
         }
         if (ImGui::Button("Buy Me a Coffee", ImVec2(ImGui::GetContentRegionAvail().x, 0.0f))) {
-            if (!openUrlInBrowser(kBuyMeACoffeeUrlW)) {
+            if (!m_shellService.openUrl(kBuyMeACoffeeUrlW)) {
                 m_updateStatus = "Could not open browser. Visit: " + std::string(kBuyMeACoffeeUrlUtf8);
             }
             m_redrawRequested = true;
@@ -2448,11 +2257,12 @@ void Application::cleanupDeviceD3D() {
 }
 
 void Application::createRenderTarget() {
-    ID3D11Texture2D* backBuffer = nullptr;
-    m_swapChain->GetBuffer(0, IID_PPV_ARGS(&backBuffer));
+    XFWin::ComPtr<ID3D11Texture2D> backBuffer;
+    m_swapChain->GetBuffer(0,
+                           __uuidof(ID3D11Texture2D),
+                           reinterpret_cast<void**>(backBuffer.put()));
     if (backBuffer) {
-        m_device->CreateRenderTargetView(backBuffer, nullptr, &m_renderTargetView);
-        backBuffer->Release();
+        m_device->CreateRenderTargetView(backBuffer.get(), nullptr, &m_renderTargetView);
     }
 }
 
@@ -2461,38 +2271,6 @@ void Application::cleanupRenderTarget() {
         m_renderTargetView->Release();
         m_renderTargetView = nullptr;
     }
-}
-
-bool Application::promptSaveImagePath(std::wstring& path) {
-    std::array<wchar_t, MAX_PATH> fileName = {};
-    const bool preferBmp = (m_pendingExportSettings.output.format == ExportFormat::Bmp);
-    wcsncpy_s(fileName.data(), fileName.size(),
-              preferBmp ? L"xpressformula-plot.bmp" : L"xpressformula-plot.png",
-              _TRUNCATE);
-
-    wchar_t filter[] =
-        L"PNG Image (*.png)\0*.png\0"
-        L"Bitmap Image (*.bmp)\0*.bmp\0\0";
-
-    OPENFILENAMEW ofn = {};
-    ofn.lStructSize = sizeof(ofn);
-    ofn.hwndOwner = m_hWnd;
-    ofn.lpstrFilter = filter;
-    ofn.nFilterIndex = preferBmp ? 2 : 1;
-    ofn.lpstrFile = fileName.data();
-    ofn.nMaxFile = static_cast<DWORD>(fileName.size());
-    ofn.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST;
-    ofn.lpstrDefExt = preferBmp ? L"bmp" : L"png";
-
-    if (!::GetSaveFileNameW(&ofn)) {
-        return false;
-    }
-
-    path = fileName.data();
-    if (std::filesystem::path(path).extension().empty()) {
-        path += (ofn.nFilterIndex == 2) ? L".bmp" : L".png";
-    }
-    return true;
 }
 
 void Application::markExportPreviewOutOfDate() {
@@ -2520,8 +2298,11 @@ bool Application::capturePlotPixels(std::vector<std::uint8_t>& pixels, int& widt
         return false;
     }
 
-    ID3D11Texture2D* backBuffer = nullptr;
-    if (FAILED(m_swapChain->GetBuffer(0, IID_PPV_ARGS(&backBuffer))) || !backBuffer) {
+    XFWin::ComPtr<ID3D11Texture2D> backBuffer;
+    if (FAILED(m_swapChain->GetBuffer(0,
+                                      __uuidof(ID3D11Texture2D),
+                                      reinterpret_cast<void**>(backBuffer.put()))) ||
+        !backBuffer) {
         return false;
     }
 
@@ -2541,7 +2322,6 @@ bool Application::capturePlotPixels(std::vector<std::uint8_t>& pixels, int& widt
     width = right - left;
     height = bottom - top;
     if (width <= 0 || height <= 0) {
-        backBuffer->Release();
         return false;
     }
 
@@ -2553,9 +2333,9 @@ bool Application::capturePlotPixels(std::vector<std::uint8_t>& pixels, int& widt
     stagingDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
     stagingDesc.Usage = D3D11_USAGE_STAGING;
 
-    ID3D11Texture2D* stagingTexture = nullptr;
-    if (FAILED(m_device->CreateTexture2D(&stagingDesc, nullptr, &stagingTexture)) || !stagingTexture) {
-        backBuffer->Release();
+    XFWin::ComPtr<ID3D11Texture2D> stagingTexture;
+    if (FAILED(m_device->CreateTexture2D(&stagingDesc, nullptr, stagingTexture.put())) ||
+        !stagingTexture) {
         return false;
     }
 
@@ -2568,13 +2348,11 @@ bool Application::capturePlotPixels(std::vector<std::uint8_t>& pixels, int& widt
     sourceBox.back = 1;
 
     m_deviceContext->CopySubresourceRegion(
-        stagingTexture, 0, 0, 0, 0, backBuffer, 0, &sourceBox);
+        stagingTexture.get(), 0, 0, 0, 0, backBuffer.get(), 0, &sourceBox);
 
     D3D11_MAPPED_SUBRESOURCE mapped = {};
-    HRESULT mapResult = m_deviceContext->Map(stagingTexture, 0, D3D11_MAP_READ, 0, &mapped);
+    HRESULT mapResult = m_deviceContext->Map(stagingTexture.get(), 0, D3D11_MAP_READ, 0, &mapped);
     if (FAILED(mapResult)) {
-        stagingTexture->Release();
-        backBuffer->Release();
         return false;
     }
 
@@ -2587,9 +2365,7 @@ bool Application::capturePlotPixels(std::vector<std::uint8_t>& pixels, int& widt
         std::memcpy(dst, src, rowBytes);
     }
 
-    m_deviceContext->Unmap(stagingTexture, 0);
-    stagingTexture->Release();
-    backBuffer->Release();
+    m_deviceContext->Unmap(stagingTexture.get(), 0);
     return true;
 }
 
@@ -2619,17 +2395,17 @@ bool Application::readTexturePixelsRgba(ID3D11Texture2D* sourceTexture,
     stagingDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
     stagingDesc.Usage = D3D11_USAGE_STAGING;
 
-    ID3D11Texture2D* stagingTexture = nullptr;
-    if (FAILED(m_device->CreateTexture2D(&stagingDesc, nullptr, &stagingTexture)) || !stagingTexture) {
+    XFWin::ComPtr<ID3D11Texture2D> stagingTexture;
+    if (FAILED(m_device->CreateTexture2D(&stagingDesc, nullptr, stagingTexture.put())) ||
+        !stagingTexture) {
         return false;
     }
 
-    m_deviceContext->CopyResource(stagingTexture, sourceTexture);
+    m_deviceContext->CopyResource(stagingTexture.get(), sourceTexture);
 
     D3D11_MAPPED_SUBRESOURCE mapped = {};
-    HRESULT mapResult = m_deviceContext->Map(stagingTexture, 0, D3D11_MAP_READ, 0, &mapped);
+    HRESULT mapResult = m_deviceContext->Map(stagingTexture.get(), 0, D3D11_MAP_READ, 0, &mapped);
     if (FAILED(mapResult)) {
-        stagingTexture->Release();
         return false;
     }
 
@@ -2642,8 +2418,7 @@ bool Application::readTexturePixelsRgba(ID3D11Texture2D* sourceTexture,
         std::memcpy(dst, src, rowBytes);
     }
 
-    m_deviceContext->Unmap(stagingTexture, 0);
-    stagingTexture->Release();
+    m_deviceContext->Unmap(stagingTexture.get(), 0);
     return true;
 }
 
@@ -2681,19 +2456,20 @@ bool Application::renderPlotPixelsOffscreen(const ExportSettings& settings,
     texDesc.Usage = D3D11_USAGE_DEFAULT;
     texDesc.BindFlags = D3D11_BIND_RENDER_TARGET;
 
-    ID3D11Texture2D* renderTexture = nullptr;
-    ID3D11RenderTargetView* exportRTV = nullptr;
-    if (FAILED(m_device->CreateTexture2D(&texDesc, nullptr, &renderTexture)) || !renderTexture) {
+    XFWin::ComPtr<ID3D11Texture2D> renderTexture;
+    XFWin::ComPtr<ID3D11RenderTargetView> exportRTV;
+    if (FAILED(m_device->CreateTexture2D(&texDesc, nullptr, renderTexture.put())) ||
+        !renderTexture) {
         return false;
     }
-    if (FAILED(m_device->CreateRenderTargetView(renderTexture, nullptr, &exportRTV)) || !exportRTV) {
-        renderTexture->Release();
+    if (FAILED(m_device->CreateRenderTargetView(renderTexture.get(), nullptr, exportRTV.put())) ||
+        !exportRTV) {
         return false;
     }
 
-    ID3D11RenderTargetView* previousRTV = nullptr;
-    ID3D11DepthStencilView* previousDSV = nullptr;
-    m_deviceContext->OMGetRenderTargets(1, &previousRTV, &previousDSV);
+    XFWin::ComPtr<ID3D11RenderTargetView> previousRTV;
+    XFWin::ComPtr<ID3D11DepthStencilView> previousDSV;
+    m_deviceContext->OMGetRenderTargets(1, previousRTV.put(), previousDSV.put());
 
     UINT prevViewportCount = 1;
     D3D11_VIEWPORT prevViewport = {};
@@ -2707,10 +2483,11 @@ bool Application::renderPlotPixelsOffscreen(const ExportSettings& settings,
     exportViewport.MinDepth = 0.0f;
     exportViewport.MaxDepth = 1.0f;
 
-    m_deviceContext->OMSetRenderTargets(1, &exportRTV, nullptr);
+    ID3D11RenderTargetView* exportTarget = exportRTV.get();
+    m_deviceContext->OMSetRenderTargets(1, &exportTarget, nullptr);
     m_deviceContext->RSSetViewports(1, &exportViewport);
     const float clear[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
-    m_deviceContext->ClearRenderTargetView(exportRTV, clear);
+    m_deviceContext->ClearRenderTargetView(exportRTV.get(), clear);
 
     ImGui_ImplDX11_NewFrame();
     ImGui_ImplWin32_NewFrame();
@@ -2792,31 +2569,27 @@ bool Application::renderPlotPixelsOffscreen(const ExportSettings& settings,
     io.MouseWheel = prevMouseWheel;
     io.MouseWheelH = prevMouseWheelH;
 
-    const bool readOk = readTexturePixelsRgba(renderTexture, pixels, width, height);
+    const bool readOk = readTexturePixelsRgba(renderTexture.get(), pixels, width, height);
 
     if (prevViewportCount > 0) {
         m_deviceContext->RSSetViewports(1, &prevViewport);
     }
-    m_deviceContext->OMSetRenderTargets(1, &previousRTV, previousDSV);
-
-    if (previousDSV) previousDSV->Release();
-    if (previousRTV) previousRTV->Release();
-    if (exportRTV) exportRTV->Release();
-    if (renderTexture) renderTexture->Release();
+    ID3D11RenderTargetView* previousTarget = previousRTV.get();
+    m_deviceContext->OMSetRenderTargets(1, &previousTarget, previousDSV.get());
     return readOk;
 }
 
 bool Application::saveImageToPath(const std::wstring& path,
                                   const std::vector<std::uint8_t>& pixels,
                                   int width, int height, std::string& error) {
-    std::wstring extension = std::filesystem::path(path).extension().wstring();
-    std::transform(extension.begin(), extension.end(), extension.begin(),
-                   [](wchar_t ch) { return static_cast<wchar_t>(std::towlower(ch)); });
-
-    if (extension == L".bmp") {
-        return saveBmpToPath(path, pixels, width, height, error);
+    const XFWin::ImageEncodeResult result =
+        m_imageEncoder.saveByExtensionBgra(std::filesystem::path(path), pixels, width, height);
+    if (!result) {
+        error = result.error;
+        return false;
     }
-    return savePngToPath(path, pixels, width, height, error);
+    error.clear();
+    return true;
 }
 
 std::string Application::buildExportMetadataJson(const ExportSettings& settings,
@@ -3124,190 +2897,22 @@ bool Application::writeExportMetadataSidecar(const ExportSettings& settings,
     return true;
 }
 
-bool Application::savePngToPath(const std::wstring& path,
-                                const std::vector<std::uint8_t>& pixels,
-                                int width, int height, std::string& error) {
-    auto formatError = [](HRESULT hr) {
-        std::ostringstream oss;
-        oss << "WIC error 0x" << std::hex << std::uppercase << static_cast<unsigned long>(hr);
-        return oss.str();
-    };
-
-    IWICImagingFactory* factory = nullptr;
-    IWICStream* stream = nullptr;
-    IWICBitmapEncoder* encoder = nullptr;
-    IWICBitmapFrameEncode* frame = nullptr;
-    IPropertyBag2* properties = nullptr;
-
-    HRESULT hr = ::CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
-                                    IID_PPV_ARGS(&factory));
-    if (FAILED(hr)) {
-        error = formatError(hr);
-        return false;
-    }
-
-    hr = factory->CreateStream(&stream);
-    if (SUCCEEDED(hr)) {
-        hr = stream->InitializeFromFilename(path.c_str(), GENERIC_WRITE);
-    }
-    if (SUCCEEDED(hr)) {
-        hr = factory->CreateEncoder(GUID_ContainerFormatPng, nullptr, &encoder);
-    }
-    if (SUCCEEDED(hr)) {
-        hr = encoder->Initialize(stream, WICBitmapEncoderNoCache);
-    }
-    if (SUCCEEDED(hr)) {
-        hr = encoder->CreateNewFrame(&frame, &properties);
-    }
-    if (SUCCEEDED(hr)) {
-        hr = frame->Initialize(properties);
-    }
-    if (SUCCEEDED(hr)) {
-        hr = frame->SetSize(static_cast<UINT>(width), static_cast<UINT>(height));
-    }
-    WICPixelFormatGUID pixelFormat = GUID_WICPixelFormat32bppBGRA;
-    if (SUCCEEDED(hr)) {
-        hr = frame->SetPixelFormat(&pixelFormat);
-    }
-    if (SUCCEEDED(hr)) {
-        hr = frame->WritePixels(static_cast<UINT>(height), static_cast<UINT>(width * 4),
-                                static_cast<UINT>(pixels.size()),
-                                const_cast<BYTE*>(pixels.data()));
-    }
-    if (SUCCEEDED(hr)) {
-        hr = frame->Commit();
-    }
-    if (SUCCEEDED(hr)) {
-        hr = encoder->Commit();
-    }
-
-    if (properties) properties->Release();
-    if (frame) frame->Release();
-    if (encoder) encoder->Release();
-    if (stream) stream->Release();
-    if (factory) factory->Release();
-
-    if (FAILED(hr)) {
-        error = formatError(hr);
-        return false;
-    }
-    return true;
-}
-
-bool Application::saveBmpToPath(const std::wstring& path,
-                                const std::vector<std::uint8_t>& pixels,
-                                int width, int height, std::string& error) {
-    const std::uint32_t rowBytes = static_cast<std::uint32_t>(width) * 4u;
-    const std::uint32_t pixelBytes = rowBytes * static_cast<std::uint32_t>(height);
-
-#pragma pack(push, 1)
-    struct BmpFileHeader {
-        std::uint16_t type;
-        std::uint32_t size;
-        std::uint16_t reserved1;
-        std::uint16_t reserved2;
-        std::uint32_t offBits;
-    };
-#pragma pack(pop)
-
-    BmpFileHeader fileHeader = {};
-    fileHeader.type = 0x4D42; // BM
-    fileHeader.offBits = sizeof(BmpFileHeader) + sizeof(BITMAPINFOHEADER);
-    fileHeader.size = fileHeader.offBits + pixelBytes;
-
-    BITMAPINFOHEADER infoHeader = {};
-    infoHeader.biSize = sizeof(BITMAPINFOHEADER);
-    infoHeader.biWidth = width;
-    infoHeader.biHeight = height; // bottom-up DIB
-    infoHeader.biPlanes = 1;
-    infoHeader.biBitCount = 32;
-    infoHeader.biCompression = BI_RGB;
-    infoHeader.biSizeImage = pixelBytes;
-
-    std::ofstream out(std::filesystem::path(path), std::ios::binary);
-    if (!out) {
-        error = "Failed to open output file.";
-        return false;
-    }
-
-    out.write(reinterpret_cast<const char*>(&fileHeader), sizeof(fileHeader));
-    out.write(reinterpret_cast<const char*>(&infoHeader), sizeof(infoHeader));
-    for (int y = height - 1; y >= 0; --y) {
-        const auto* row = pixels.data() + static_cast<size_t>(y) * rowBytes;
-        out.write(reinterpret_cast<const char*>(row), rowBytes);
-    }
-
-    if (!out.good()) {
-        error = "Failed while writing BMP data.";
-        return false;
-    }
-    return true;
-}
-
 bool Application::copyPixelsToClipboard(const std::vector<std::uint8_t>& pixels,
                                         int width, int height, std::string& error) {
-    if (width <= 0 || height <= 0) {
-        error = "Invalid image dimensions.";
+    const XFWin::ClipboardResult result =
+        m_clipboardService.copyDibImageBgra(m_hWnd, pixels, width, height);
+    if (!result) {
+        error = result.error;
         return false;
     }
-
-    const size_t rowBytes = static_cast<size_t>(width) * 4;
-    const size_t imageBytes = rowBytes * static_cast<size_t>(height);
-    const size_t totalBytes = sizeof(BITMAPINFOHEADER) + imageBytes;
-
-    HGLOBAL hGlobal = ::GlobalAlloc(GMEM_MOVEABLE, totalBytes);
-    if (!hGlobal) {
-        error = "GlobalAlloc failed.";
-        return false;
-    }
-
-    void* raw = ::GlobalLock(hGlobal);
-    if (!raw) {
-        ::GlobalFree(hGlobal);
-        error = "GlobalLock failed.";
-        return false;
-    }
-
-    auto* header = static_cast<BITMAPINFOHEADER*>(raw);
-    *header = {};
-    header->biSize = sizeof(BITMAPINFOHEADER);
-    header->biWidth = width;
-    header->biHeight = height; // bottom-up DIB
-    header->biPlanes = 1;
-    header->biBitCount = 32;
-    header->biCompression = BI_RGB;
-    header->biSizeImage = static_cast<DWORD>(imageBytes);
-
-    auto* dst = reinterpret_cast<std::uint8_t*>(header + 1);
-    for (int y = 0; y < height; ++y) {
-        const auto* srcRow = pixels.data() + static_cast<size_t>(height - 1 - y) * rowBytes;
-        auto* dstRow = dst + static_cast<size_t>(y) * rowBytes;
-        std::memcpy(dstRow, srcRow, rowBytes);
-    }
-
-    ::GlobalUnlock(hGlobal);
-
-    if (!::OpenClipboard(m_hWnd)) {
-        ::GlobalFree(hGlobal);
-        error = "Could not open clipboard.";
-        return false;
-    }
-
-    ::EmptyClipboard();
-    if (!::SetClipboardData(CF_DIB, hGlobal)) {
-        ::CloseClipboard();
-        ::GlobalFree(hGlobal);
-        error = "SetClipboardData failed.";
-        return false;
-    }
-    ::CloseClipboard();
+    error.clear();
     return true;
 }
 
 void Application::openLastSavedExport() {
     if (m_lastExportSavedPath.empty()) {
         m_exportStatus = "No saved export path is available.";
-    } else if (openPathWithShell(m_lastExportSavedPath)) {
+    } else if (m_shellService.openPath(m_lastExportSavedPath)) {
         m_exportStatus = "Opened saved image.";
     } else {
         m_exportStatus = "Could not open saved image.";
@@ -3318,7 +2923,7 @@ void Application::openLastSavedExport() {
 void Application::showLastSavedExportInFolder() {
     if (m_lastExportSavedPath.empty()) {
         m_exportStatus = "No saved export path is available.";
-    } else if (revealPathInExplorer(m_lastExportSavedPath)) {
+    } else if (m_shellService.revealPath(m_lastExportSavedPath)) {
         m_exportStatus = "Opened saved image location.";
     } else {
         m_exportStatus = "Could not show saved image in folder.";
@@ -3329,7 +2934,7 @@ void Application::showLastSavedExportInFolder() {
 void Application::copyLastSavedExportPath() {
     if (m_lastExportSavedPath.empty()) {
         m_exportStatus = "No saved export path is available.";
-    } else if (copyUnicodeTextToClipboard(m_hWnd, m_lastExportSavedPath)) {
+    } else if (m_clipboardService.copyUtf16Text(m_hWnd, m_lastExportSavedPath)) {
         m_exportStatus = "Copied saved image path.";
     } else {
         m_exportStatus = "Could not copy saved image path.";
@@ -3367,8 +2972,14 @@ void Application::processPendingExportActions() {
                               outputPixels, outputWidth, outputHeight);
 
     if (m_pendingSavePlotImage) {
-        std::wstring path;
-        if (promptSaveImagePath(path)) {
+        const XFWin::ExportImageFormat preferredFormat =
+            (m_pendingExportSettings.output.format == ExportFormat::Bmp)
+                ? XFWin::ExportImageFormat::Bmp
+                : XFWin::ExportImageFormat::Png;
+        const XFWin::DialogResult dialog =
+            m_fileDialogService.saveImage(m_hWnd, preferredFormat);
+        if (dialog.selected()) {
+            const std::wstring& path = dialog.path;
             std::string error;
             if (saveImageToPath(path, outputPixels, outputWidth, outputHeight, error)) {
                 m_lastExportSavedPath = path;
@@ -3389,23 +3000,25 @@ void Application::processPendingExportActions() {
                     }
                 }
                 if (m_pendingExportSettings.output.openAfterSave) {
-                    messages.emplace_back(openPathWithShell(path)
+                    messages.emplace_back(m_shellService.openPath(path)
                         ? "Opened saved image."
                         : "Could not open saved image.");
                 }
                 if (m_pendingExportSettings.output.showInFolderAfterSave) {
-                    messages.emplace_back(revealPathInExplorer(path)
+                    messages.emplace_back(m_shellService.revealPath(path)
                         ? "Opened saved image location."
                         : "Could not show saved image in folder.");
                 }
                 if (m_pendingExportSettings.output.copyPathAfterSave) {
-                    messages.emplace_back(copyUnicodeTextToClipboard(m_hWnd, path)
+                    messages.emplace_back(m_clipboardService.copyUtf16Text(m_hWnd, path)
                         ? "Copied saved image path."
                         : "Could not copy saved image path.");
                 }
             } else {
                 messages.emplace_back("Save failed: " + error);
             }
+        } else if (!dialog.cancelled()) {
+            messages.emplace_back("Save failed: " + dialog.error);
         } else {
             messages.emplace_back("Save canceled.");
         }

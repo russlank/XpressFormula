@@ -152,6 +152,7 @@
     <ClCompile Include="ProjectSessionTests.cpp" />
     <ClCompile Include="InfrastructureSerializationTests.cpp" />
     <ClCompile Include="ProjectPersistenceSubsystemTests.cpp" />
+    <ClCompile Include="PlatformWindowsServicesTests.cpp" />
     <ClCompile Include="PlotSettingsTests.cpp" />
     <ClCompile Include="FormulaListActionsTests.cpp" />
     <ClCompile Include="UiKitLayoutTests.cpp" />

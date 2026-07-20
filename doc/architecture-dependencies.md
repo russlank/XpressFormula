@@ -16,7 +16,7 @@ XpressFormula.Plotting
   PlotRenderer and plotting draw logic.
 
 XpressFormula.Infrastructure
-  JSON parsing/writing, UTF conversion helpers, atomic file replacement, project persistence serialization/repository code, recent-project storage, and other infrastructure services.
+  JSON parsing/writing, UTF conversion helpers, atomic file replacement, project persistence serialization/repository code, recent-project storage, Windows platform services, and other infrastructure services.
 
 XpressFormula.UI
   Formula/control/plot panels, FormulaCard/PlotToolbar components, dynamic formula editor state, formula presentation helpers, UiKit, and Dear ImGui core sources.
@@ -82,7 +82,7 @@ This makes tests consume the same production object code used by the executable.
 
 - `XpressFormula.UI::FormulaEntry` remains only as a transitional alias for `XpressFormula.Model::Formula`; it no longer stores duplicated domain state. Formula labels and display counts are computed through UI presentation helpers.
 - `XpressFormula.Plotting` still includes ImGui because rendering currently writes directly to `ImDrawList`. A later plotting foundation phase is expected to introduce geometry generation before an ImGui backend.
-- `XpressFormula.App` still owns Windows API, D3D, WIC, WinHTTP, shell, clipboard, and file-dialog code. Later platform, export, document-controller, and composition phases are expected to extract these responsibilities.
+- `XpressFormula.App` still owns Win32 window procedure, D3D device/swapchain orchestration, WIC COM initialization lifetime, file-dialog workflow decisions, and export/update orchestration. Later platform, export, document-controller, and composition phases are expected to extract these remaining responsibilities.
 
 ## No-Feature-Change Constraint
 

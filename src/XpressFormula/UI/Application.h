@@ -14,6 +14,10 @@
 #include "../Infrastructure/Persistence/RecentProjectsStore.h"
 #include "../Model/Formula.h"
 #include "../Model/SceneSummary.h"
+#include "../Platform/Windows/ClipboardService.h"
+#include "../Platform/Windows/FileDialogService.h"
+#include "../Platform/Windows/ShellService.h"
+#include "../Platform/Windows/WicImageEncoder.h"
 
 #include <chrono>
 #include <cstdint>
@@ -86,8 +90,6 @@ private:
     Infrastructure::Persistence::ProjectSession currentProjectSession() const;
     void refreshProjectDirtyState();
     void markProjectClean();
-    bool promptOpenProjectPath(std::wstring& path) const;
-    bool promptSaveProjectPath(std::wstring& path) const;
     bool saveProject();
     bool saveProjectAs();
     bool saveProjectToPath(const std::wstring& path, std::string& error);
@@ -104,7 +106,6 @@ private:
     void applyCameraPreset(float azimuthDeg, float elevationDeg);
     void startUpdateCheck(bool manualRequest);
     void pollUpdateCheckResult();
-    bool promptSaveImagePath(std::wstring& path);
     void markExportPreviewOutOfDate();
     void requestExportPreviewRefresh();
     bool capturePlotPixels(std::vector<std::uint8_t>& pixels, int& width, int& height);
@@ -139,12 +140,6 @@ private:
                                     const std::wstring& imagePath,
                                     int width, int height,
                                     std::string& error) const;
-    bool savePngToPath(const std::wstring& path,
-                       const std::vector<std::uint8_t>& pixels,
-                       int width, int height, std::string& error);
-    bool saveBmpToPath(const std::wstring& path,
-                       const std::vector<std::uint8_t>& pixels,
-                       int width, int height, std::string& error);
     bool copyPixelsToClipboard(const std::vector<std::uint8_t>& pixels,
                                int width, int height, std::string& error);
     void openLastSavedExport();
@@ -174,6 +169,10 @@ private:
     std::vector<std::wstring> m_recentProjectPaths;
     Infrastructure::Persistence::ProjectRepository m_projectRepository;
     Infrastructure::Persistence::RecentProjectsStore m_recentProjectsStore;
+    Platform::Windows::FileDialogService m_fileDialogService;
+    Platform::Windows::ShellService m_shellService;
+    Platform::Windows::ClipboardService m_clipboardService;
+    Platform::Windows::WicImageEncoder m_imageEncoder;
     PendingProjectAction      m_pendingProjectAction = PendingProjectAction::None;
     std::wstring              m_pendingProjectPath;
     bool                      m_openProjectDiscardPopupNextFrame = false;
