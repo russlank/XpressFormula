@@ -96,22 +96,38 @@
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="..\XpressFormula\Plotting\Geometry\PlaneClipping.cpp" />
+    <ClCompile Include="..\XpressFormula\Plotting\Meshing\ExplicitSurfaceMesh.cpp" />
     <ClCompile Include="..\XpressFormula\Plotting\Meshing\ImplicitMeshCache.cpp" />
+    <ClCompile Include="..\XpressFormula\Plotting\Meshing\MarchingSquares.cpp" />
+    <ClCompile Include="..\XpressFormula\Plotting\Meshing\SurfaceNets.cpp" />
     <ClCompile Include="..\XpressFormula\Plotting\PlotQualityPolicy.cpp" />
     <ClCompile Include="..\XpressFormula\Plotting\PlotRenderPlan.cpp" />
     <ClCompile Include="..\XpressFormula\Plotting\PlotRenderer.cpp" />
     <ClCompile Include="..\XpressFormula\Plotting\Projection3D.cpp" />
+    <ClCompile Include="..\XpressFormula\Plotting\Rendering\ImGuiPlotBackend.cpp" />
+    <ClCompile Include="..\XpressFormula\Plotting\Sampling\CurveSampler.cpp" />
+    <ClCompile Include="..\XpressFormula\Plotting\Sampling\ScalarGridSampler.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\XpressFormula\Plotting\Camera3D.h" />
     <ClInclude Include="..\XpressFormula\Plotting\Geometry\Bounds.h" />
+    <ClInclude Include="..\XpressFormula\Plotting\Geometry\PlaneClipping.h" />
+    <ClInclude Include="..\XpressFormula\Plotting\Geometry\Polyline.h" />
+    <ClInclude Include="..\XpressFormula\Plotting\Geometry\TriangleMesh.h" />
     <ClInclude Include="..\XpressFormula\Plotting\Geometry\Vec2.h" />
     <ClInclude Include="..\XpressFormula\Plotting\Geometry\Vec3.h" />
+    <ClInclude Include="..\XpressFormula\Plotting\Meshing\ExplicitSurfaceMesh.h" />
     <ClInclude Include="..\XpressFormula\Plotting\Meshing\ImplicitMeshCache.h" />
+    <ClInclude Include="..\XpressFormula\Plotting\Meshing\MarchingSquares.h" />
+    <ClInclude Include="..\XpressFormula\Plotting\Meshing\SurfaceNets.h" />
     <ClInclude Include="..\XpressFormula\Plotting\PlotQualityPolicy.h" />
     <ClInclude Include="..\XpressFormula\Plotting\PlotRenderPlan.h" />
     <ClInclude Include="..\XpressFormula\Plotting\PlotRenderer.h" />
     <ClInclude Include="..\XpressFormula\Plotting\Projection3D.h" />
+    <ClInclude Include="..\XpressFormula\Plotting\Rendering\ImGuiPlotBackend.h" />
+    <ClInclude Include="..\XpressFormula\Plotting\Sampling\CurveSampler.h" />
+    <ClInclude Include="..\XpressFormula\Plotting\Sampling\ScalarGridSampler.h" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\XpressFormula.Expression\XpressFormula.Expression.vcxproj">
