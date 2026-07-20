@@ -102,6 +102,7 @@
     <ClCompile Include="..\XpressFormula\UI\Components\ProjectControls.cpp" />
     <ClCompile Include="..\XpressFormula\UI\FormulaPanel.cpp" />
     <ClCompile Include="..\XpressFormula\UI\ControlPanel.cpp" />
+    <ClCompile Include="..\XpressFormula\UI\MainWindow.cpp" />
     <ClCompile Include="..\XpressFormula\UI\PlotPanel.cpp" />
     <ClCompile Include="..\XpressFormula\UI\UiKit\PropertyGrid.cpp" />
     <ClCompile Include="..\XpressFormula\UI\UiKit\ResponsiveLayout.cpp" />
@@ -127,6 +128,7 @@
     <ClInclude Include="..\XpressFormula\UI\FormulaPanel.h" />
     <ClInclude Include="..\XpressFormula\UI\FormulaPresentation.h" />
     <ClInclude Include="..\XpressFormula\UI\ControlPanel.h" />
+    <ClInclude Include="..\XpressFormula\UI\MainWindow.h" />
     <ClInclude Include="..\XpressFormula\UI\PlotPanel.h" />
     <ClInclude Include="..\XpressFormula\UI\PlotSettings.h" />
     <ClInclude Include="..\XpressFormula\UI\UiKit\PropertyGrid.h" />

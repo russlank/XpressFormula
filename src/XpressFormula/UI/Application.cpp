@@ -1,23 +1,17 @@
 // SPDX-License-Identifier: MIT
 // Application.cpp - Win32 + D3D11 + ImGui application implementation.
 #include "Application.h"
-#include "../Core/UpdateVersionUtils.h"
 #include "../Infrastructure/FileSystem/AtomicFileWriter.h"
 #include "../Infrastructure/Export/ExportMetadataSerializer.h"
 #include "../Infrastructure/Export/ExportOutputWorkflow.h"
 #include "../Infrastructure/Export/ExportRenderRequest.h"
 #include "../Infrastructure/Export/ImageProcessor.h"
 #include "../Platform/Windows/ComPtr.h"
-#include "../Platform/Windows/WinHttpClient.h"
 #include "../Platform/Windows/Utf.h"
 #include "../Version.h"
 #include "../resource.h"
 #include "FormulaEntry.h"
 #include "Components/ExportDialog.h"
-#include "Components/PlotToolbar.h"
-#include "Components/ProjectControls.h"
-#include "UiKit/Splitter.h"
-#include "UiKit/UiMetrics.h"
 
 #include "imgui.h"
 #include "imgui_impl_win32.h"
@@ -59,13 +53,6 @@ namespace XFWUtf = XpressFormula::Platform::Windows;
 
 namespace {
 
-constexpr const wchar_t* kGitHubLatestReleaseApiHost = L"api.github.com";
-constexpr const wchar_t* kGitHubLatestReleaseApiPath = L"/repos/russlank/XpressFormula/releases/latest";
-constexpr const wchar_t* kGitHubReleasesUrlW = L"https://github.com/russlank/XpressFormula/releases";
-constexpr const char* kGitHubReleasesUrlUtf8 = "https://github.com/russlank/XpressFormula/releases";
-constexpr const wchar_t* kBuyMeACoffeeUrlW = L"https://buymeacoffee.com/russlank";
-constexpr const char* kBuyMeACoffeeUrlUtf8 = "https://buymeacoffee.com/russlank";
-
 XpressFormula::Model::Document makeDefaultProjectDocument() {
     XpressFormula::Model::Formula defaultEntry;
     defaultEntry.setExpression("sin(sqrt(x^2+y^2))");
@@ -85,64 +72,6 @@ XpressFormula::Model::Document makeDefaultProjectDocument() {
     XpressFormula::Model::Document document;
     document.replaceState(std::move(formulas), view, plot, true);
     return document;
-}
-
-// Background worker: query GitHub Releases API, parse the latest tag/url, and compare against the
-// app semantic version. This runs off the UI thread so startup and manual checks do not stall ImGui.
-XpressFormula::UI::Application::UpdateCheckResult fetchLatestReleaseFromGitHub(bool manualRequest) {
-    using namespace XpressFormula::Core::UpdateVersionUtils;
-
-    XpressFormula::UI::Application::UpdateCheckResult result;
-    result.manualRequest = manualRequest;
-    result.releaseUrl = kGitHubReleasesUrlUtf8;
-
-    XFWin::WinHttpGetRequest request;
-    request.userAgent = L"XpressFormula/" XF_VERSION_WSTRING;
-    request.host = kGitHubLatestReleaseApiHost;
-    request.path = kGitHubLatestReleaseApiPath;
-    request.headers =
-        L"Accept: application/vnd.github+json\r\n"
-        L"X-GitHub-Api-Version: 2022-11-28\r\n";
-
-    const XFWin::WinHttpResponse response = XFWin::WinHttpClient{}.get(request);
-    if (!response) {
-        result.statusMessage = "Update check failed: " + response.error;
-        return result;
-    }
-
-    if (response.statusCode != 200) {
-        std::ostringstream oss;
-        oss << "Update check failed: GitHub returned HTTP " << response.statusCode << ".";
-        result.statusMessage = oss.str();
-        return result;
-    }
-
-    if (response.body.empty()) {
-        result.statusMessage = "Update check failed: empty response from GitHub.";
-        return result;
-    }
-
-    const XFWin::GitHubReleaseParseResult parsed =
-        XFWin::parseGitHubLatestReleaseResponse(response.body);
-    if (!parsed) {
-        result.statusMessage = "Update check failed: " + parsed.error;
-        return result;
-    }
-    if (!parsed.release.htmlUrl.empty()) {
-        result.releaseUrl = parsed.release.htmlUrl;
-    }
-
-    result.requestSucceeded = true;
-    result.latestTag = parsed.release.tagName;
-    result.updateAvailable = isRemoteVersionNewer(XF_VERSION_STRING, parsed.release.tagName);
-
-    if (result.updateAvailable) {
-        result.statusMessage = "Update available: " + parsed.release.tagName +
-            " (current " XF_VERSION_STRING ").";
-    } else {
-        result.statusMessage = "You are running the latest version (" XF_VERSION_STRING ").";
-    }
-    return result;
 }
 
 } // namespace
@@ -190,8 +119,8 @@ namespace XpressFormula::UI {
 Application::Application()
     : m_projectFileDialogAdapter(*this),
       m_projectController(
-          m_projectRepository,
-          m_recentProjectsStore,
+          m_composition.projectRepository,
+          m_composition.recentProjectsStore,
           m_projectFileDialogAdapter,
           [] { return makeDefaultProjectDocument(); }) {
 }
@@ -199,41 +128,42 @@ Application::Application()
 Application::~Application() = default;
 
 XFWin::DialogResult Application::ProjectFileDialogAdapter::openProject() {
-    return m_application.m_fileDialogService.openProject(m_application.m_hWnd);
+    return m_application.m_composition.fileDialogService.openProject(m_application.m_hWnd);
 }
 
 XFWin::DialogResult Application::ProjectFileDialogAdapter::saveProject(
     std::wstring_view currentPath) {
-    return m_application.m_fileDialogService.saveProject(m_application.m_hWnd, currentPath);
+    return m_application.m_composition.fileDialogService.saveProject(
+        m_application.m_hWnd, currentPath);
 }
 
 void Application::refreshSceneSummary() {
-    m_sceneSummary = Model::analyzeScene(
+    m_state.sceneSummary = Model::analyzeScene(
         std::span<const Model::Formula>(m_document.formulas().data(), m_document.formulas().size()));
 }
 
 void Application::syncDocumentDependentState() {
     if (m_projectController.consumeDocumentReplaced()) {
-        m_formulaPanel.resetColorCycle(static_cast<int>(m_document.formulas().size()));
+        m_mainWindow.resetFormulaColorCycle(static_cast<int>(m_document.formulas().size()));
         m_exportController.dialogSettings() = defaultExportSettings();
         m_exportController.setSizeInitialized(false);
     }
 
     const Model::Document::Revision revision = m_document.revision();
-    if (revision != m_observedDocumentRevision) {
+    if (revision != m_state.observedDocumentRevision) {
         refreshSceneSummary();
         markExportPreviewOutOfDate();
-        m_observedDocumentRevision = revision;
-        m_redrawRequested = true;
+        m_state.observedDocumentRevision = revision;
+        m_state.redrawRequested = true;
     }
 }
 
 void Application::consumeProjectControllerEffects() {
     if (m_projectController.consumeCloseRequest()) {
-        m_closeRequestedAfterFrame = true;
+        m_state.closeRequestedAfterFrame = true;
     }
     syncDocumentDependentState();
-    m_redrawRequested = true;
+    m_state.redrawRequested = true;
 }
 
 bool Application::requestClose() {
@@ -242,15 +172,8 @@ bool Application::requestClose() {
     return false;
 }
 
-void Application::renderProjectControls() {
-    const Components::ProjectControlsAction action = Components::renderProjectControls({
-        m_projectController.displayName(m_document),
-        m_projectController.currentPathUtf8(),
-        m_projectController.status(),
-        &m_projectController.recentProjectPaths()
-    });
-
-    switch (action.command) {
+void Application::handleMainWindowActions(const MainWindowActions& actions) {
+    switch (actions.projectControls.command) {
         case Components::ProjectControlCommand::NewProject:
             m_projectController.requestNew(m_document);
             break;
@@ -264,26 +187,20 @@ void Application::renderProjectControls() {
             (void)m_projectController.saveAs(m_document);
             break;
         case Components::ProjectControlCommand::OpenRecent:
-            m_projectController.requestOpenRecent(m_document, action.recentPath);
+            m_projectController.requestOpenRecent(m_document, actions.projectControls.recentPath);
             break;
         case Components::ProjectControlCommand::None:
         default:
             break;
     }
 
-    if (action.command != Components::ProjectControlCommand::None) {
+    if (actions.projectControls.command != Components::ProjectControlCommand::None) {
         consumeProjectControllerEffects();
     }
-}
-
-void Application::renderProjectDiscardDialog() {
-    const bool openNextFrame = m_projectController.consumeUnsavedPromptRequest();
-    const Components::UnsavedProjectDialogChoice choice =
-        Components::renderUnsavedProjectDialog(openNextFrame);
 
     XpressFormula::Application::UnsavedProjectChoice controllerChoice =
         XpressFormula::Application::UnsavedProjectChoice::None;
-    switch (choice) {
+    switch (actions.unsavedProjectChoice) {
         case Components::UnsavedProjectDialogChoice::Save:
             controllerChoice = XpressFormula::Application::UnsavedProjectChoice::Save;
             break;
@@ -301,6 +218,56 @@ void Application::renderProjectDiscardDialog() {
     if (controllerChoice != XpressFormula::Application::UnsavedProjectChoice::None) {
         m_projectController.handleUnsavedChoice(m_document, controllerChoice);
         consumeProjectControllerEffects();
+    }
+
+    if (actions.requestOpenExportDialog) {
+        m_exportController.requestOpen();
+        m_state.redrawRequested = true;
+    }
+
+    if (actions.requestManualUpdateCheck && m_updateController.requestManualCheck()) {
+        m_state.redrawRequested = true;
+    }
+    if (actions.updateDetailsExpandedChanged) {
+        m_updateController.setVersionDetailsExpanded(actions.updateDetailsExpanded);
+        m_state.redrawRequested = true;
+    }
+    if (actions.requestDismissUpdateNotice && m_updateController.dismissNotice()) {
+        m_state.redrawRequested = true;
+    }
+    if (actions.requestOpenReleasePage) {
+        std::string releaseUrl = m_updateController.releaseUrl();
+        if (releaseUrl.empty()) {
+            releaseUrl = std::string(
+                XpressFormula::Application::UpdateController::defaultReleaseUrlUtf8());
+        }
+        std::wstring releaseUrlWide = XFWUtf::utf8ToUtf16OrEmpty(releaseUrl);
+        if (releaseUrlWide.empty()) {
+            releaseUrlWide = XFWUtf::utf8ToUtf16OrEmpty(
+                XpressFormula::Application::UpdateController::defaultReleaseUrlUtf8());
+        }
+        const bool opened = !releaseUrlWide.empty() &&
+            m_composition.shellService.openUrl(releaseUrlWide);
+        if (m_updateController.recordReleasePageOpenResult(opened)) {
+            m_state.redrawRequested = true;
+        }
+    }
+    if (actions.requestOpenSupportPage) {
+        const std::string supportUrl(
+            XpressFormula::Application::UpdateController::supportUrlUtf8());
+        const std::wstring supportUrlWide = XFWUtf::utf8ToUtf16OrEmpty(supportUrl);
+        const bool opened = !supportUrlWide.empty() &&
+            m_composition.shellService.openUrl(supportUrlWide);
+        if (m_updateController.recordSupportPageOpenResult(opened)) {
+            m_state.redrawRequested = true;
+        }
+    }
+
+    if (actions.documentChanged) {
+        syncDocumentDependentState();
+    }
+    if (actions.redrawRequested) {
+        m_state.redrawRequested = true;
     }
 }
 
@@ -404,14 +371,11 @@ bool Application::initialize(HINSTANCE hInstance, int width, int height) {
     ImGui_ImplDX11_Init(m_device, m_deviceContext);
 
     m_projectController.startNewCleanDocument(m_document);
-    m_formulaPanel.resetColorCycle(static_cast<int>(m_document.formulas().size()));
+    m_mainWindow.resetFormulaColorCycle(static_cast<int>(m_document.formulas().size()));
     syncDocumentDependentState();
     m_projectController.loadRecentProjectPaths();
 
-    // Record startup time so we can defer the automatic update check.
-    // Delaying the network call avoids triggering antivirus heuristics that flag
-    // executables making outbound connections immediately after launch.
-    m_startupTime = std::chrono::steady_clock::now();
+    m_updateController.resetStartupDelay(std::chrono::steady_clock::now());
 
     return true;
 }
@@ -426,27 +390,29 @@ int Application::run() {
             ::DispatchMessageW(&msg);
             if (msg.message != WM_QUIT) {
                 // Any user/system message may affect layout, hover state, or plot interaction.
-                m_redrawRequested = true;
+                m_state.redrawRequested = true;
             }
             continue;
         }
 
-        if (m_closeRequestedAfterFrame && m_hWnd) {
-            m_closeRequestedAfterFrame = false;
+        if (m_state.closeRequestedAfterFrame && m_hWnd) {
+            m_state.closeRequestedAfterFrame = false;
             ::DestroyWindow(m_hWnd);
             m_hWnd = nullptr;
             continue;
         }
 
-        const Model::SceneSummary& scene = m_sceneSummary;
+        const Model::SceneSummary& scene = m_state.sceneSummary;
         const Model::PlotSettings& plotSettings = m_document.plotSettings();
         const XYRenderMode effectiveRenderMode = plotSettings.resolveXYRenderMode(scene);
-        const bool continuousRender =
-            plotSettings.autoRotate &&
-            scene.hasVisible3D() &&
-            effectiveRenderMode == XYRenderMode::Surface3D;
-        const bool optimizeRendering = plotSettings.optimizeRendering;
-        if (optimizeRendering && !m_redrawRequested && !continuousRender) {
+        const XpressFormula::Application::RenderFramePolicyInput renderPolicy{
+            plotSettings.optimizeRendering,
+            m_state.redrawRequested,
+            plotSettings.autoRotate,
+            scene.hasVisible3D(),
+            effectiveRenderMode
+        };
+        if (XpressFormula::Application::shouldWaitForNextMessage(renderPolicy)) {
             // Event-driven idle mode: avoid presenting frames when nothing changes.
             ::WaitMessage();
             continue;
@@ -455,7 +421,7 @@ int Application::run() {
         // Handle swap-chain being occluded (minimised, etc.)
         if (m_swapChainOccluded &&
             m_swapChain->Present(0, DXGI_PRESENT_TEST) == DXGI_STATUS_OCCLUDED) {
-            ::Sleep(continuousRender ? 10 : 30);
+            ::Sleep(XpressFormula::Application::occludedSwapChainSleepMilliseconds(renderPolicy));
             continue;
         }
         m_swapChainOccluded = false;
@@ -470,14 +436,15 @@ int Application::run() {
         }
 
         renderFrame();
-        if (m_closeRequestedAfterFrame && m_hWnd) {
-            m_closeRequestedAfterFrame = false;
+        if (m_state.closeRequestedAfterFrame && m_hWnd) {
+            m_state.closeRequestedAfterFrame = false;
             ::DestroyWindow(m_hWnd);
             m_hWnd = nullptr;
             continue;
         }
         // Auto-rotate requires continuous redraws; otherwise render on demand when optimization is enabled.
-        m_redrawRequested = optimizeRendering ? continuousRender : true;
+        m_state.redrawRequested =
+            XpressFormula::Application::redrawRequestedAfterPresentedFrame(renderPolicy);
     }
     return static_cast<int>(msg.wParam);
 }
@@ -485,25 +452,16 @@ int Application::run() {
 // ---- per-frame render -------------------------------------------------------
 
 void Application::renderFrame() {
-    // Deferred startup update check: wait ~60 seconds after launch before contacting the
-    // network. This avoids antivirus heuristics that flag immediate outbound connections.
-    if (!m_startupCheckDone && !m_updateCheckInProgress) {
-        const auto elapsed = std::chrono::steady_clock::now() - m_startupTime;
-        if (elapsed >= std::chrono::seconds(60)) {
-            m_startupCheckDone = true;
-            startUpdateCheck(false);
-        }
+    const auto now = std::chrono::steady_clock::now();
+    if (m_updateController.tick(now)) {
+        m_state.redrawRequested = true;
     }
-
-    // Poll async update-check completion before building the UI so the sidebar can show any
-    // newly available result in the same visible frame.
-    pollUpdateCheckResult();
 
     // Export is intentionally deferred to a fresh frame after the export dialog closes.
     // This prevents the dialog window from being captured inside the exported image.
     m_exportController.promoteScheduledActions();
 
-    m_exportController.tickAutoPreviewRefresh(std::chrono::steady_clock::now());
+    m_exportController.tickAutoPreviewRefresh(now);
 
     if (m_exportController.dialogOpen() && m_exportController.consumePreviewRefreshRequest()) {
         refreshExportPreviewTexture();
@@ -517,180 +475,48 @@ void Application::renderFrame() {
     ImGui::NewFrame();
     handleProjectShortcuts();
 
-    // We fill the entire OS window with the sidebar, a splitter, and the plot.
-    const ImGuiViewport* viewport = ImGui::GetMainViewport();
-    float totalW = viewport->WorkSize.x;
-    float totalH = viewport->WorkSize.y;
-    const UiKit::UiMetrics& uiMetrics = UiKit::metrics();
-    const float splitterWidth = uiMetrics.splitterWidth;
-    const float availableForSidebar = totalW - splitterWidth - uiMetrics.minimumPlotWidth;
-    const float dynamicMinSidebar =
-        (std::min)(uiMetrics.minimumSidebarWidth, (std::max)(180.0f, totalW * 0.38f));
-    const float maxSidebar = (std::min)(uiMetrics.maximumSidebarWidth,
-        (std::max)(dynamicMinSidebar, availableForSidebar));
-    m_sidebarWidth = std::clamp(m_sidebarWidth, dynamicMinSidebar, maxSidebar);
-    const float sidebar = m_sidebarWidth;
-    const float plotX = viewport->WorkPos.x + sidebar + splitterWidth;
-    const float plotWidth = (std::max)(1.0f, totalW - sidebar - splitterWidth);
-
-    // ---- Left sidebar ----
-    ImGui::SetNextWindowPos(viewport->WorkPos);
-    ImGui::SetNextWindowSize(ImVec2(sidebar, totalH));
-    ImGui::Begin("##Sidebar", nullptr,
-                 ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
-                 ImGuiWindowFlags_NoMove     | ImGuiWindowFlags_NoCollapse);
-    renderProjectControls();
-    ImGui::Spacing();
-    ImGui::Separator();
-    ImGui::Spacing();
-    {
-        auto formulas = m_document.editFormulas();
-        m_formulaPanel.render(formulas.get());
-    }
-    syncDocumentDependentState();
-    const Model::SceneSummary& scene = m_sceneSummary;
-    ImGui::Spacing();
-    ImGui::Spacing();
-    {
-        auto view = m_document.editViewTransform();
-        auto plot = m_document.editPlotSettings();
-        ControlPanelActions actions = m_controlPanel.render(
-            view.get(), plot.get(), scene, m_exportController.status());
-        if (actions.requestOpenExportDialog) {
-            m_exportController.requestOpen();
-        }
-    }
-    syncDocumentDependentState();
-
-    ImGui::Spacing();
-    ImGui::Separator();
-    const bool showUpdateAlert = m_updateAvailable && !m_updateNoticeDismissed;
-    std::string versionDetailsLabel;
-    if (showUpdateAlert && !m_updateLatestTag.empty()) {
-        versionDetailsLabel = "New version available " + m_updateLatestTag;
-    } else if (showUpdateAlert) {
-        versionDetailsLabel = "New version available";
-    } else if (m_updateCheckInProgress) {
-        versionDetailsLabel = "Version details (checking...)";
-    } else {
-        versionDetailsLabel = "Version details";
-    }
-    versionDetailsLabel += "##VersionDetailsToggle";
-
-    if (showUpdateAlert) {
-        ImGui::PushStyleColor(ImGuiCol_Header,        ImVec4(0.76f, 0.18f, 0.18f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0.86f, 0.24f, 0.24f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_HeaderActive,  ImVec4(0.62f, 0.12f, 0.12f, 1.0f));
-    }
-    ImGui::SetNextItemOpen(m_versionDetailsExpanded, ImGuiCond_Always);
-    m_versionDetailsExpanded = ImGui::CollapsingHeader(
-        versionDetailsLabel.c_str(), ImGuiTreeNodeFlags_SpanAvailWidth);
-    if (showUpdateAlert) {
-        ImGui::PopStyleColor(3);
-    }
-
-    if (m_versionDetailsExpanded) {
-        ImGui::Spacing();
-        ImGui::TextDisabled("Build Metadata");
-        ImGui::TextDisabled("Version: %s", XF_BUILD_VERSION);
-        ImGui::TextDisabled("Repo: %s", XF_BUILD_REPO_URL);
-        ImGui::TextDisabled("Branch: %s", XF_BUILD_BRANCH);
-        ImGui::TextDisabled("Commit: %s", XF_BUILD_COMMIT);
-
-        ImGui::Spacing();
-        ImGui::Separator();
-        ImGui::TextDisabled("Updates");
-        if (m_updateCheckInProgress) {
-            ImGui::TextWrapped("Checking GitHub releases...");
-        } else {
-            if (showUpdateAlert) {
-                ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 214, 110, 255));
-                ImGui::TextWrapped("New version available: %s", m_updateLatestTag.c_str());
-                ImGui::PopStyleColor();
-            } else if (!m_updateStatus.empty()) {
-                ImGui::TextWrapped("%s", m_updateStatus.c_str());
-            } else {
-                ImGui::TextWrapped("Checks for newer releases on GitHub.");
-            }
-        }
-
-        if (ImGui::Button("Check For Updates", ImVec2(ImGui::GetContentRegionAvail().x, 0.0f))) {
-            startUpdateCheck(true);
-        }
-        if (ImGui::Button("Open Releases Page", ImVec2(ImGui::GetContentRegionAvail().x, 0.0f))) {
-            std::wstring releaseUrlWide = m_updateReleaseUrl.empty()
-                ? std::wstring(kGitHubReleasesUrlW)
-                : XFWUtf::utf8ToUtf16OrEmpty(m_updateReleaseUrl);
-            if (releaseUrlWide.empty()) {
-                releaseUrlWide = kGitHubReleasesUrlW;
-            }
-            if (!m_shellService.openUrl(releaseUrlWide)) {
-                m_updateStatus = "Could not open browser. Visit: " + std::string(kGitHubReleasesUrlUtf8);
-            } else if (m_updateAvailable) {
-                m_updateNoticeDismissed = true;
-            }
-            m_redrawRequested = true;
-        }
-        if (ImGui::Button("Buy Me a Coffee", ImVec2(ImGui::GetContentRegionAvail().x, 0.0f))) {
-            if (!m_shellService.openUrl(kBuyMeACoffeeUrlW)) {
-                m_updateStatus = "Could not open browser. Visit: " + std::string(kBuyMeACoffeeUrlUtf8);
-            }
-            m_redrawRequested = true;
-        }
-        if (m_updateAvailable && !m_updateNoticeDismissed &&
-            ImGui::Button("Dismiss Update Notice", ImVec2(ImGui::GetContentRegionAvail().x, 0.0f))) {
-            m_updateNoticeDismissed = true;
-            m_redrawRequested = true;
-        }
-    }
-    ImGui::End();
-
-    // ---- Sidebar splitter ----
-    ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + sidebar, viewport->WorkPos.y));
-    ImGui::SetNextWindowSize(ImVec2(splitterWidth, totalH));
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-    ImGui::Begin("##SidebarSplitter", nullptr,
-                 ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
-                 ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse |
-                 ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings |
-                 ImGuiWindowFlags_NoBackground);
-    if (UiKit::drawVerticalSplitter("##SidebarSplitterHandle",
-                                    totalH,
-                                    m_sidebarWidth,
-                                    dynamicMinSidebar,
-                                    maxSidebar,
-                                    uiMetrics.defaultSidebarWidth,
-                                    splitterWidth)) {
-        m_redrawRequested = true;
-    }
-    ImGui::End();
-    ImGui::PopStyleVar(2);
-
-    renderExportDialog(sidebar, totalH);
-    renderProjectDiscardDialog();
-
-    // ---- Plot area ----
-    ImGui::SetNextWindowPos(ImVec2(plotX, viewport->WorkPos.y));
-    ImGui::SetNextWindowSize(ImVec2(plotWidth, totalH));
-    ImGui::Begin("##Plot", nullptr,
-                 ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
-                 ImGuiWindowFlags_NoMove     | ImGuiWindowFlags_NoCollapse |
-                 ImGuiWindowFlags_NoScrollbar);
-    handlePlotShortcuts();
-    renderPlotToolbar(scene);
     PlotRenderOverrides exportOverrides;
     if (m_exportController.pendingSave() || m_exportController.pendingCopy()) {
         exportOverrides = plotRenderOverridesForExport(m_exportController.pendingSettings());
     }
-    {
-        auto view = m_document.editViewTransform();
-        auto plot = m_document.editPlotSettings();
-        m_plotPanel.render(m_document.formulas(), view.get(), plot.get(), scene,
-                           exportOverrides.active ? &exportOverrides : nullptr);
-    }
+
+    const XpressFormula::Application::UpdateNotificationState updateState =
+        m_updateController.notificationState();
+    MainWindowContext workspaceContext{
+        m_document,
+        m_state.sceneSummary,
+        Components::ProjectControlsContext{
+            m_projectController.displayName(m_document),
+            m_projectController.currentPathUtf8(),
+            m_projectController.status(),
+            &m_projectController.recentProjectPaths()
+        },
+        MainWindowUpdateNotification{
+            updateState.checkInProgress,
+            updateState.updateAvailable,
+            updateState.noticeDismissed,
+            updateState.versionDetailsExpanded,
+            updateState.latestTag,
+            updateState.releaseUrl,
+            updateState.status
+        },
+        MainWindowBuildMetadata{
+            XF_BUILD_VERSION,
+            XF_BUILD_REPO_URL,
+            XF_BUILD_BRANCH,
+            XF_BUILD_COMMIT
+        },
+        m_exportController.status(),
+        m_exportController.dialogOpen(),
+        m_projectController.consumeUnsavedPromptRequest(),
+        exportOverrides.active ? &exportOverrides : nullptr
+    };
+
+    const MainWindowActions mainWindowActions =
+        m_mainWindow.renderWorkspace(workspaceContext, m_state.sidebarWidth);
+    handleMainWindowActions(mainWindowActions);
+    renderExportDialog();
     syncDocumentDependentState();
-    ImGui::End();
 
     // ---- Render ----
     ImGui::Render();
@@ -703,185 +529,6 @@ void Application::renderFrame() {
 
     HRESULT hr = m_swapChain->Present(1, 0); // VSync
     m_swapChainOccluded = (hr == DXGI_STATUS_OCCLUDED);
-}
-
-void Application::renderPlotToolbar(const Model::SceneSummary& scene) {
-    auto plot = m_document.editPlotSettings();
-    PlotSettings& plotSettings = plot.get();
-    const XYRenderMode effectiveRenderMode = plotSettings.resolveXYRenderMode(scene);
-    const bool is3DMode = (effectiveRenderMode == XYRenderMode::Surface3D);
-
-    Components::PlotToolbarContext context;
-    context.is3DMode = is3DMode;
-    context.effectiveRenderMode = effectiveRenderMode;
-    context.availableSize = ImGui::GetContentRegionAvail();
-
-    const Components::PlotToolbarActions actions =
-        Components::renderPlotToolbar(plotSettings, context);
-    if (actions.requestFit) {
-        fitDefaultView();
-    }
-    if (actions.requestReset) {
-        resetViewAndCamera();
-    }
-    if (actions.requestExport) {
-        m_exportController.requestOpen();
-        m_redrawRequested = true;
-    }
-    if (actions.applyCameraPreset) {
-        applyCameraPreset(actions.cameraAzimuthDeg, actions.cameraElevationDeg);
-    }
-    if (actions.requestRedraw) {
-        m_redrawRequested = true;
-    }
-    syncDocumentDependentState();
-}
-
-void Application::handlePlotShortcuts() {
-    ImGuiIO& io = ImGui::GetIO();
-    const bool modifiersDown = io.KeyCtrl || io.KeyAlt || io.KeySuper;
-    const bool canUsePlotShortcuts =
-        !m_exportController.dialogOpen() && !io.WantTextInput &&
-        !ImGui::IsAnyItemActive() && !modifiersDown;
-    if (!canUsePlotShortcuts) {
-        return;
-    }
-
-    if (ImGui::IsKeyPressed(ImGuiKey_F, false)) {
-        fitDefaultView();
-    }
-    if (ImGui::IsKeyPressed(ImGuiKey_Home, false)) {
-        resetViewAndCamera();
-    }
-    if (ImGui::IsKeyPressed(ImGuiKey_G, false)) {
-        auto plot = m_document.editPlotSettings();
-        plot.get().showGrid = !plot.get().showGrid;
-        m_redrawRequested = true;
-    }
-    if (ImGui::IsKeyPressed(ImGuiKey_W, false)) {
-        auto plot = m_document.editPlotSettings();
-        plot.get().showWires = !plot.get().showWires;
-        m_redrawRequested = true;
-    }
-    if (ImGui::IsKeyPressed(ImGuiKey_E, false)) {
-        m_exportController.requestOpen();
-        m_redrawRequested = true;
-    }
-}
-
-void Application::fitDefaultView() {
-    constexpr double targetWorldSpan = 20.0;
-    constexpr double marginScale = 0.94;
-    auto view = m_document.editViewTransform();
-    Core::ViewTransform& viewTransform = view.get();
-    const double fitScaleX = (std::max)(1.0f, viewTransform.viewport.width) / targetWorldSpan;
-    const double fitScaleY = (std::max)(1.0f, viewTransform.viewport.height) / targetWorldSpan;
-    const double fitScale = (std::max)(0.1, (std::min)(fitScaleX, fitScaleY) * marginScale);
-
-    viewTransform.state.centerX = 0.0;
-    viewTransform.state.centerY = 0.0;
-    viewTransform.state.scaleX = fitScale;
-    viewTransform.state.scaleY = fitScale;
-    m_redrawRequested = true;
-}
-
-void Application::resetViewAndCamera() {
-    auto view = m_document.editViewTransform();
-    auto plot = m_document.editPlotSettings();
-    view.get().reset();
-    plot.get().azimuthDeg = kDefaultAzimuthDeg;
-    plot.get().elevationDeg = kDefaultElevationDeg;
-    plot.get().zScale = kDefaultZScale;
-    plot.get().autoRotate = false;
-    m_redrawRequested = true;
-}
-
-void Application::applyCameraPreset(float azimuthDeg, float elevationDeg) {
-    auto plot = m_document.editPlotSettings();
-    plot.get().azimuthDeg = azimuthDeg;
-    plot.get().elevationDeg = elevationDeg;
-    plot.get().autoRotate = false;
-    m_redrawRequested = true;
-}
-
-void Application::startUpdateCheck(bool manualRequest) {
-    if (m_updateCheckInProgress) {
-        if (manualRequest) {
-            m_updateStatus = "Update check already in progress.";
-            m_redrawRequested = true;
-        }
-        return;
-    }
-
-    // If a previous future was never consumed (for example after a refactor/early-return path),
-    // clear it here before launching a new request to keep ownership of the async state simple.
-    if (m_updateCheckFuture.valid()) {
-        if (m_updateCheckFuture.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready) {
-            (void)m_updateCheckFuture.get();
-        } else if (manualRequest) {
-            m_updateStatus = "Previous update check is still running.";
-            m_redrawRequested = true;
-            return;
-        } else {
-            return;
-        }
-    }
-
-    m_updateCheckInProgress = true;
-    m_startupCheckDone = true; // Prevent deferred auto-check from firing again
-    m_updateStatus = manualRequest ? "Checking GitHub releases..." : "Checking for updates in background...";
-    m_redrawRequested = true;
-
-    try {
-        m_updateCheckFuture = std::async(std::launch::async, [manualRequest]() {
-            return fetchLatestReleaseFromGitHub(manualRequest);
-        });
-    } catch (const std::exception& ex) {
-        m_updateCheckInProgress = false;
-        m_updateStatus = std::string("Could not start update check worker: ") + ex.what();
-        m_redrawRequested = true;
-    } catch (...) {
-        m_updateCheckInProgress = false;
-        m_updateStatus = "Could not start update check worker.";
-        m_redrawRequested = true;
-    }
-}
-
-void Application::pollUpdateCheckResult() {
-    if (!m_updateCheckInProgress || !m_updateCheckFuture.valid()) {
-        return;
-    }
-
-    if (m_updateCheckFuture.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
-        return;
-    }
-
-    // `get()` transfers the completed worker result back to the UI thread exactly once.
-    UpdateCheckResult result = m_updateCheckFuture.get();
-    m_updateCheckInProgress = false;
-
-    if (!result.releaseUrl.empty()) {
-        m_updateReleaseUrl = result.releaseUrl;
-    } else {
-        m_updateReleaseUrl = kGitHubReleasesUrlUtf8;
-    }
-    m_updateLatestTag = result.latestTag;
-    m_updateAvailable = result.requestSucceeded && result.updateAvailable;
-    if (!m_updateAvailable && result.manualRequest) {
-        m_updateNoticeDismissed = false;
-    }
-    if (result.updateAvailable) {
-        m_updateNoticeDismissed = false;
-    }
-    if (!result.statusMessage.empty()) {
-        m_updateStatus = result.statusMessage;
-    } else if (result.requestSucceeded) {
-        m_updateStatus = result.updateAvailable ? "Update available." : "You are running the latest version.";
-    } else {
-        m_updateStatus = "Update check failed.";
-    }
-
-    m_redrawRequested = true;
 }
 
 void Application::initialiseExportDialogSize() {
@@ -903,9 +550,7 @@ void Application::initialiseExportDialogSize() {
     m_exportController.setSizeInitialized(true);
 }
 
-void Application::renderExportDialog(float, float) {
-    static const char* kExportDialogPopupId = "Export Plot Settings";
-
+void Application::renderExportDialog() {
     if (m_exportController.consumeOpenRequest()) {
         auto& settings = m_exportController.dialogSettings();
         if (settings.profile == ExportProfile::CurrentView) {
@@ -920,104 +565,88 @@ void Application::renderExportDialog(float, float) {
 
     initialiseExportDialogSize();
 
-    if (m_exportController.popupOpenNextFrame()) {
-        ImGui::OpenPopup(kExportDialogPopupId);
+    const Core::ViewTransform& viewTransform = m_document.viewTransform();
+    const int sourceWidth = static_cast<int>(std::lround((std::max)(1.0f, viewTransform.viewport.width)));
+    const int sourceHeight = static_cast<int>(std::lround((std::max)(1.0f, viewTransform.viewport.height)));
+    const ExportWorldBounds sourceBounds{
+        viewTransform.worldXMin(), viewTransform.worldXMax(),
+        viewTransform.worldYMin(), viewTransform.worldYMax()
+    };
+
+    Components::ExportDialogContext contentContext{
+        m_exportController.dialogSettings(),
+        m_exportController.settingsPaneWidthRef(),
+        m_exportController.previewZoomRef(),
+        m_exportController.previewPanXRef(),
+        m_exportController.previewPanYRef(),
+        m_exportController.previewCheckerboardRef(),
+        m_exportController.previewStatus(),
+        m_exportController.status()
+    };
+    contentContext.sourceWidth = sourceWidth;
+    contentContext.sourceHeight = sourceHeight;
+    contentContext.sourceBounds = sourceBounds;
+    contentContext.currentScene = exportSceneSettingsFromPlot(m_document.plotSettings());
+    contentContext.previewDirty = m_exportController.previewDirty();
+    contentContext.previewRefreshRequested = m_exportController.previewRefreshRequested();
+    contentContext.hasPreviewTexture = m_exportPreview.hasTexture();
+    contentContext.previewTexture = reinterpret_cast<ImTextureID>(m_exportPreview.srv());
+    contentContext.previewWidth = m_exportPreview.width();
+    contentContext.previewHeight = m_exportPreview.height();
+    contentContext.exportBusy = m_exportController.exportBusy();
+    contentContext.lastSavedPathUtf8 = XFWUtf::utf16ToUtf8OrEmpty(m_exportController.lastSavedPath());
+
+    ExportDialogWindowContext windowContext{
+        m_exportController.dialogOpen(),
+        m_exportController.popupOpenNextFrame(),
+        m_exportController.centerOnOpen(),
+        contentContext
+    };
+    const ExportDialogWindowActions windowActions =
+        m_mainWindow.renderExportDialog(windowContext);
+
+    if (windowActions.clearPopupOpenNextFrame) {
         m_exportController.clearPopupOpenNextFrame();
     }
-
-    const ImGuiViewport* viewport = ImGui::GetMainViewport();
-    const float maxWidth = (std::max)(420.0f, viewport->WorkSize.x - 32.0f);
-    const float maxHeight = (std::max)(420.0f, viewport->WorkSize.y - 32.0f);
-    const float desiredWidth = (std::min)(maxWidth, (std::max)(760.0f, viewport->WorkSize.x * 0.84f));
-    const float desiredHeight = (std::min)(maxHeight, (std::max)(560.0f, viewport->WorkSize.y * 0.84f));
-    const ImVec2 defaultDialogSize(desiredWidth, desiredHeight);
-    if (m_exportController.centerOnOpen()) {
-        const ImVec2 center(viewport->WorkPos.x + viewport->WorkSize.x * 0.5f,
-                            viewport->WorkPos.y + viewport->WorkSize.y * 0.5f);
-        ImGui::SetNextWindowPos(center, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
-        ImGui::SetNextWindowSize(defaultDialogSize, ImGuiCond_Always);
-    } else {
-        ImGui::SetNextWindowSize(defaultDialogSize, ImGuiCond_FirstUseEver);
-    }
-    ImGui::SetNextWindowSizeConstraints(ImVec2((std::min)(640.0f, maxWidth), (std::min)(440.0f, maxHeight)),
-                                        ImVec2(maxWidth, maxHeight));
-
-    bool open = m_exportController.dialogOpen();
-    if (ImGui::BeginPopupModal(kExportDialogPopupId, &open, ImGuiWindowFlags_NoCollapse)) {
-        const Core::ViewTransform& viewTransform = m_document.viewTransform();
-        const int sourceWidth = static_cast<int>(std::lround((std::max)(1.0f, viewTransform.viewport.width)));
-        const int sourceHeight = static_cast<int>(std::lround((std::max)(1.0f, viewTransform.viewport.height)));
-        const ExportWorldBounds sourceBounds{
-            viewTransform.worldXMin(), viewTransform.worldXMax(),
-            viewTransform.worldYMin(), viewTransform.worldYMax()
-        };
-
-        Components::ExportDialogContext context{
-            m_exportController.dialogSettings(),
-            m_exportController.settingsPaneWidthRef(),
-            m_exportController.previewZoomRef(),
-            m_exportController.previewPanXRef(),
-            m_exportController.previewPanYRef(),
-            m_exportController.previewCheckerboardRef(),
-            m_exportController.previewStatus(),
-            m_exportController.status()
-        };
-        context.sourceWidth = sourceWidth;
-        context.sourceHeight = sourceHeight;
-        context.sourceBounds = sourceBounds;
-        context.currentScene = exportSceneSettingsFromPlot(m_document.plotSettings());
-        context.previewDirty = m_exportController.previewDirty();
-        context.previewRefreshRequested = m_exportController.previewRefreshRequested();
-        context.hasPreviewTexture = m_exportPreview.hasTexture();
-        context.previewTexture = reinterpret_cast<ImTextureID>(m_exportPreview.srv());
-        context.previewWidth = m_exportPreview.width();
-        context.previewHeight = m_exportPreview.height();
-        context.exportBusy = m_exportController.exportBusy();
-        context.lastSavedPathUtf8 = XFWUtf::utf16ToUtf8OrEmpty(m_exportController.lastSavedPath());
-
-        const Components::ExportDialogAction action = Components::renderExportDialogContent(context);
-        if (action.settingsChanged) {
-            markExportPreviewOutOfDate();
-        }
-        if (action.requestFinalPreview) {
-            m_exportController.requestFinalQualityPreview();
-            m_redrawRequested = true;
-        } else if (action.requestPreview) {
-            requestExportPreviewRefresh();
-        }
-        if (action.requestCopy) {
-            m_exportController.queueCopy(m_exportController.dialogSettings());
-            m_redrawRequested = true;
-        }
-        if (action.requestSave) {
-            m_exportController.queueSave(m_exportController.dialogSettings());
-            m_redrawRequested = true;
-        }
-        if (action.openSavedImage) {
-            openLastSavedExport();
-        }
-        if (action.showSavedImageInFolder) {
-            showLastSavedExportInFolder();
-        }
-        if (action.copySavedImagePath) {
-            copyLastSavedExportPath();
-        }
-        if (action.redrawRequested) {
-            m_redrawRequested = true;
-        }
-        if (action.close) {
-            ImGui::CloseCurrentPopup();
-            open = false;
-        }
-
-        ImGui::EndPopup();
+    if (windowActions.clearCenterOnOpen) {
+        m_exportController.clearCenterOnOpen();
     }
 
-    m_exportController.clearCenterOnOpen();
-    if (!ImGui::IsPopupOpen(kExportDialogPopupId)) {
+    const Components::ExportDialogAction& action = windowActions.dialog;
+    if (action.settingsChanged) {
+        markExportPreviewOutOfDate();
+    }
+    if (action.requestFinalPreview) {
+        m_exportController.requestFinalQualityPreview();
+        m_state.redrawRequested = true;
+    } else if (action.requestPreview) {
+        requestExportPreviewRefresh();
+    }
+    if (action.requestCopy) {
+        m_exportController.queueCopy(m_exportController.dialogSettings());
+        m_state.redrawRequested = true;
+    }
+    if (action.requestSave) {
+        m_exportController.queueSave(m_exportController.dialogSettings());
+        m_state.redrawRequested = true;
+    }
+    if (action.openSavedImage) {
+        openLastSavedExport();
+    }
+    if (action.showSavedImageInFolder) {
+        showLastSavedExportInFolder();
+    }
+    if (action.copySavedImagePath) {
+        copyLastSavedExportPath();
+    }
+    if (action.redrawRequested) {
+        m_state.redrawRequested = true;
+    }
+
+    if (windowActions.closeDialog) {
         m_exportController.closeDialog();
-    } else {
-        m_exportController.setDialogOpen(open);
+    } else if (windowActions.setDialogOpen) {
+        m_exportController.setDialogOpen(windowActions.dialogOpen);
     }
 }
 
@@ -1081,13 +710,7 @@ bool Application::refreshExportPreviewTexture() {
 // ---- shutdown ---------------------------------------------------------------
 
 void Application::shutdown() {
-    if (m_updateCheckFuture.valid()) {
-        // `std::future` from std::async may block on destruction. Wait/get here while the UI is
-        // still alive so we shut down deterministically and avoid implicit blocking elsewhere.
-        m_updateCheckFuture.wait();
-        (void)m_updateCheckFuture.get();
-    }
-    m_updateCheckInProgress = false;
+    (void)m_updateController.waitForPendingCheck();
 
     ImGui_ImplDX11_Shutdown();
     ImGui_ImplWin32_Shutdown();
@@ -1183,12 +806,12 @@ void Application::cleanupRenderTarget() {
 void Application::markExportPreviewOutOfDate() {
     m_exportController.markPreviewOutOfDate(
         m_exportController.dialogSettings().quality.autoRefreshPreview);
-    m_redrawRequested = true;
+    m_state.redrawRequested = true;
 }
 
 void Application::requestExportPreviewRefresh() {
     m_exportController.requestPreviewRefresh();
-    m_redrawRequested = true;
+    m_state.redrawRequested = true;
 }
 
 bool Application::capturePlotPixels(std::vector<std::uint8_t>& pixels, int& width, int& height) {
@@ -1341,7 +964,7 @@ bool Application::renderPlotPixelsOffscreen(const ExportSettings& settings,
             settings,
             m_document.viewTransform(),
             m_document.plotSettings(),
-            m_sceneSummary);
+            m_state.sceneSummary);
 
     D3D11_TEXTURE2D_DESC texDesc = {};
     texDesc.Width = static_cast<UINT>(request.targetWidth);
@@ -1434,8 +1057,9 @@ bool Application::renderPlotPixelsOffscreen(const ExportSettings& settings,
                               ImGuiWindowFlags_NoSavedSettings |
                               ImGuiWindowFlags_NoInputs |
                               ImGuiWindowFlags_NoBackground)) {
-            m_plotPanel.render(m_document.formulas(), request.view, request.plotSettings, request.scene,
-                               &request.overrides, &request.quality);
+            PlotPanel exportPlotPanel;
+            exportPlotPanel.render(m_document.formulas(), request.view, request.plotSettings, request.scene,
+                                   &request.overrides, &request.quality);
         }
         ImGui::EndChild();
         ImGui::PopStyleColor();
@@ -1505,36 +1129,36 @@ void Application::openLastSavedExport() {
     const std::wstring& lastSavedPath = m_exportController.lastSavedPath();
     if (lastSavedPath.empty()) {
         m_exportController.setStatus("No saved export path is available.");
-    } else if (m_shellService.openPath(lastSavedPath)) {
+    } else if (m_composition.shellService.openPath(lastSavedPath)) {
         m_exportController.setStatus("Opened saved image.");
     } else {
         m_exportController.setStatus("Could not open saved image.");
     }
-    m_redrawRequested = true;
+    m_state.redrawRequested = true;
 }
 
 void Application::showLastSavedExportInFolder() {
     const std::wstring& lastSavedPath = m_exportController.lastSavedPath();
     if (lastSavedPath.empty()) {
         m_exportController.setStatus("No saved export path is available.");
-    } else if (m_shellService.revealPath(lastSavedPath)) {
+    } else if (m_composition.shellService.revealPath(lastSavedPath)) {
         m_exportController.setStatus("Opened saved image location.");
     } else {
         m_exportController.setStatus("Could not show saved image in folder.");
     }
-    m_redrawRequested = true;
+    m_state.redrawRequested = true;
 }
 
 void Application::copyLastSavedExportPath() {
     const std::wstring& lastSavedPath = m_exportController.lastSavedPath();
     if (lastSavedPath.empty()) {
         m_exportController.setStatus("No saved export path is available.");
-    } else if (m_clipboardService.copyUtf16Text(m_hWnd, lastSavedPath)) {
+    } else if (m_composition.clipboardService.copyUtf16Text(m_hWnd, lastSavedPath)) {
         m_exportController.setStatus("Copied saved image path.");
     } else {
         m_exportController.setStatus("Could not copy saved image path.");
     }
-    m_redrawRequested = true;
+    m_state.redrawRequested = true;
 }
 
 void Application::processPendingExportActions() {
@@ -1552,7 +1176,7 @@ void Application::processPendingExportActions() {
         if (!capturePlotPixels(capturedPixels, capturedWidth, capturedHeight)) {
             messages.emplace_back("Export failed: unable to render/capture plot area.");
             m_exportController.clearPendingActions();
-            m_redrawRequested = true;
+            m_state.redrawRequested = true;
             m_exportController.setStatus(messages.front());
             return;
         }
@@ -1564,7 +1188,7 @@ void Application::processPendingExportActions() {
     if (outputImage.width <= 0 || outputImage.height <= 0 || outputImage.pixels.empty()) {
         messages.emplace_back("Export failed: rendered image was invalid.");
         m_exportController.clearPendingActions();
-        m_redrawRequested = true;
+        m_state.redrawRequested = true;
         m_exportController.setStatus(messages.front());
         return;
     }
@@ -1583,7 +1207,7 @@ void Application::processPendingExportActions() {
         }
 
         const XFWin::WicImageEncoder& encoder;
-    } imageEncoder(m_imageEncoder);
+    } imageEncoder(m_composition.imageEncoder);
 
     struct ClipboardAdapter final : XFExport::IExportClipboard {
         ClipboardAdapter(XFWin::ClipboardService& clipboardIn, HWND ownerIn)
@@ -1603,7 +1227,7 @@ void Application::processPendingExportActions() {
 
         XFWin::ClipboardService& clipboard;
         HWND owner;
-    } clipboard(m_clipboardService, m_hWnd);
+    } clipboard(m_composition.clipboardService, m_hWnd);
 
     struct ShellAdapter final : XFExport::IExportShell {
         explicit ShellAdapter(XFWin::ShellService& shellIn) : shell(shellIn) {}
@@ -1617,7 +1241,7 @@ void Application::processPendingExportActions() {
         }
 
         XFWin::ShellService& shell;
-    } shell(m_shellService);
+    } shell(m_composition.shellService);
 
     struct MetadataWriterAdapter final : XFExport::IExportMetadataWriter {
         explicit MetadataWriterAdapter(const Application& appIn) : app(appIn) {}
@@ -1643,7 +1267,8 @@ void Application::processPendingExportActions() {
             (settings.output.format == ExportFormat::Bmp)
                 ? XFWin::ExportImageFormat::Bmp
                 : XFWin::ExportImageFormat::Png;
-        const XFWin::DialogResult dialog = m_fileDialogService.saveImage(m_hWnd, preferredFormat);
+        const XFWin::DialogResult dialog =
+            m_composition.fileDialogService.saveImage(m_hWnd, preferredFormat);
         if (dialog.selected()) {
             const std::wstring& path = dialog.path;
             const std::filesystem::path sidecarPath = XFExport::exportMetadataSidecarPath(
@@ -1680,7 +1305,7 @@ void Application::processPendingExportActions() {
     m_exportController.clearPendingActions();
     // The export frame may be rendered with export-only overrides. Request one more frame
     // so the interactive view returns to the user's normal display settings.
-    m_redrawRequested = true;
+    m_state.redrawRequested = true;
     if (m_exportController.dialogOpen()) {
         m_exportController.requestPopupOpenNextFrame();
     }

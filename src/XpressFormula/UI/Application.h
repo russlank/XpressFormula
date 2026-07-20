@@ -3,29 +3,24 @@
 //                  ImGui context, and orchestrates the UI panels.
 #pragma once
 
-#include "FormulaPanel.h"
-#include "ControlPanel.h"
 #include "ExportSettings.h"
-#include "PlotPanel.h"
+#include "MainWindow.h"
 #include "PlotSettings.h"
+#include "../Application/ApplicationComposition.h"
 #include "../Application/ExportController.h"
 #include "../Application/ExportPreviewTexture.h"
+#include "../Application/ApplicationState.h"
 #include "../Application/ProjectController.h"
+#include "../Application/UpdateController.h"
 #include "../Core/ViewTransform.h"
 #include "../Model/Document.h"
 #include "../Model/Formula.h"
-#include "../Model/SceneSummary.h"
-#include "../Platform/Windows/ClipboardService.h"
-#include "../Platform/Windows/FileDialogService.h"
-#include "../Platform/Windows/ShellService.h"
-#include "../Platform/Windows/WicImageEncoder.h"
 
 #include <chrono>
 #include <cstdint>
 #include <d3d11.h>
 #include <array>
 #include <filesystem>
-#include <future>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -39,15 +34,6 @@ namespace XpressFormula::UI {
 
 class Application {
 public:
-    struct UpdateCheckResult {
-        bool requestSucceeded = false;
-        bool updateAvailable = false;
-        bool manualRequest = false;
-        std::string latestTag;
-        std::string releaseUrl;
-        std::string statusMessage;
-    };
-
     Application();
     ~Application();
 
@@ -87,19 +73,11 @@ private:
     bool createDeviceD3D(HWND hWnd);
     void cleanupDeviceD3D();
     void renderFrame();
-    void renderProjectControls();
-    void renderProjectDiscardDialog();
     void handleProjectShortcuts();
+    void handleMainWindowActions(const MainWindowActions& actions);
     void syncDocumentDependentState();
     void consumeProjectControllerEffects();
     void refreshSceneSummary();
-    void renderPlotToolbar(const Model::SceneSummary& scene);
-    void handlePlotShortcuts();
-    void fitDefaultView();
-    void resetViewAndCamera();
-    void applyCameraPreset(float azimuthDeg, float elevationDeg);
-    void startUpdateCheck(bool manualRequest);
-    void pollUpdateCheckResult();
     void markExportPreviewOutOfDate();
     void requestExportPreviewRefresh();
     bool capturePlotPixels(std::vector<std::uint8_t>& pixels, int& width, int& height);
@@ -108,7 +86,7 @@ private:
     bool readTexturePixelsRgba(ID3D11Texture2D* sourceTexture,
                                std::vector<std::uint8_t>& pixels,
                                int& width, int& height);
-    void renderExportDialog(float sidebarWidth, float viewportHeight);
+    void renderExportDialog();
     void initialiseExportDialogSize();
     bool refreshExportPreviewTexture();
     bool writeExportMetadataSidecar(const ExportSettings& settings,
@@ -127,39 +105,17 @@ private:
     ID3D11RenderTargetView*   m_renderTargetView    = nullptr;
     bool                      m_swapChainOccluded   = false;
     bool                      m_comInitialized      = false;
-    bool                      m_redrawRequested     = true;
-    bool                      m_closeRequestedAfterFrame = false;
 
     // Application state
+    XpressFormula::Application::ApplicationState m_state;
     Model::Document            m_document;
-    Model::Document::Revision  m_observedDocumentRevision = 0;
-    Model::SceneSummary       m_sceneSummary;
-    Infrastructure::Persistence::ProjectRepository m_projectRepository;
-    Infrastructure::Persistence::RecentProjectsStore m_recentProjectsStore;
-    Platform::Windows::FileDialogService m_fileDialogService;
-    Platform::Windows::ShellService m_shellService;
-    Platform::Windows::ClipboardService m_clipboardService;
-    Platform::Windows::WicImageEncoder m_imageEncoder;
+    XpressFormula::Application::ApplicationComposition m_composition;
     ProjectFileDialogAdapter  m_projectFileDialogAdapter;
     XpressFormula::Application::ProjectController m_projectController;
-    float                     m_sidebarWidth = 360.0f;
     XpressFormula::Application::ExportController m_exportController;
     XpressFormula::Application::ExportPreviewTexture m_exportPreview;
-    std::future<UpdateCheckResult> m_updateCheckFuture;
-    bool                      m_updateCheckInProgress = false;
-    bool                      m_startupCheckDone = false;
-    std::chrono::steady_clock::time_point m_startupTime;
-    bool                      m_updateAvailable = false;
-    bool                      m_updateNoticeDismissed = false;
-    bool                      m_versionDetailsExpanded = false;
-    std::string               m_updateLatestTag;
-    std::string               m_updateReleaseUrl = "https://github.com/russlank/XpressFormula/releases";
-    std::string               m_updateStatus;
-
-    // UI panels
-    FormulaPanel  m_formulaPanel;
-    ControlPanel  m_controlPanel;
-    PlotPanel     m_plotPanel;
+    XpressFormula::Application::UpdateController m_updateController;
+    MainWindow m_mainWindow;
 };
 
 } // namespace XpressFormula::UI

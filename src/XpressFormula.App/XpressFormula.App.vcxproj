@@ -105,6 +105,7 @@
     <ClCompile Include="..\XpressFormula\Application\ExportController.cpp" />
     <ClCompile Include="..\XpressFormula\Application\ExportPreviewTexture.cpp" />
     <ClCompile Include="..\XpressFormula\Application\ProjectController.cpp" />
+    <ClCompile Include="..\XpressFormula\Application\UpdateController.cpp" />
     <ClCompile Include="..\XpressFormula\UI\Application.cpp" />
     <ClCompile Include="..\vendor\imgui\backends\imgui_impl_dx11.cpp" />
     <ClCompile Include="..\vendor\imgui\backends\imgui_impl_win32.cpp" />
@@ -112,7 +113,10 @@
   <ItemGroup>
     <ClInclude Include="..\XpressFormula\Application\ExportController.h" />
     <ClInclude Include="..\XpressFormula\Application\ExportPreviewTexture.h" />
+    <ClInclude Include="..\XpressFormula\Application\ApplicationComposition.h" />
+    <ClInclude Include="..\XpressFormula\Application\ApplicationState.h" />
     <ClInclude Include="..\XpressFormula\Application\ProjectController.h" />
+    <ClInclude Include="..\XpressFormula\Application\UpdateController.h" />
     <ClInclude Include="..\XpressFormula\UI\Application.h" />
     <ClInclude Include="..\XpressFormula\Version.h" />
     <ClInclude Include="..\XpressFormula\resource.h" />
