@@ -162,10 +162,11 @@ Automated verification completed locally with Visual Studio MSBuild 18.8.2+ce25c
   `MSBuild src\XpressFormula.Tests\XpressFormula.Tests.vcxproj /p:Configuration=Release /p:Platform=x64 /m`
   Output: `src\XpressFormula.Tests\x64\Release\XpressFormula.Tests.exe`.
 - [x] No compiler warnings in the above builds (`0 Warning(s)`, `0 Error(s)`).
-- [x] Debug automated tests pass: `src\XpressFormula.Tests\x64\Debug\XpressFormula.Tests.exe` reported `458/458 tests passed`.
-- [x] Release automated tests pass: `src\XpressFormula.Tests\x64\Release\XpressFormula.Tests.exe` reported `458/458 tests passed`.
+- [x] Debug automated tests pass: `src\XpressFormula.Tests\x64\Debug\XpressFormula.Tests.exe` reported `459/459 tests passed`.
+- [x] Release automated tests pass: `src\XpressFormula.Tests\x64\Release\XpressFormula.Tests.exe` reported `459/459 tests passed`.
 - [x] Architecture boundary check passes:
   `powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\check-architecture-boundaries.ps1`
+- [x] Architecture boundary check rejects a temporary forbidden Infrastructure -> UI include; the probe file was removed before this record was updated.
 - [x] Existing core tests pass.
 - [x] New project-session tests pass.
 - [x] Export settings and metadata tests pass.

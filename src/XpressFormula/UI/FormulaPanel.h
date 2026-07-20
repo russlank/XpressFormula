@@ -8,6 +8,8 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <utility>
+#include <variant>
 #include <vector>
 
 namespace XpressFormula::Core {
@@ -16,27 +18,66 @@ struct FunctionInfo;
 
 namespace XpressFormula::UI {
 
-enum class FormulaPanelCommandType {
-    AddFormula,
-    UpdateFormula,
-    RemoveFormula,
-    DuplicateFormula,
-    MoveFormula,
-    SetVisibility,
-    SetColor,
-    SetZSlice,
-    HideOtherFormulas
+struct AddFormulaCommand {
+    explicit AddFormulaCommand(Model::Formula value)
+        : formula(std::move(value)) {
+    }
+
+    Model::Formula formula;
 };
 
-struct FormulaPanelCommand {
-    FormulaPanelCommandType type = FormulaPanelCommandType::AddFormula;
+struct UpdateFormulaCommand {
+    UpdateFormulaCommand(Model::FormulaId targetId, Model::Formula value)
+        : formulaId(targetId),
+          formula(std::move(value)) {
+    }
+
     Model::FormulaId formulaId = 0;
     Model::Formula formula;
+};
+
+struct RemoveFormulaCommand {
+    Model::FormulaId formulaId = 0;
+};
+
+struct DuplicateFormulaCommand {
+    Model::FormulaId formulaId = 0;
+};
+
+struct MoveFormulaCommand {
+    Model::FormulaId formulaId = 0;
     std::size_t toIndex = 0;
+};
+
+struct SetFormulaVisibilityCommand {
+    Model::FormulaId formulaId = 0;
     bool visible = true;
+};
+
+struct SetFormulaColorCommand {
+    Model::FormulaId formulaId = 0;
     Model::ColorRgba color;
+};
+
+struct SetFormulaZSliceCommand {
+    Model::FormulaId formulaId = 0;
     double zSlice = 0.0;
 };
+
+struct HideOtherFormulasCommand {
+    Model::FormulaId formulaId = 0;
+};
+
+using FormulaPanelCommand = std::variant<
+    AddFormulaCommand,
+    UpdateFormulaCommand,
+    RemoveFormulaCommand,
+    DuplicateFormulaCommand,
+    MoveFormulaCommand,
+    SetFormulaVisibilityCommand,
+    SetFormulaColorCommand,
+    SetFormulaZSliceCommand,
+    HideOtherFormulasCommand>;
 
 struct FormulaPanelActions {
     std::vector<FormulaPanelCommand> commands;

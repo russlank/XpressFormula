@@ -232,7 +232,7 @@ TEST_CASE(ProjectSession_RepeatedSerializeParseIsStable) {
     }
 }
 
-TEST_CASE(ProjectSession_SerializedSnapshotCharacterizesDirtyState) {
+TEST_CASE(ProjectSession_SerializedOutputChangesWhenPersistentStateChanges) {
     ProjectSession session;
     session.formulas.push_back(ProjectFormulaRecord{});
     session.formulas[0].expression = "sin(sqrt(x^2+y^2))";
@@ -241,17 +241,17 @@ TEST_CASE(ProjectSession_SerializedSnapshotCharacterizesDirtyState) {
     session.view.scaleX = 60.0;
     session.view.scaleY = 60.0;
 
-    const std::string cleanSnapshot = serializeProjectSession(session);
+    const std::string originalJson = serializeProjectSession(session);
 
     ProjectSession edited = session;
     edited.formulas[0].expression = "sin(x)";
-    Assert::IsFalse(serializeProjectSession(edited) == cleanSnapshot);
+    Assert::IsFalse(serializeProjectSession(edited) == originalJson);
 
-    const std::string savedSnapshot = serializeProjectSession(edited);
-    Assert::AreEqual(savedSnapshot, serializeProjectSession(edited));
+    const std::string editedJson = serializeProjectSession(edited);
+    Assert::AreEqual(editedJson, serializeProjectSession(edited));
 
     edited.view.centerX = 2.0;
-    Assert::IsFalse(serializeProjectSession(edited) == savedSnapshot);
+    Assert::IsFalse(serializeProjectSession(edited) == editedJson);
 }
 
 TEST_CASE(ProjectSession_SerializesNonFiniteValuesAsSafeJsonNumbers) {

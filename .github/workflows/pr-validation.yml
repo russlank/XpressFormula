@@ -37,6 +37,10 @@ jobs:
         shell: pwsh
         run: msbuild -version
 
+      - name: Check Architecture Boundaries
+        shell: pwsh
+        run: .\tools\check-architecture-boundaries.ps1
+
       - name: Build Debug App
         shell: pwsh
         run: |

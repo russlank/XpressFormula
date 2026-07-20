@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <span>
 #include <string>
+#include <variant>
 
 namespace XpressFormula::UI {
 
@@ -17,30 +18,46 @@ namespace {
 
 constexpr const char* kExportDialogPopupId = "Export Plot Settings";
 
+template <class... Ts>
+struct Overloaded : Ts... {
+    using Ts::operator()...;
+};
+
+template <class... Ts>
+Overloaded(Ts...) -> Overloaded<Ts...>;
+
 bool applyFormulaPanelCommand(Model::Document& document,
                               const FormulaPanelCommand& command) {
-    switch (command.type) {
-        case FormulaPanelCommandType::AddFormula:
-            document.addFormula(command.formula);
+    return std::visit(Overloaded{
+        [&document](const AddFormulaCommand& add) {
+            document.addFormula(add.formula);
             return true;
-        case FormulaPanelCommandType::UpdateFormula:
-            return document.updateFormula(command.formulaId, command.formula);
-        case FormulaPanelCommandType::RemoveFormula:
-            return document.removeFormula(command.formulaId);
-        case FormulaPanelCommandType::DuplicateFormula:
-            return document.duplicateFormula(command.formulaId);
-        case FormulaPanelCommandType::MoveFormula:
-            return document.moveFormula(command.formulaId, command.toIndex);
-        case FormulaPanelCommandType::SetVisibility:
-            return document.setFormulaVisibility(command.formulaId, command.visible);
-        case FormulaPanelCommandType::SetColor:
-            return document.setFormulaColor(command.formulaId, command.color);
-        case FormulaPanelCommandType::SetZSlice:
-            return document.setFormulaZSlice(command.formulaId, command.zSlice);
-        case FormulaPanelCommandType::HideOtherFormulas:
-            return document.hideOtherFormulas(command.formulaId);
-    }
-    return false;
+        },
+        [&document](const UpdateFormulaCommand& update) {
+            return document.updateFormula(update.formulaId, update.formula);
+        },
+        [&document](const RemoveFormulaCommand& remove) {
+            return document.removeFormula(remove.formulaId);
+        },
+        [&document](const DuplicateFormulaCommand& duplicate) {
+            return document.duplicateFormula(duplicate.formulaId);
+        },
+        [&document](const MoveFormulaCommand& move) {
+            return document.moveFormula(move.formulaId, move.toIndex);
+        },
+        [&document](const SetFormulaVisibilityCommand& visibility) {
+            return document.setFormulaVisibility(visibility.formulaId, visibility.visible);
+        },
+        [&document](const SetFormulaColorCommand& color) {
+            return document.setFormulaColor(color.formulaId, color.color);
+        },
+        [&document](const SetFormulaZSliceCommand& zSlice) {
+            return document.setFormulaZSlice(zSlice.formulaId, zSlice.zSlice);
+        },
+        [&document](const HideOtherFormulasCommand& hideOthers) {
+            return document.hideOtherFormulas(hideOthers.formulaId);
+        }
+    }, command);
 }
 
 bool shouldResetAutoRotationRuntime(const PlotSettings& before,

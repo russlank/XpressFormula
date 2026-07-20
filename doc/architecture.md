@@ -63,7 +63,7 @@ This first boundary step references existing files from new static-library proje
 - [`src/XpressFormula/Core/UpdateVersionUtils.h`](../src/XpressFormula/Core/UpdateVersionUtils.h)
   - Small header-only utilities for semantic-version parsing/comparison and extracting GitHub release fields from API JSON.
 - [`src/XpressFormula/UI/Application.h`](../src/XpressFormula/UI/Application.h) and [`src/XpressFormula/UI/Application.cpp`](../src/XpressFormula/UI/Application.cpp)
-  - Owns Win32 window, D3D11 resources, ImGui lifecycle, frame loop, main sidebar/plot layout state, plot toolbar actions, and export workflow.
+  - Owns Win32 window lifecycle, D3D11 resources, ImGui lifecycle, frame orchestration, controller coordination, D3D-specific export rendering, texture readback, and high-level workflow state.
 - [`src/XpressFormula/UI/UiKit`](../src/XpressFormula/UI/UiKit)
   - Thin immediate-mode UI helpers: shared metrics, pure responsive layout planners, RAII ImGui scopes, deterministic toolbar rows, property grids, splitter sizing, and modal sizing.
 - [`src/XpressFormula/UI/Components`](../src/XpressFormula/UI/Components)
@@ -78,8 +78,22 @@ This first boundary step references existing files from new static-library proje
   - Global 2D view controls, display toggles (grid/coordinates/wires), reusable property-grid rows for 3D/heatmap controls, and export dialog launch action.
 - [`src/XpressFormula/UI/PlotPanel.h`](../src/XpressFormula/UI/PlotPanel.h) and [`src/XpressFormula/UI/PlotPanel.cpp`](../src/XpressFormula/UI/PlotPanel.cpp)
   - Interactive plotting area and mouse interactions. It delegates render planning to `Plotting::buildPlotRenderPlan` and draws with effective settings, export overrides, and optional runtime camera azimuth.
-- [`src/XpressFormula/Infrastructure/Persistence`](../src/XpressFormula/Infrastructure/Persistence)
-  - Versioned `.xfplot` persistence boundary: plain session records, JSON serialization/parsing, schema validation, repository save/load, recent-project storage, and safe mapping to/from `Model::Document`.
+- [`src/XpressFormula/Model/Document.h`](../src/XpressFormula/Model/Document.h) and [`src/XpressFormula/Model/Document.cpp`](../src/XpressFormula/Model/Document.cpp)
+  - Live formulas, persistent view state, plot settings, revision and saved-revision tracking, and dirty-state calculation.
+- [`src/XpressFormula/Application/ProjectController.h`](../src/XpressFormula/Application/ProjectController.h) and [`src/XpressFormula/Application/ProjectController.cpp`](../src/XpressFormula/Application/ProjectController.cpp)
+  - Current project path, New/Open/Save/Save As workflow, recent-project integration, unsaved-change flow, project status, and side-effect requests.
+- [`src/XpressFormula/Infrastructure/Serialization`](../src/XpressFormula/Infrastructure/Serialization)
+  - Shared JSON value/parser/writer infrastructure.
+- [`src/XpressFormula/Infrastructure/Persistence/ProjectSession.h`](../src/XpressFormula/Infrastructure/Persistence/ProjectSession.h)
+  - Versioned `.xfplot` DTO records only.
+- [`src/XpressFormula/Infrastructure/Persistence/ProjectSerializer.h`](../src/XpressFormula/Infrastructure/Persistence/ProjectSerializer.h) and [`src/XpressFormula/Infrastructure/Persistence/ProjectSerializer.cpp`](../src/XpressFormula/Infrastructure/Persistence/ProjectSerializer.cpp)
+  - `ProjectSession` JSON serialization, parsing, and schema validation.
+- [`src/XpressFormula/Infrastructure/Persistence/ProjectMapper.h`](../src/XpressFormula/Infrastructure/Persistence/ProjectMapper.h) and [`src/XpressFormula/Infrastructure/Persistence/ProjectMapper.cpp`](../src/XpressFormula/Infrastructure/Persistence/ProjectMapper.cpp)
+  - Safe mapping between persistence DTOs and `Model::Document` state.
+- [`src/XpressFormula/Infrastructure/Persistence/ProjectRepository.h`](../src/XpressFormula/Infrastructure/Persistence/ProjectRepository.h) and [`src/XpressFormula/Infrastructure/Persistence/ProjectRepository.cpp`](../src/XpressFormula/Infrastructure/Persistence/ProjectRepository.cpp)
+  - Project file reading and atomic project writing.
+- [`src/XpressFormula/Infrastructure/Persistence/RecentProjectsStore.h`](../src/XpressFormula/Infrastructure/Persistence/RecentProjectsStore.h) and [`src/XpressFormula/Infrastructure/Persistence/RecentProjectsStore.cpp`](../src/XpressFormula/Infrastructure/Persistence/RecentProjectsStore.cpp)
+  - Recent-project storage, deduplication, and cleanup.
 - [`src/XpressFormula/Version.h`](../src/XpressFormula/Version.h)
   - Centralized semantic version metadata used by window title, resources, and packaging.
 - [`src/XpressFormula/Plotting/PlotRenderer.h`](../src/XpressFormula/Plotting/PlotRenderer.h) and [`src/XpressFormula/Plotting/PlotRenderer.cpp`](../src/XpressFormula/Plotting/PlotRenderer.cpp)
@@ -101,11 +115,22 @@ This first boundary step references existing files from new static-library proje
 
 ## Project Persistence Boundary
 
-`ProjectSession` is the versioned boundary for `.xfplot` files. `Application` owns live state (`Model::Formula`, `ViewTransform`, `PlotSettings`, project path, dirty flag, and recent list), while the serializer works on plain records that do not depend on ImGui widgets.
+`Model::Document` owns live formulas, persistent view state, plot settings, revision, saved revision, and dirty-state calculation. Dirty state is revision-based: the document is clean when `revision() == savedRevision()`. Persistent mutations increment revision only when they change state, successful saves call `markSaved()`, and New/Open replace the document with a clean loaded state. Transient viewport geometry and runtime auto-rotation do not dirty the document.
+
+`Application::ProjectController` owns the current project path, New/Open/Save/Save As workflow, recent-project integration, unsaved-change flow, project status, and side-effect requests. It coordinates persistence services but does not own JSON parsing, schema validation, or dirty-state comparison.
+
+The persistence implementation is split by responsibility:
+
+- `Infrastructure/Serialization`: shared JSON value/parser/writer.
+- `Infrastructure/Persistence/ProjectSession.h`: versioned persistence DTOs only.
+- `Infrastructure/Persistence/ProjectSerializer.*`: DTO serialization, parsing, and schema validation.
+- `Infrastructure/Persistence/ProjectMapper.*`: `ProjectSession` <-> `Model::Document` mapping.
+- `Infrastructure/Persistence/ProjectRepository.*`: project file reading and atomic project writing.
+- `Infrastructure/Persistence/RecentProjectsStore.*`: recent-project storage, deduplication, and cleanup.
 
 Important rules:
 
-- Build a `ProjectSession` snapshot from application state before saving.
+- Build a `ProjectSession` DTO from `Model::Document` state before saving.
 - Parse and validate a full project file before mutating active application state.
 - Retain invalid loaded formulas where possible and report load warnings after reparsing.
 - Persist formula expression, color, visibility, and z-slice only; runtime IDs, compiled ASTs, diagnostics, and editor state are rebuilt in memory.
@@ -114,9 +139,7 @@ Important rules:
 - Persist only `ViewState` center/scale values; viewport origin/size is frame layout state and is not written to `.xfplot`.
 - Keep unknown fields tolerated for schema version 1 so future writers can add data without breaking older builds.
 - Write project files through a temporary file followed by replacement so failed writes do not leave a partial target file.
-- Treat dirty state as a serialized-state comparison against the last clean snapshot.
-
-`ProjectSession.h` currently contains both the schema records and the small JSON parser/serializer. That can be split later if the format grows, but file size alone is not a reason to refactor it.
+- Treat dirty state as a revision comparison against the last saved revision.
 
 ## UI Toolkit Boundary
 

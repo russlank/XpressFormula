@@ -1,9 +1,13 @@
 // FormulaListActionsTests.cpp - Tests for formula-list management helpers.
 #include "CppUnitTest.h"
+#include "../XpressFormula/UI/FormulaPanel.h"
 #include "../XpressFormula/UI/FormulaListActions.h"
 
 #include <cstring>
 #include <optional>
+#include <type_traits>
+#include <utility>
+#include <variant>
 #include <vector>
 
 using namespace Microsoft::VisualStudio::CppUnitTestFramework;
@@ -21,6 +25,68 @@ static XFModel::Formula makeFormula(const char* expression) {
 
 static void assertStringEquals(const char* expected, const char* actual) {
     Assert::IsTrue(std::strcmp(expected, actual) == 0);
+}
+
+template <typename T, typename = void>
+struct HasFormulaPayload : std::false_type {};
+
+template <typename T>
+struct HasFormulaPayload<T, std::void_t<decltype(std::declval<T>().formula)>>
+    : std::true_type {};
+
+TEST_CASE(FormulaPanelCommand_PayloadsAreCommandSpecific) {
+    static_assert(!std::is_default_constructible_v<XFUI::FormulaPanelCommand>);
+    static_assert(HasFormulaPayload<XFUI::AddFormulaCommand>::value);
+    static_assert(HasFormulaPayload<XFUI::UpdateFormulaCommand>::value);
+    static_assert(!HasFormulaPayload<XFUI::RemoveFormulaCommand>::value);
+    static_assert(!HasFormulaPayload<XFUI::DuplicateFormulaCommand>::value);
+    static_assert(!HasFormulaPayload<XFUI::MoveFormulaCommand>::value);
+    static_assert(!HasFormulaPayload<XFUI::SetFormulaVisibilityCommand>::value);
+    static_assert(!HasFormulaPayload<XFUI::SetFormulaColorCommand>::value);
+    static_assert(!HasFormulaPayload<XFUI::SetFormulaZSliceCommand>::value);
+    static_assert(!HasFormulaPayload<XFUI::HideOtherFormulasCommand>::value);
+
+    XFModel::Formula addFormula = makeFormula("sin(x)");
+    const XFModel::FormulaId addId = addFormula.id;
+    XFUI::FormulaPanelCommand add = XFUI::AddFormulaCommand{ std::move(addFormula) };
+    Assert::IsTrue(std::holds_alternative<XFUI::AddFormulaCommand>(add));
+    Assert::AreEqual(addId, std::get<XFUI::AddFormulaCommand>(add).formula.id);
+
+    XFModel::Formula updateFormula = makeFormula("cos(x)");
+    const XFModel::FormulaId updatePayloadId = updateFormula.id;
+    XFUI::FormulaPanelCommand update =
+        XFUI::UpdateFormulaCommand{ 42u, std::move(updateFormula) };
+    Assert::IsTrue(std::holds_alternative<XFUI::UpdateFormulaCommand>(update));
+    Assert::AreEqual(42ull, std::get<XFUI::UpdateFormulaCommand>(update).formulaId);
+    Assert::AreEqual(updatePayloadId,
+                     std::get<XFUI::UpdateFormulaCommand>(update).formula.id);
+
+    XFUI::FormulaPanelCommand remove = XFUI::RemoveFormulaCommand{ 7u };
+    Assert::AreEqual(7ull, std::get<XFUI::RemoveFormulaCommand>(remove).formulaId);
+
+    XFUI::FormulaPanelCommand duplicate = XFUI::DuplicateFormulaCommand{ 8u };
+    Assert::AreEqual(8ull, std::get<XFUI::DuplicateFormulaCommand>(duplicate).formulaId);
+
+    XFUI::FormulaPanelCommand move = XFUI::MoveFormulaCommand{ 9u, 2u };
+    Assert::AreEqual(9ull, std::get<XFUI::MoveFormulaCommand>(move).formulaId);
+    Assert::AreEqual(static_cast<std::size_t>(2),
+                     std::get<XFUI::MoveFormulaCommand>(move).toIndex);
+
+    XFUI::FormulaPanelCommand visibility = XFUI::SetFormulaVisibilityCommand{ 10u, false };
+    Assert::AreEqual(10ull, std::get<XFUI::SetFormulaVisibilityCommand>(visibility).formulaId);
+    Assert::IsFalse(std::get<XFUI::SetFormulaVisibilityCommand>(visibility).visible);
+
+    XFModel::ColorRgba color{ 0.1f, 0.2f, 0.3f, 0.4f };
+    XFUI::FormulaPanelCommand setColor = XFUI::SetFormulaColorCommand{ 11u, color };
+    Assert::AreEqual(11ull, std::get<XFUI::SetFormulaColorCommand>(setColor).formulaId);
+    Assert::AreEqual(0.3f, std::get<XFUI::SetFormulaColorCommand>(setColor).color[2]);
+
+    XFUI::FormulaPanelCommand zSlice = XFUI::SetFormulaZSliceCommand{ 12u, 4.5 };
+    Assert::AreEqual(12ull, std::get<XFUI::SetFormulaZSliceCommand>(zSlice).formulaId);
+    Assert::AreEqual(4.5, std::get<XFUI::SetFormulaZSliceCommand>(zSlice).zSlice);
+
+    XFUI::FormulaPanelCommand hideOthers = XFUI::HideOtherFormulasCommand{ 13u };
+    Assert::AreEqual(13ull, std::get<XFUI::HideOtherFormulasCommand>(hideOthers).formulaId);
 }
 
 TEST_CASE(FormulaListActions_DuplicateCreatesIndependentEntryById) {

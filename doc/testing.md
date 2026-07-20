@@ -30,8 +30,12 @@ The test project links the production static libraries (`XpressFormula.Expressio
   - infrastructure-owned export settings, size/aspect plans, export profiles, preview sizing, output workflow actions, and JSON sidecar helpers
 - Project/session persistence
   - `.xfplot` numeric precision, Unicode escapes, malformed JSON rejection, schema validation, enum compatibility, safe clamping, formula warnings, and repeated save/load stability
+- Document revision and dirty-state transitions
+  - real persistent mutations increment revision, no-op mutations do not, save/load/new establish clean state, and transient auto-rotation does not dirty the document
+- Project controller and persistence subsystem
+  - New/Open/Save/Save As, current path state, recent-project integration, unsaved-change decisions, `ProjectSession` DTOs, JSON serializer/parser validation, mapper behavior, repository I/O, and atomic writes
 - Architecture characterization
-  - default startup formula behavior and serialized snapshot dirty-state scenarios that are testable without UI automation
+  - default startup formula behavior, production-library linkage, and source-boundary rules that are testable without UI automation
 - UI layout plans
   - responsive plot toolbar, formula-card breakpoints, splitter clamping, and modal sizing
 - Plot runtime and render planning
@@ -64,7 +68,7 @@ Architecture boundary check:
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\check-architecture-boundaries.ps1
 ```
 
-CI PR validation builds Debug/Release app and test targets with explicit, non-colliding `IntDir` and `OutDir` values under `build\obj\...` and `build\bin\...`, then runs tests from those configured output directories.
+CI PR validation runs the architecture boundary check, builds Debug application and test targets, runs Debug tests, builds Release application and test targets, and runs Release tests. The workflow uses explicit, non-colliding `IntDir` and `OutDir` values under `build\obj\...` and `build\bin\...`, then runs tests from those configured output directories.
 
 ## Interpreting Results
 
