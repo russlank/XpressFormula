@@ -103,6 +103,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="..\XpressFormula\Application\ExportController.cpp" />
+    <ClCompile Include="..\XpressFormula\Application\ExportOutputAdapters.cpp" />
     <ClCompile Include="..\XpressFormula\Application\ExportPreviewTexture.cpp" />
     <ClCompile Include="..\XpressFormula\Application\ProjectController.cpp" />
     <ClCompile Include="..\XpressFormula\Application\UpdateController.cpp" />
@@ -112,6 +113,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\XpressFormula\Application\ExportController.h" />
+    <ClInclude Include="..\XpressFormula\Application\ExportOutputAdapters.h" />
     <ClInclude Include="..\XpressFormula\Application\ExportPreviewTexture.h" />
     <ClInclude Include="..\XpressFormula\Application\ApplicationComposition.h" />
     <ClInclude Include="..\XpressFormula\Application\ApplicationState.h" />

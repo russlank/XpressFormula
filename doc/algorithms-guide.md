@@ -31,8 +31,8 @@ Files involved:
 - Tokenizer: [`src/XpressFormula/Core/Tokenizer.h`](../src/XpressFormula/Core/Tokenizer.h)
 - Parser: [`src/XpressFormula/Core/Parser.h`](../src/XpressFormula/Core/Parser.h)
 - Evaluator: [`src/XpressFormula/Core/Evaluator.h`](../src/XpressFormula/Core/Evaluator.h)
-- Formula classification: [`src/XpressFormula/UI/FormulaEntry.h`](../src/XpressFormula/UI/FormulaEntry.h)
-- Plot rendering: [`src/XpressFormula/Plotting/PlotRenderer.h`](../src/XpressFormula/Plotting/PlotRenderer.h)
+- Formula classification: [`src/XpressFormula/Expression/FormulaCompiler.h`](../src/XpressFormula/Expression/FormulaCompiler.h) and [`src/XpressFormula/Model/Formula.h`](../src/XpressFormula/Model/Formula.h)
+- Plot planning/rendering: [`src/XpressFormula/Plotting/PlotRenderPlan.h`](../src/XpressFormula/Plotting/PlotRenderPlan.h), [`src/XpressFormula/Plotting/PlotRenderer.h`](../src/XpressFormula/Plotting/PlotRenderer.h), and the pure helpers under [`src/XpressFormula/Plotting`](../src/XpressFormula/Plotting)
 
 ## Part 1: Expression Handling
 
@@ -203,7 +203,7 @@ Special case:
 
 - If the equation is solved for `z` (for example `z = ...` or `... = z`) and the other side does not contain `z`, it is treated as an explicit `z=f(x,y)` surface.
 
-This classification happens in `FormulaEntry::parse()`.
+This classification happens in the expression compiler and is stored on `Model::Formula` as compiled formula state. UI presentation helpers translate that state into labels.
 
 ## Part 3: AST Evaluation
 
@@ -459,6 +459,13 @@ Wire density is separate from mesh resolution:
 - explicit `z=f(x,y)` surfaces draw wire rows/columns using `Wire Stride`
 - implicit meshes draw a stride-filtered subset of mesh edges
 - changing stride affects readability and draw cost, but does not resample the surface
+
+Camera policy:
+
+- the saved plot settings store the base azimuth/elevation/z-scale
+- auto-rotation advances a transient runtime azimuth offset
+- render planning can use the effective runtime azimuth for interactive frames
+- export rendering omits the runtime offset by default, so repeated exports are deterministic unless a caller intentionally supplies a runtime camera value
 
 Important alignment detail (recent fix):
 

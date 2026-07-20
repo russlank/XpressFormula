@@ -10,6 +10,7 @@
 #include "../Model/Document.h"
 #include "../Model/SceneSummary.h"
 
+#include <optional>
 #include <string_view>
 
 namespace XpressFormula::UI {
@@ -41,6 +42,7 @@ struct MainWindowContext {
     bool exportDialogOpen = false;
     bool openUnsavedProjectDialog = false;
     const PlotRenderOverrides* exportOverrides = nullptr;
+    std::optional<float> runtimeAzimuthDeg;
 };
 
 struct MainWindowActions {
@@ -55,6 +57,7 @@ struct MainWindowActions {
     bool requestDismissUpdateNotice = false;
     bool updateDetailsExpandedChanged = false;
     bool updateDetailsExpanded = false;
+    bool resetAutoRotationRuntime = false;
     bool redrawRequested = false;
 };
 

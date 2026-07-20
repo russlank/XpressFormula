@@ -60,7 +60,7 @@ PlotRenderPlan buildPlotRenderPlan(const PlotRenderPlanInput& input) {
     plan.effective = qualityPlan.effective;
     plan.qualityDecision = qualityPlan.decision;
     plan.camera = Camera3D{
-        plan.effective.azimuthDeg,
+        input.runtimeAzimuthDeg.value_or(plan.effective.azimuthDeg),
         plan.effective.elevationDeg,
         plan.effective.zScale
     };

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Application.cpp - Win32 + D3D11 + ImGui application implementation.
 #include "Application.h"
-#include "../Infrastructure/FileSystem/AtomicFileWriter.h"
+#include "../Application/ExportOutputAdapters.h"
 #include "../Infrastructure/Export/ExportMetadataSerializer.h"
 #include "../Infrastructure/Export/ExportOutputWorkflow.h"
 #include "../Infrastructure/Export/ExportRenderRequest.h"
@@ -33,6 +33,7 @@
 #include <cwchar>
 #include <exception>
 #include <filesystem>
+#include <optional>
 #include <sstream>
 #include <span>
 #include <string>
@@ -48,6 +49,7 @@ extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(
 static XpressFormula::UI::Application* g_app = nullptr;
 
 namespace XFExport = XpressFormula::Infrastructure::Export;
+namespace XFApp = XpressFormula::Application;
 namespace XFWin = XpressFormula::Platform::Windows;
 namespace XFWUtf = XpressFormula::Platform::Windows;
 
@@ -72,6 +74,26 @@ XpressFormula::Model::Document makeDefaultProjectDocument() {
     XpressFormula::Model::Document document;
     document.replaceState(std::move(formulas), view, plot, true);
     return document;
+}
+
+std::vector<XpressFormula::UI::Components::RecentProjectItem> makeRecentProjectItems(
+    const std::vector<std::wstring>& paths) {
+    std::vector<XpressFormula::UI::Components::RecentProjectItem> items;
+    items.reserve(paths.size());
+    for (const std::wstring& path : paths) {
+        XpressFormula::UI::Components::RecentProjectItem item;
+        item.path = path;
+        item.fullPath = XFWUtf::utf16ToUtf8OrEmpty(path);
+        item.label = XFWUtf::utf16ToUtf8OrEmpty(
+            std::filesystem::path(path).filename().wstring());
+        if (item.label.empty()) {
+            item.label = item.fullPath;
+        }
+        std::error_code pathError;
+        item.exists = std::filesystem::exists(std::filesystem::path(path), pathError);
+        items.push_back(std::move(item));
+    }
+    return items;
 }
 
 } // namespace
@@ -145,6 +167,7 @@ void Application::refreshSceneSummary() {
 void Application::syncDocumentDependentState() {
     if (m_projectController.consumeDocumentReplaced()) {
         m_mainWindow.resetFormulaColorCycle(static_cast<int>(m_document.formulas().size()));
+        m_state.plotRuntime.resetAutoRotation();
         m_exportController.dialogSettings() = defaultExportSettings();
         m_exportController.setSizeInitialized(false);
     }
@@ -265,6 +288,9 @@ void Application::handleMainWindowActions(const MainWindowActions& actions) {
 
     if (actions.documentChanged) {
         syncDocumentDependentState();
+    }
+    if (actions.resetAutoRotationRuntime) {
+        m_state.plotRuntime.resetAutoRotation();
     }
     if (actions.redrawRequested) {
         m_state.redrawRequested = true;
@@ -481,8 +507,23 @@ void Application::renderFrame() {
         exportOverrides = plotRenderOverridesForExport(m_exportController.pendingSettings());
     }
 
+    PlotSettings runtimePlotSettings = m_document.plotSettings();
+    normalizePlotSettings(runtimePlotSettings);
+    const XYRenderMode runtimeRenderMode =
+        runtimePlotSettings.resolveXYRenderMode(m_state.sceneSummary);
+    std::optional<float> runtimeAzimuthDeg;
+    if (runtimePlotSettings.autoRotate &&
+        m_state.sceneSummary.hasVisible3D() &&
+        runtimeRenderMode == XYRenderMode::Surface3D) {
+        runtimeAzimuthDeg = XpressFormula::Application::effectiveRuntimeAzimuthDeg(
+            runtimePlotSettings,
+            m_state.plotRuntime);
+    }
+
     const XpressFormula::Application::UpdateNotificationState updateState =
         m_updateController.notificationState();
+    const std::vector<Components::RecentProjectItem> recentProjectItems =
+        makeRecentProjectItems(m_projectController.recentProjectPaths());
     MainWindowContext workspaceContext{
         m_document,
         m_state.sceneSummary,
@@ -490,7 +531,7 @@ void Application::renderFrame() {
             m_projectController.displayName(m_document),
             m_projectController.currentPathUtf8(),
             m_projectController.status(),
-            &m_projectController.recentProjectPaths()
+            &recentProjectItems
         },
         MainWindowUpdateNotification{
             updateState.checkInProgress,
@@ -510,7 +551,8 @@ void Application::renderFrame() {
         m_exportController.status(),
         m_exportController.dialogOpen(),
         m_projectController.consumeUnsavedPromptRequest(),
-        exportOverrides.active ? &exportOverrides : nullptr
+        exportOverrides.active ? &exportOverrides : nullptr,
+        runtimeAzimuthDeg
     };
 
     const MainWindowActions mainWindowActions =
@@ -539,24 +581,26 @@ void Application::updatePlotCamera(float deltaSeconds) {
 
     PlotSettings settingsSnapshot = m_document.plotSettings();
     normalizePlotSettings(settingsSnapshot);
-    const XYRenderMode renderMode = settingsSnapshot.resolveXYRenderMode(m_state.sceneSummary);
-    if (!m_state.sceneSummary.hasVisible3D() ||
-        renderMode != XYRenderMode::Surface3D ||
-        !settingsSnapshot.autoRotate) {
+    if (!settingsSnapshot.autoRotate) {
+        if (m_state.plotRuntime.autoRotationOffsetDeg != 0.0f) {
+            m_state.plotRuntime.resetAutoRotation();
+            m_state.redrawRequested = true;
+        }
         return;
     }
 
-    auto plot = m_document.editPlotSettings();
-    PlotSettings& settings = plot.get();
-    settings.azimuthDeg =
-        settingsSnapshot.azimuthDeg + deltaSeconds * settingsSnapshot.autoRotateSpeedDegPerSec;
-    while (settings.azimuthDeg > 180.0f) {
-        settings.azimuthDeg -= 360.0f;
+    const XYRenderMode renderMode = settingsSnapshot.resolveXYRenderMode(m_state.sceneSummary);
+    if (!m_state.sceneSummary.hasVisible3D() ||
+        renderMode != XYRenderMode::Surface3D) {
+        return;
     }
-    while (settings.azimuthDeg < -180.0f) {
-        settings.azimuthDeg += 360.0f;
+
+    if (XpressFormula::Application::advanceAutoRotation(
+            m_state.plotRuntime,
+            settingsSnapshot,
+            deltaSeconds)) {
+        m_state.redrawRequested = true;
     }
-    m_state.redrawRequested = true;
 }
 
 void Application::initialiseExportDialogSize() {
@@ -1114,50 +1158,12 @@ bool Application::renderPlotPixelsOffscreen(const ExportSettings& settings,
     return readOk;
 }
 
-bool Application::writeExportMetadataSidecar(const ExportSettings& settings,
-                                             const std::wstring& imagePath,
-                                             int width,
-                                             int height,
-                                             std::string& error) const {
-    error.clear();
-    const std::filesystem::path sidecarPath = XFExport::exportMetadataSidecarPath(
-        std::filesystem::path(imagePath));
-    const XFExport::ExportAppMetadata appMetadata{
-        "XpressFormula",
-        XF_BUILD_VERSION,
-        XF_BUILD_REPO_URL,
-        XF_BUILD_BRANCH,
-        XF_BUILD_COMMIT
-    };
-    const XFExport::ExportMetadataModel metadata = XFExport::makeExportMetadataModel(
-        settings,
-        XFWUtf::utf16ToUtf8OrEmpty(imagePath),
-        std::filesystem::path(imagePath),
-        width,
-        height,
-        appMetadata,
-        m_document.formulas(),
-        m_document.viewTransform(),
-        m_document.plotSettings());
-    const XFExport::ExportOperationResult writeResult = [&]() {
-        const std::string json = XFExport::serializeExportMetadata(metadata);
-        const auto result = XpressFormula::Infrastructure::FileSystem::writeTextAtomically(sidecarPath, json);
-        if (!result) {
-            return XFExport::ExportOperationResult{ false, "Could not write metadata sidecar: " + result.error };
-        }
-        return XFExport::ExportOperationResult{ true, {} };
-    }();
-    if (!writeResult) {
-        error = writeResult.error;
-        return false;
-    }
-    return true;
-}
 void Application::openLastSavedExport() {
     const std::wstring& lastSavedPath = m_exportController.lastSavedPath();
+    XFApp::ExportShellAdapter shell(m_composition.shellService);
     if (lastSavedPath.empty()) {
         m_exportController.setStatus("No saved export path is available.");
-    } else if (m_composition.shellService.openPath(lastSavedPath)) {
+    } else if (shell.openPath(lastSavedPath)) {
         m_exportController.setStatus("Opened saved image.");
     } else {
         m_exportController.setStatus("Could not open saved image.");
@@ -1167,9 +1173,10 @@ void Application::openLastSavedExport() {
 
 void Application::showLastSavedExportInFolder() {
     const std::wstring& lastSavedPath = m_exportController.lastSavedPath();
+    XFApp::ExportShellAdapter shell(m_composition.shellService);
     if (lastSavedPath.empty()) {
         m_exportController.setStatus("No saved export path is available.");
-    } else if (m_composition.shellService.revealPath(lastSavedPath)) {
+    } else if (shell.revealPath(lastSavedPath)) {
         m_exportController.setStatus("Opened saved image location.");
     } else {
         m_exportController.setStatus("Could not show saved image in folder.");
@@ -1179,9 +1186,10 @@ void Application::showLastSavedExportInFolder() {
 
 void Application::copyLastSavedExportPath() {
     const std::wstring& lastSavedPath = m_exportController.lastSavedPath();
+    XFApp::ExportClipboardAdapter clipboard(m_composition.clipboardService, m_hWnd);
     if (lastSavedPath.empty()) {
         m_exportController.setStatus("No saved export path is available.");
-    } else if (m_composition.clipboardService.copyUtf16Text(m_hWnd, lastSavedPath)) {
+    } else if (clipboard.copyText(lastSavedPath)) {
         m_exportController.setStatus("Copied saved image path.");
     } else {
         m_exportController.setStatus("Could not copy saved image path.");
@@ -1221,74 +1229,23 @@ void Application::processPendingExportActions() {
         return;
     }
 
-    struct ImageEncoderAdapter final : XFExport::IExportImageEncoder {
-        explicit ImageEncoderAdapter(const XFWin::WicImageEncoder& encoderIn)
-            : encoder(encoderIn) {}
-
-        XFExport::ExportOperationResult saveImageBgra(const std::wstring& path,
-                                                      std::span<const std::uint8_t> pixels,
-                                                      int width,
-                                                      int height) override {
-            const XFWin::ImageEncodeResult result =
-                encoder.saveByExtensionBgra(std::filesystem::path(path), pixels, width, height);
-            return { static_cast<bool>(result), result.error };
-        }
-
-        const XFWin::WicImageEncoder& encoder;
-    } imageEncoder(m_composition.imageEncoder);
-
-    struct ClipboardAdapter final : XFExport::IExportClipboard {
-        ClipboardAdapter(XFWin::ClipboardService& clipboardIn, HWND ownerIn)
-            : clipboard(clipboardIn), owner(ownerIn) {}
-
-        XFExport::ExportOperationResult copyImageBgra(std::span<const std::uint8_t> pixels,
-                                                      int width,
-                                                      int height) override {
-            const XFWin::ClipboardResult result = clipboard.copyDibImageBgra(owner, pixels, width, height);
-            return { static_cast<bool>(result), result.error };
-        }
-
-        XFExport::ExportOperationResult copyText(const std::wstring& text) override {
-            const XFWin::ClipboardResult result = clipboard.copyUtf16Text(owner, text);
-            return { static_cast<bool>(result), result.error };
-        }
-
-        XFWin::ClipboardService& clipboard;
-        HWND owner;
-    } clipboard(m_composition.clipboardService, m_hWnd);
-
-    struct ShellAdapter final : XFExport::IExportShell {
-        explicit ShellAdapter(XFWin::ShellService& shellIn) : shell(shellIn) {}
-
-        bool openPath(const std::wstring& path) override {
-            return shell.openPath(path);
-        }
-
-        bool revealPath(const std::wstring& path) override {
-            return shell.revealPath(path);
-        }
-
-        XFWin::ShellService& shell;
-    } shell(m_composition.shellService);
-
-    struct MetadataWriterAdapter final : XFExport::IExportMetadataWriter {
-        explicit MetadataWriterAdapter(const Application& appIn) : app(appIn) {}
-
-        XFExport::ExportOperationResult writeSidecar(const ExportSettings& settings,
-                                                     const std::wstring& imagePath,
-                                                     int width,
-                                                     int height,
-                                                     std::wstring& sidecarPath) override {
-            sidecarPath = XFExport::exportMetadataSidecarPath(std::filesystem::path(imagePath)).wstring();
-            std::string error;
-            if (!app.writeExportMetadataSidecar(settings, imagePath, width, height, error)) {
-                return { false, error };
-            }
-            return { true, {} };
-        }
-
-        const Application& app;
-    } metadataWriter(*this);
+    XFApp::ExportImageEncoderAdapter imageEncoder(m_composition.imageEncoder);
+    XFApp::ExportClipboardAdapter clipboard(m_composition.clipboardService, m_hWnd);
+    XFApp::ExportShellAdapter shell(m_composition.shellService);
+    const XFExport::ExportAppMetadata appMetadata{
+        "XpressFormula",
+        XF_BUILD_VERSION,
+        XF_BUILD_REPO_URL,
+        XF_BUILD_BRANCH,
+        XF_BUILD_COMMIT
+    };
+    XFApp::ExportMetadataSidecarWriter metadataWriter(
+        XFApp::ExportMetadataContext{
+            appMetadata,
+            &m_document.formulas(),
+            &m_document.viewTransform(),
+            &m_document.plotSettings()
+        });
 
     if (m_exportController.pendingSave()) {
         const XFWin::ExportImageFormat preferredFormat =

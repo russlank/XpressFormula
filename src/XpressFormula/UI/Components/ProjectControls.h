@@ -22,11 +22,18 @@ enum class UnsavedProjectDialogChoice {
     Cancel
 };
 
+struct RecentProjectItem {
+    std::wstring path;
+    std::string label;
+    std::string fullPath;
+    bool exists = true;
+};
+
 struct ProjectControlsContext {
     std::string displayName;
     std::string fullPath;
     std::string status;
-    const std::vector<std::wstring>* recentProjectPaths = nullptr;
+    const std::vector<RecentProjectItem>* recentProjects = nullptr;
 };
 
 struct ProjectControlsAction {

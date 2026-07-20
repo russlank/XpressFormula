@@ -1,11 +1,7 @@
 // ProjectControls.cpp - Command-oriented project controls component.
 #include "ProjectControls.h"
-#include "../../Platform/Windows/Utf.h"
 
 #include "imgui.h"
-
-#include <filesystem>
-#include <system_error>
 
 namespace XpressFormula::UI::Components {
 namespace {
@@ -45,35 +41,27 @@ ProjectControlsAction renderProjectControls(const ProjectControlsContext& contex
         ImGui::TextWrapped("%s", context.status.c_str());
     }
 
-    const std::vector<std::wstring>* recentPaths = context.recentProjectPaths;
-    if (recentPaths && !recentPaths->empty() &&
+    const std::vector<RecentProjectItem>* recentProjects = context.recentProjects;
+    if (recentProjects && !recentProjects->empty() &&
         ImGui::CollapsingHeader("Recent Projects", ImGuiTreeNodeFlags_DefaultOpen)) {
-        for (int i = 0; i < static_cast<int>(recentPaths->size()); ++i) {
+        for (int i = 0; i < static_cast<int>(recentProjects->size()); ++i) {
             ImGui::PushID(i);
-            const std::wstring& path = (*recentPaths)[static_cast<std::size_t>(i)];
-            std::string label = Platform::Windows::utf16ToUtf8OrEmpty(
-                std::filesystem::path(path).filename().wstring());
-            if (label.empty()) {
-                label = Platform::Windows::utf16ToUtf8OrEmpty(path);
-            }
-            std::error_code pathError;
-            const bool pathExists = std::filesystem::exists(std::filesystem::path(path), pathError);
-            if (!pathExists) {
+            const RecentProjectItem& item = (*recentProjects)[static_cast<std::size_t>(i)];
+            if (!item.exists) {
                 ImGui::BeginDisabled();
             }
-            if (ImGui::SmallButton(label.c_str()) && pathExists) {
+            if (ImGui::SmallButton(item.label.c_str()) && item.exists) {
                 action.command = ProjectControlCommand::OpenRecent;
-                action.recentPath = path;
+                action.recentPath = item.path;
             }
-            if (!pathExists) {
+            if (!item.exists) {
                 ImGui::EndDisabled();
             }
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-                const std::string pathText = Platform::Windows::utf16ToUtf8OrEmpty(path);
-                if (pathExists) {
-                    ImGui::SetTooltip("%s", pathText.c_str());
+                if (item.exists) {
+                    ImGui::SetTooltip("%s", item.fullPath.c_str());
                 } else {
-                    ImGui::SetTooltip("Missing: %s", pathText.c_str());
+                    ImGui::SetTooltip("Missing: %s", item.fullPath.c_str());
                 }
             }
             ImGui::PopID();

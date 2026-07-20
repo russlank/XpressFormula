@@ -43,6 +43,31 @@ void PlotRenderer::formatLabel(char* buf, size_t len, double v) {
     }
 }
 
+PlotRenderer::Surface3DOptions PlotRenderer::makeSurface3DOptions(
+    const Model::EffectivePlotSettings& effective,
+    const Camera3D& camera,
+    SurfacePlanePass3D planePass,
+    float implicitZCenter,
+    double gridPlaneZ) {
+    Surface3DOptions options;
+    options.azimuthDeg = camera.azimuthDeg;
+    options.elevationDeg = camera.elevationDeg;
+    options.zScale = camera.zScale;
+    options.resolution = effective.surfaceResolution;
+    options.implicitResolution = effective.implicitSurfaceResolution;
+    options.opacity = effective.surfaceOpacity;
+    options.wireOpacity = effective.wireOpacity;
+    options.wireThickness = effective.wireThickness;
+    options.wireStride = effective.wireStride;
+    options.showEnvelope = effective.showEnvelope;
+    options.envelopeThickness = effective.envelopeThickness;
+    options.showAxisTriad = effective.showAxisTriad;
+    options.implicitZCenter = implicitZCenter;
+    options.planePass = planePass;
+    options.gridPlaneZ = gridPlaneZ;
+    return options;
+}
+
 namespace {
 
 Camera3D cameraFromOptions(const PlotRenderer::Surface3DOptions& options) noexcept {
@@ -693,9 +718,21 @@ void PlotRenderer::drawSurface3D(ImDrawList* dl, const Core::ViewTransform& vt,
         dl->AddTriangleFilled(face.p0, face.p1, face.p2, fill);
     }
 
-    const float edgeThickness = std::clamp(options.wireThickness, 0.0f, 4.0f);
-    const float wireOpacity = std::clamp(options.wireOpacity, 0.0f, 1.0f);
-    const int wireStride = std::clamp(options.wireStride, 1, 16);
+    const Model::PlotLimits& limits = Model::plotLimits();
+    const float edgeThickness = options.wireThickness <= 0.0f
+        ? 0.0f
+        : std::clamp(
+            options.wireThickness,
+            limits.wireThickness.min,
+            limits.wireThickness.max);
+    const float wireOpacity = std::clamp(
+        options.wireOpacity,
+        limits.wireOpacity.min,
+        limits.wireOpacity.max);
+    const int wireStride = std::clamp(
+        options.wireStride,
+        limits.wireStride.min,
+        limits.wireStride.max);
     if (edgeThickness > 0.0f && wireOpacity > 0.0f) {
         const ImU32 edge = IM_COL32(
             static_cast<int>(std::clamp(color[0] * 0.45f + 0.05f, 0.0f, 1.0f) * 255.0f),
@@ -809,7 +846,10 @@ void PlotRenderer::drawSurface3D(ImDrawList* dl, const Core::ViewTransform& vt,
             const float baseG = std::clamp(color[1] * 0.55f + 0.45f, 0.0f, 1.0f);
             const float baseB = std::clamp(color[2] * 0.55f + 0.45f, 0.0f, 1.0f);
             const double edgeRange = std::max(1e-6, edgeDepthMax - edgeDepthMin);
-            const float lineThickness = std::clamp(options.envelopeThickness, 0.2f, 4.0f);
+            const float lineThickness = std::clamp(
+                options.envelopeThickness,
+                limits.envelopeThickness.min,
+                limits.envelopeThickness.max);
 
             for (const EnvelopeEdge& edge : edges) {
                 const double depthNorm = (edge.depth - edgeDepthMin) / edgeRange;
@@ -1131,9 +1171,21 @@ void PlotRenderer::drawImplicitSurface3D(ImDrawList* dl, const Core::ViewTransfo
     }
     const double zRange = std::max(1e-6, surfZMax - surfZMin);
     const float baseOpacity = std::clamp(options.opacity, 0.12f, 1.0f);
-    const float edgeThickness = std::clamp(options.wireThickness, 0.0f, 4.0f);
-    const float wireOpacity = std::clamp(options.wireOpacity, 0.0f, 1.0f);
-    const int wireStride = std::clamp(options.wireStride, 1, 16);
+    const Model::PlotLimits& limits = Model::plotLimits();
+    const float edgeThickness = options.wireThickness <= 0.0f
+        ? 0.0f
+        : std::clamp(
+            options.wireThickness,
+            limits.wireThickness.min,
+            limits.wireThickness.max);
+    const float wireOpacity = std::clamp(
+        options.wireOpacity,
+        limits.wireOpacity.min,
+        limits.wireOpacity.max);
+    const int wireStride = std::clamp(
+        options.wireStride,
+        limits.wireStride.min,
+        limits.wireStride.max);
 
     for (const ScreenFace& face : screenFaces) {
         const double t = std::clamp((face.zAvg - surfZMin) / zRange, 0.0, 1.0);
@@ -1224,7 +1276,10 @@ void PlotRenderer::drawImplicitSurface3D(ImDrawList* dl, const Core::ViewTransfo
             const float baseG = std::clamp(color[1] * 0.55f + 0.45f, 0.0f, 1.0f);
             const float baseB = std::clamp(color[2] * 0.55f + 0.45f, 0.0f, 1.0f);
             const double edgeRange = std::max(1e-6, edgeDepthMax - edgeDepthMin);
-            const float lineThickness = std::clamp(options.envelopeThickness, 0.2f, 4.0f);
+            const float lineThickness = std::clamp(
+                options.envelopeThickness,
+                limits.envelopeThickness.min,
+                limits.envelopeThickness.max);
 
             for (const EnvelopeEdge& edge : edges) {
                 const double depthNorm = (edge.depth - edgeDepthMin) / edgeRange;

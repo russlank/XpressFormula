@@ -1,10 +1,12 @@
 // PlotRenderer.h - Renders grid, axes, and formula plots onto an ImGui DrawList.
 #pragma once
 
+#include "Camera3D.h"
 #include "Meshing/ImplicitMeshCache.h"
 #include "../Core/ViewTransform.h"
 #include "../Core/ASTNode.h"
 #include "../Model/FormulaId.h"
+#include "../Model/PlotPolicy.h"
 
 #include <cstdint>
 
@@ -21,20 +23,20 @@ public:
     };
 
     struct Surface3DOptions {
-        float azimuthDeg = 40.0f;
-        float elevationDeg = 30.0f;
-        float zScale = 1.0f;
-        int   resolution = 36;
+        float azimuthDeg = Model::kDefaultAzimuthDeg;
+        float elevationDeg = Model::kDefaultElevationDeg;
+        float zScale = Model::kDefaultZScale;
+        int   resolution = Model::kDefaultSurfaceResolution;
         // Used by implicit F(x,y,z)=0 extraction. Kept separate because implicit meshing
         // is O(N^3) and usually needs a different quality/perf tradeoff than z=f(x,y).
-        int   implicitResolution = 64;
-        float opacity = 0.82f;
-        float wireOpacity = 0.25f;
-        float wireThickness = 1.0f;
-        int   wireStride = 2;
+        int   implicitResolution = Model::kDefaultImplicitSurfaceResolution;
+        float opacity = Model::kDefaultSurfaceOpacity;
+        float wireOpacity = Model::kDefaultWireOpacity;
+        float wireThickness = Model::kDefaultWireThickness;
+        int   wireStride = Model::kDefaultWireStride;
         bool  showEnvelope = true;
-        float envelopeThickness = 1.25f;
-        bool  showAxisTriad = true;
+        float envelopeThickness = Model::kDefaultEnvelopeThickness;
+        bool  showAxisTriad = false;
         // Center of the implicit z sampling window. The sampled z range is derived from the
         // current x/y view span around this center (so panning/zooming the view changes mesh).
         float implicitZCenter = 0.0f;
@@ -43,6 +45,13 @@ public:
         SurfacePlanePass3D planePass = SurfacePlanePass3D::All;
         double gridPlaneZ = 0.0;
     };
+
+    [[nodiscard]] static Surface3DOptions makeSurface3DOptions(
+        const Model::EffectivePlotSettings& effective,
+        const Camera3D& camera,
+        SurfacePlanePass3D planePass = SurfacePlanePass3D::All,
+        float implicitZCenter = 0.0f,
+        double gridPlaneZ = 0.0);
 
     /// Draw grid lines (major and minor).
     static void drawGrid(ImDrawList* dl, const Core::ViewTransform& vt);

@@ -150,9 +150,6 @@
     <ClCompile Include="FormulaEntryTests.cpp" />
     <ClCompile Include="FormulaEditorStateTests.cpp" />
     <ClCompile Include="UpdateVersionUtilsTests.cpp" />
-    <ClCompile Include="..\XpressFormula\Application\ExportController.cpp" />
-    <ClCompile Include="..\XpressFormula\Application\ProjectController.cpp" />
-    <ClCompile Include="..\XpressFormula\Application\UpdateController.cpp" />
     <ClCompile Include="ExportSubsystemTests.cpp" />
     <ClCompile Include="ExportSettingsTests.cpp" />
     <ClCompile Include="ProjectSessionTests.cpp" />
@@ -185,6 +182,11 @@
     </ProjectReference>
     <ProjectReference Include="..\XpressFormula.Infrastructure\XpressFormula.Infrastructure.vcxproj">
       <Project>{E310CE87-5D86-4E95-97EC-E6C994B7F140}</Project>
+      <LinkLibraryDependencies>true</LinkLibraryDependencies>
+      <GlobalPropertiesToRemove>IntDir;OutDir</GlobalPropertiesToRemove>
+    </ProjectReference>
+    <ProjectReference Include="..\XpressFormula.App\XpressFormula.App.vcxproj">
+      <Project>{D03E5ED4-E68D-4D38-9BA5-18023639B88E}</Project>
       <LinkLibraryDependencies>true</LinkLibraryDependencies>
       <GlobalPropertiesToRemove>IntDir;OutDir</GlobalPropertiesToRemove>
     </ProjectReference>

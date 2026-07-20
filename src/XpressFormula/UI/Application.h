@@ -20,7 +20,6 @@
 #include <cstdint>
 #include <d3d11.h>
 #include <array>
-#include <filesystem>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -90,10 +89,6 @@ private:
     void renderExportDialog();
     void initialiseExportDialogSize();
     bool refreshExportPreviewTexture();
-    bool writeExportMetadataSidecar(const ExportSettings& settings,
-                                    const std::wstring& imagePath,
-                                    int width, int height,
-                                    std::string& error) const;
     void openLastSavedExport();
     void showLastSavedExportInFolder();
     void copyLastSavedExportPath();

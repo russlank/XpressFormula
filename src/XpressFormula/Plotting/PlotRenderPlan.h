@@ -8,6 +8,7 @@
 #include "../Model/SceneSummary.h"
 
 #include <cstddef>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -61,6 +62,7 @@ struct PlotRenderPlanInput {
     const Model::PlotRenderOverrides* overrides = nullptr;
     const Model::PlotQualityDecision* quality = nullptr;
     PlotQualityPurpose qualityPurpose = PlotQualityPurpose::Interactive;
+    std::optional<float> runtimeAzimuthDeg;
 };
 
 [[nodiscard]] PlotRenderPlan buildPlotRenderPlan(const PlotRenderPlanInput& input);

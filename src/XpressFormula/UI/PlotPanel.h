@@ -6,6 +6,7 @@
 #include "../Model/Formula.h"
 #include "../Model/SceneSummary.h"
 #include "../Plotting/Meshing/ImplicitMeshCache.h"
+#include <optional>
 #include <vector>
 
 namespace XpressFormula::UI {
@@ -17,7 +18,8 @@ public:
                 PlotSettings& settings,
                 const Model::SceneSummary& scene,
                 const PlotRenderOverrides* overrides = nullptr,
-                const PlotQualityDecision* qualityDecision = nullptr);
+                const PlotQualityDecision* qualityDecision = nullptr,
+                std::optional<float> runtimeAzimuthDeg = std::nullopt);
 
 private:
     double m_lastHudInteractionTime = -1000.0;

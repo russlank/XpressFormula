@@ -17,11 +17,11 @@ The architecture modernization now adds build-enforced production library bounda
 Current production projects:
 
 - `XpressFormula.Expression`: expression tokenization, parsing, shared AST queries, formula compilation/classification, evaluation, function metadata, examples, and version parsing helpers.
-- `XpressFormula.Model`: stable formula identity/state headers, scene-summary analysis, persistent view state, transient viewport geometry, and `ViewTransform`.
-- `XpressFormula.Plotting`: plotting renderer implementation.
-- `XpressFormula.Infrastructure`: temporary boundary for header-only persistence/export infrastructure until JSON/file/project sources are extracted.
-- `XpressFormula.UI`: ImGui panels, components, UiKit, and Dear ImGui core sources.
-- `XpressFormula.App`: current application orchestration and Win32/DX11 ImGui backend sources.
+- `XpressFormula.Model`: stable formula identity/state, revision-tracked document mutations, scene-summary analysis, persistent view state, transient viewport geometry, plot policy, and `ViewTransform`.
+- `XpressFormula.Plotting`: pure render planning, projection, geometry/sampling/meshing helpers, mesh cache policy, and the current ImGui draw-list backend.
+- `XpressFormula.Infrastructure`: JSON parsing/writing, UTF and atomic file helpers, project persistence, export settings/metadata/output workflow, image processing, and Windows platform services.
+- `XpressFormula.UI`: ImGui panels, components, UiKit, and Dear ImGui core sources. Reusable UI returns explicit actions instead of owning project side effects.
+- `XpressFormula.App`: application orchestration, document/project/export/update controllers, export output adapters, runtime plot state, and Win32/DX11 ImGui backend sources.
 - `XpressFormula`: executable host containing `main.cpp`, resources, and project references.
 - `XpressFormula.Tests`: tests linked against the production libraries.
 
@@ -67,9 +67,9 @@ This first boundary step references existing files from new static-library proje
 - [`src/XpressFormula/UI/UiKit`](../src/XpressFormula/UI/UiKit)
   - Thin immediate-mode UI helpers: shared metrics, pure responsive layout planners, RAII ImGui scopes, deterministic toolbar rows, property grids, splitter sizing, and modal sizing.
 - [`src/XpressFormula/UI/Components`](../src/XpressFormula/UI/Components)
-  - Reusable XpressFormula-specific UI components such as `PlotToolbar` and `FormulaCard`. Components may edit ordinary widget state passed by reference, but collection mutations and application commands stay with panels or `Application`.
+  - Reusable XpressFormula-specific UI components such as `PlotToolbar`, `ProjectControls`, and `FormulaCard`. Components render supplied state and return explicit actions; they do not perform file, clipboard, shell, HTTP, or formula-list ownership work.
 - [`src/XpressFormula/UI/FormulaPanel.h`](../src/XpressFormula/UI/FormulaPanel.h) and [`src/XpressFormula/UI/FormulaPanel.cpp`](../src/XpressFormula/UI/FormulaPanel.cpp)
-  - Formula list management, dynamically sized editor modal workflow, collection mutations, and action handling returned by formula-card components.
+  - Formula list display and editor modal workflow. It reports document commands such as add/update/duplicate/remove/move/color/visibility/z-slice/hide-others; `Model::Document` owns the actual mutations and revision changes.
 - [`src/XpressFormula/UI/FormulaEditorState.h`](../src/XpressFormula/UI/FormulaEditorState.h)
   - Temporary formula-editor state for target ID, editor text, and cached validation preview.
 - [`src/XpressFormula/UI/FormulaEntry.h`](../src/XpressFormula/UI/FormulaEntry.h) and [`src/XpressFormula/UI/FormulaPresentation.h`](../src/XpressFormula/UI/FormulaPresentation.h)
@@ -77,26 +77,27 @@ This first boundary step references existing files from new static-library proje
 - [`src/XpressFormula/UI/ControlPanel.h`](../src/XpressFormula/UI/ControlPanel.h) and [`src/XpressFormula/UI/ControlPanel.cpp`](../src/XpressFormula/UI/ControlPanel.cpp)
   - Global 2D view controls, display toggles (grid/coordinates/wires), reusable property-grid rows for 3D/heatmap controls, and export dialog launch action.
 - [`src/XpressFormula/UI/PlotPanel.h`](../src/XpressFormula/UI/PlotPanel.h) and [`src/XpressFormula/UI/PlotPanel.cpp`](../src/XpressFormula/UI/PlotPanel.cpp)
-  - Interactive plotting area, mouse interactions, and export-time plot render overrides (background/grid/coordinates/wires).
-- [`src/XpressFormula/UI/ProjectSession.h`](../src/XpressFormula/UI/ProjectSession.h)
-  - Versioned `.xfplot` persistence boundary: plain session records, JSON serialization/parsing, schema validation, and safe application of loaded values.
+  - Interactive plotting area and mouse interactions. It delegates render planning to `Plotting::buildPlotRenderPlan` and draws with effective settings, export overrides, and optional runtime camera azimuth.
+- [`src/XpressFormula/Infrastructure/Persistence`](../src/XpressFormula/Infrastructure/Persistence)
+  - Versioned `.xfplot` persistence boundary: plain session records, JSON serialization/parsing, schema validation, repository save/load, recent-project storage, and safe mapping to/from `Model::Document`.
 - [`src/XpressFormula/Version.h`](../src/XpressFormula/Version.h)
   - Centralized semantic version metadata used by window title, resources, and packaging.
 - [`src/XpressFormula/Plotting/PlotRenderer.h`](../src/XpressFormula/Plotting/PlotRenderer.h) and [`src/XpressFormula/Plotting/PlotRenderer.cpp`](../src/XpressFormula/Plotting/PlotRenderer.cpp)
-  - Rendering primitives and formula visualizations (2D + 3D).
+  - Rendering primitives and formula visualizations (2D + 3D), with shared construction of 3D surface options from model plot policy.
 
 ## Runtime Flow
 
 1. [`src/XpressFormula/main.cpp`](../src/XpressFormula/main.cpp) constructs `UI::Application`.
 2. `Application::initialize()` creates Win32 window, D3D11 swap chain/device, and ImGui context.
 3. `Application::run()` drives the message loop and rendering frames (including idle redraw optimization).
-4. `FormulaPanel` updates `Model::Formula` text and compiles through the expression compiler.
-5. `Application` calls `Model::analyzeScene()` on the model formula list and passes the resulting `SceneSummary` to the control panel, toolbar, and plot panel.
-6. `PlotPanel` updates only the transient viewport geometry on `ViewTransform` and delegates drawing to `PlotRenderer`.
-7. `PlotRenderer` evaluates formulas through `Core::Evaluator` and draws based on variable dimensionality and equation form.
+4. `FormulaPanel` reports formula commands, and `Model::Document` applies only real changes, incrementing revision/dirty state only when persistent state changes.
+5. `Application` calls `Model::analyzeScene()` after document revision changes and passes the resulting `SceneSummary` to the control panel, toolbar, and plot panel.
+6. `PlotPanel` updates only the transient viewport geometry on `ViewTransform` and delegates render planning plus drawing to `Plotting`.
+7. `Plotting` evaluates formulas through `Core::Evaluator`, plans passes/effective settings, and draws based on variable dimensionality and equation form.
 8. `Application` also polls a background GitHub release check future and updates sidebar notification state when a result arrives.
-9. Export requests resolve aspect/framing settings, trigger a plot-only offscreen render pass (temporary D3D11 render target and viewport) with export-specific overrides, then post-processing (pixel-format normalization, optional resize/grayscale) before file/clipboard output.
-10. Project New/Open/Save/Save As workflows stay in `Application`; `.xfplot` parsing completes before active formulas, view, or plot settings are mutated.
+9. Auto-rotation is tracked as transient runtime azimuth offset, not by editing saved plot settings. New/open, camera preset/reset/manual camera edit, and disabling auto-rotate reset the runtime offset.
+10. Export requests resolve aspect/framing settings, trigger a plot-only offscreen render pass (temporary D3D11 render target and viewport) with export-specific overrides, then post-processing (pixel-format normalization, optional resize/grayscale) before file/clipboard output. Exports use the persisted base camera azimuth unless a caller intentionally supplies a runtime camera value.
+11. Project New/Open/Save/Save As workflows stay in application controllers; `.xfplot` parsing completes before active formulas, view, or plot settings are mutated.
 
 ## Project Persistence Boundary
 
@@ -108,6 +109,7 @@ Important rules:
 - Parse and validate a full project file before mutating active application state.
 - Retain invalid loaded formulas where possible and report load warnings after reparsing.
 - Persist formula expression, color, visibility, and z-slice only; runtime IDs, compiled ASTs, diagnostics, and editor state are rebuilt in memory.
+- Persist the base 3D camera azimuth/elevation/z-scale; auto-rotation's per-frame offset is runtime-only and is never written to `.xfplot`.
 - Clamp or ignore unsafe numeric values before applying them to the live view and plot settings.
 - Persist only `ViewState` center/scale values; viewport origin/size is frame layout state and is not written to `.xfplot`.
 - Keep unknown fields tolerated for schema version 1 so future writers can add data without breaking older builds.
@@ -126,7 +128,17 @@ The UI toolkit is intentionally small and immediate-mode. `UiKit` does not own a
 - scope safety for ImGui push/pop and disabled blocks
 - repeated table layout behavior for property controls
 
-Domain components live one level above `UiKit`. They render reusable XpressFormula UI surfaces and return explicit action structs for one-shot commands. Panels and `Application` remain responsible for workflows, vector mutation, file/clipboard actions, export processing, and persistent state.
+Domain components live one level above `UiKit`. They render reusable XpressFormula UI surfaces and return explicit action structs for one-shot commands. Panels and `Application` remain responsible for workflows, while persistent formula/view/plot mutations route through `Model::Document`. File, clipboard, shell, HTTP, and image-encoding work stays outside reusable UI components.
+
+## Architecture Boundary Check
+
+Run the lightweight boundary check from the repository root:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\check-architecture-boundaries.ps1
+```
+
+The script checks that infrastructure does not include UI, Expression and Model stay free of UI/Win32/ImGui/JSON dependencies, pure plotting geometry/meshing stays free of ImGui, reusable UI does not implement platform internals, and the test project does not compile production `.cpp` files directly.
 
 ## Formula Rendering Modes
 

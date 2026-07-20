@@ -27,7 +27,17 @@ struct FormulaCardAction {
     Model::FormulaId formulaId = 0;
 };
 
-FormulaCardAction renderFormulaCard(Model::Formula& formula,
+struct FormulaCardResult {
+    FormulaCardAction action;
+    bool visibilityChanged = false;
+    bool visible = true;
+    bool colorChanged = false;
+    Model::ColorRgba color;
+    bool zSliceChanged = false;
+    double zSlice = 0.0;
+};
+
+FormulaCardResult renderFormulaCard(const Model::Formula& formula,
                                     const FormulaCardContext& context);
 
 } // namespace XpressFormula::UI::Components

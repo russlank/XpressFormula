@@ -45,6 +45,9 @@ TEST_CASE(Document_NoOpMutationsDoNotIncrementRevision) {
 
     Assert::IsFalse(document.updateFormula(id, formula));
     Assert::IsFalse(document.setFormulaVisibility(id, formula.visible));
+    Assert::IsFalse(document.setFormulaColor(id, formula.color));
+    Assert::IsFalse(document.setFormulaZSlice(id, formula.zSlice));
+    Assert::IsFalse(document.hideOtherFormulas(id));
     Assert::IsFalse(document.moveFormula(id, 0));
     Assert::IsFalse(document.setViewState(view));
     Assert::IsFalse(document.setPlotSettings(plot));
@@ -99,6 +102,37 @@ TEST_CASE(Document_EditScopesTrackPersistentChanges) {
     Assert::IsTrue(document.removeFormula(formulaId));
     Assert::AreEqual(5ull, document.revision());
     Assert::IsTrue(document.dirty());
+}
+
+TEST_CASE(Document_FormulaCommandsTrackOnlyRealChanges) {
+    XFModel::Document document;
+    const XFModel::FormulaId firstId = document.addFormula(makeFormula("sin(x)"));
+    const XFModel::FormulaId secondId = document.addFormula(makeFormula("cos(x)"));
+    document.markSaved();
+    const XFModel::Document::Revision cleanRevision = document.revision();
+
+    XFModel::ColorRgba color = document.formulas()[0].color;
+    color[0] = 0.25f;
+
+    Assert::IsTrue(document.setFormulaColor(firstId, color));
+    Assert::AreEqual(cleanRevision + 1, document.revision());
+    document.markSaved();
+
+    Assert::IsTrue(document.setFormulaZSlice(firstId, 2.5));
+    Assert::AreEqual(cleanRevision + 2, document.revision());
+    document.markSaved();
+
+    Assert::IsTrue(document.hideOtherFormulas(secondId));
+    Assert::IsFalse(document.formulas()[0].visible);
+    Assert::IsTrue(document.formulas()[1].visible);
+    Assert::AreEqual(cleanRevision + 3, document.revision());
+    document.markSaved();
+
+    Assert::IsTrue(document.duplicateFormula(secondId));
+    Assert::AreEqual(3, static_cast<int>(document.formulas().size()));
+    Assert::IsTrue(document.formulas()[1].id != document.formulas()[2].id);
+    Assert::AreEqual(std::string("cos(x)"), document.formulas()[2].expression);
+    Assert::AreEqual(cleanRevision + 4, document.revision());
 }
 
 TEST_CASE(Document_ReplaceStateCanEstablishCleanLoadedDocument) {

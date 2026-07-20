@@ -76,9 +76,13 @@ public:
 
     FormulaId addFormula(Formula formula);
     [[nodiscard]] bool updateFormula(FormulaId id, Formula formula);
+    [[nodiscard]] bool duplicateFormula(FormulaId id);
     [[nodiscard]] bool removeFormula(FormulaId id);
     [[nodiscard]] bool moveFormula(FormulaId id, std::size_t toIndex);
     [[nodiscard]] bool setFormulaVisibility(FormulaId id, bool visible);
+    [[nodiscard]] bool setFormulaColor(FormulaId id, const ColorRgba& color);
+    [[nodiscard]] bool setFormulaZSlice(FormulaId id, double zSlice);
+    [[nodiscard]] bool hideOtherFormulas(FormulaId id);
     [[nodiscard]] bool setViewState(const ViewState& state);
     [[nodiscard]] bool setViewTransform(const Core::ViewTransform& view);
     [[nodiscard]] bool setPlotSettings(const PlotSettings& settings);

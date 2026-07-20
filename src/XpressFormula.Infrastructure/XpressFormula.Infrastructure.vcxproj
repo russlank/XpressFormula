@@ -99,6 +99,7 @@
     <ClCompile Include="..\XpressFormula\Infrastructure\Export\ExportMetadataSerializer.cpp" />
     <ClCompile Include="..\XpressFormula\Infrastructure\Export\ExportOutputWorkflow.cpp" />
     <ClCompile Include="..\XpressFormula\Infrastructure\Export\ExportRenderRequest.cpp" />
+    <ClCompile Include="..\XpressFormula\Infrastructure\Export\ExportSettings.cpp" />
     <ClCompile Include="..\XpressFormula\Infrastructure\Export\ImageProcessor.cpp" />
     <ClCompile Include="..\XpressFormula\Infrastructure\FileSystem\AtomicFileWriter.cpp" />
     <ClCompile Include="..\XpressFormula\Infrastructure\Persistence\ProjectMapper.cpp" />

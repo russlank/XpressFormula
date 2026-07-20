@@ -17,6 +17,40 @@ namespace {
 
 constexpr const char* kExportDialogPopupId = "Export Plot Settings";
 
+bool applyFormulaPanelCommand(Model::Document& document,
+                              const FormulaPanelCommand& command) {
+    switch (command.type) {
+        case FormulaPanelCommandType::AddFormula:
+            document.addFormula(command.formula);
+            return true;
+        case FormulaPanelCommandType::UpdateFormula:
+            return document.updateFormula(command.formulaId, command.formula);
+        case FormulaPanelCommandType::RemoveFormula:
+            return document.removeFormula(command.formulaId);
+        case FormulaPanelCommandType::DuplicateFormula:
+            return document.duplicateFormula(command.formulaId);
+        case FormulaPanelCommandType::MoveFormula:
+            return document.moveFormula(command.formulaId, command.toIndex);
+        case FormulaPanelCommandType::SetVisibility:
+            return document.setFormulaVisibility(command.formulaId, command.visible);
+        case FormulaPanelCommandType::SetColor:
+            return document.setFormulaColor(command.formulaId, command.color);
+        case FormulaPanelCommandType::SetZSlice:
+            return document.setFormulaZSlice(command.formulaId, command.zSlice);
+        case FormulaPanelCommandType::HideOtherFormulas:
+            return document.hideOtherFormulas(command.formulaId);
+    }
+    return false;
+}
+
+bool shouldResetAutoRotationRuntime(const PlotSettings& before,
+                                    const PlotSettings& after) noexcept {
+    return before.azimuthDeg != after.azimuthDeg ||
+           before.elevationDeg != after.elevationDeg ||
+           before.zScale != after.zScale ||
+           (before.autoRotate && !after.autoRotate);
+}
+
 } // namespace
 
 void MainWindow::resetFormulaColorCycle(int nextIndex) {
@@ -53,9 +87,12 @@ MainWindowActions MainWindow::renderWorkspace(MainWindowContext& context,
     ImGui::Spacing();
     {
         const Model::Document::Revision beforeRevision = context.document.revision();
-        {
-            auto formulas = context.document.editFormulas();
-            m_formulaPanel.render(formulas.get());
+        const FormulaPanelActions formulaActions = m_formulaPanel.render(
+            std::span<const Model::Formula>(
+                context.document.formulas().data(),
+                context.document.formulas().size()));
+        for (const FormulaPanelCommand& command : formulaActions.commands) {
+            (void)applyFormulaPanelCommand(context.document, command);
         }
         captureDocumentChange(context.document, context.sceneSummary, beforeRevision, actions);
     }
@@ -64,6 +101,7 @@ MainWindowActions MainWindow::renderWorkspace(MainWindowContext& context,
     ImGui::Spacing();
     {
         const Model::Document::Revision beforeRevision = context.document.revision();
+        const PlotSettings beforePlot = context.document.plotSettings();
         ControlPanelActions panelActions;
         {
             auto view = context.document.editViewTransform();
@@ -74,6 +112,9 @@ MainWindowActions MainWindow::renderWorkspace(MainWindowContext& context,
         if (panelActions.requestOpenExportDialog) {
             actions.requestOpenExportDialog = true;
             actions.redrawRequested = true;
+        }
+        if (shouldResetAutoRotationRuntime(beforePlot, context.document.plotSettings())) {
+            actions.resetAutoRotationRuntime = true;
         }
         captureDocumentChange(context.document, context.sceneSummary, beforeRevision, actions);
     }
@@ -124,7 +165,9 @@ MainWindowActions MainWindow::renderWorkspace(MainWindowContext& context,
                                view.get(),
                                plot.get(),
                                context.sceneSummary,
-                               context.exportOverrides);
+                               context.exportOverrides,
+                               nullptr,
+                               context.runtimeAzimuthDeg);
         }
         captureDocumentChange(context.document, context.sceneSummary, beforeRevision, actions);
     }
@@ -325,6 +368,7 @@ void MainWindow::renderPlotToolbar(Model::Document& document,
                                    const Model::SceneSummary& scene,
                                    MainWindowActions& actions) {
     const Model::Document::Revision beforeRevision = document.revision();
+    const PlotSettings beforePlot = document.plotSettings();
     Components::PlotToolbarActions toolbarActions;
     {
         auto plot = document.editPlotSettings();
@@ -356,6 +400,9 @@ void MainWindow::renderPlotToolbar(Model::Document& document,
             toolbarActions.cameraAzimuthDeg,
             toolbarActions.cameraElevationDeg,
             actions);
+    }
+    if (shouldResetAutoRotationRuntime(beforePlot, document.plotSettings())) {
+        actions.resetAutoRotationRuntime = true;
     }
     if (toolbarActions.requestRedraw) {
         actions.redrawRequested = true;
@@ -390,6 +437,7 @@ void MainWindow::resetViewAndCamera(Model::Document& document, MainWindowActions
     plot.get().elevationDeg = kDefaultElevationDeg;
     plot.get().zScale = kDefaultZScale;
     plot.get().autoRotate = false;
+    actions.resetAutoRotationRuntime = true;
     actions.redrawRequested = true;
 }
 
@@ -401,6 +449,7 @@ void MainWindow::applyCameraPreset(Model::Document& document,
     plot.get().azimuthDeg = azimuthDeg;
     plot.get().elevationDeg = elevationDeg;
     plot.get().autoRotate = false;
+    actions.resetAutoRotationRuntime = true;
     actions.redrawRequested = true;
 }
 

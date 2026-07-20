@@ -1,14 +1,15 @@
 // ExportSettingsTests.cpp - Unit tests for export dialog helper logic.
 #include "CppUnitTest.h"
+#include "../XpressFormula/Infrastructure/Export/ExportSettings.h"
 #include "../XpressFormula/UI/ExportMetadata.h"
-#include "../XpressFormula/UI/ExportSettings.h"
 
 #include <cmath>
 #include <filesystem>
 #include <string>
 
 using namespace Microsoft::VisualStudio::CppUnitTestFramework;
-using namespace XpressFormula::UI;
+using namespace XpressFormula::Infrastructure::Export;
+namespace XFModel = XpressFormula::Model;
 
 namespace XpressFormulaTests {
 
@@ -163,12 +164,14 @@ TEST_CASE(ExportProfile_EveryProfileProducesUnifiedSettings) {
         Assert::IsTrue(settings.size.selectedPreset < static_cast<int>(exportSizePresets().size()));
         Assert::IsTrue(settings.size.scale >= 1);
         Assert::IsTrue(settings.size.scale <= 4);
-        Assert::IsTrue(settings.quality.surfaceResolution >= plotLimits().surfaceResolution.min);
-        Assert::IsTrue(settings.quality.surfaceResolution <= plotLimits().surfaceResolution.max);
+        Assert::IsTrue(settings.quality.surfaceResolution >=
+                       XFModel::plotLimits().surfaceResolution.min);
+        Assert::IsTrue(settings.quality.surfaceResolution <=
+                       XFModel::plotLimits().surfaceResolution.max);
         Assert::IsTrue(settings.quality.implicitSurfaceResolution >=
-                       plotLimits().implicitSurfaceResolution.min);
+                       XFModel::plotLimits().implicitSurfaceResolution.min);
         Assert::IsTrue(settings.quality.implicitSurfaceResolution <=
-                       plotLimits().implicitSurfaceResolution.max);
+                       XFModel::plotLimits().implicitSurfaceResolution.max);
     }
 }
 

@@ -218,6 +218,23 @@ bool Document::updateFormula(FormulaId id, Formula formula) {
     return true;
 }
 
+bool Document::duplicateFormula(FormulaId id) {
+    const std::optional<std::size_t> index = findFormulaIndex(id);
+    if (!index.has_value()) {
+        return false;
+    }
+
+    Formula duplicate = m_formulas[*index];
+    duplicate.assignNewId();
+    duplicate.hasCompiledExpression = false;
+    duplicate.lastCompiledExpression.clear();
+    duplicate.compile(true);
+    m_formulas.insert(m_formulas.begin() + static_cast<std::ptrdiff_t>(*index + 1),
+                      std::move(duplicate));
+    incrementRevision();
+    return true;
+}
+
 bool Document::removeFormula(FormulaId id) {
     const std::optional<std::size_t> index = findFormulaIndex(id);
     if (!index.has_value()) {
@@ -255,6 +272,48 @@ bool Document::setFormulaVisibility(FormulaId id, bool visible) {
     m_formulas[*index].visible = visible;
     incrementRevision();
     return true;
+}
+
+bool Document::setFormulaColor(FormulaId id, const ColorRgba& color) {
+    const std::optional<std::size_t> index = findFormulaIndex(id);
+    if (!index.has_value() || sameColor(m_formulas[*index].color, color)) {
+        return false;
+    }
+
+    m_formulas[*index].color = color;
+    incrementRevision();
+    return true;
+}
+
+bool Document::setFormulaZSlice(FormulaId id, double zSlice) {
+    const std::optional<std::size_t> index = findFormulaIndex(id);
+    if (!index.has_value() || m_formulas[*index].zSlice == zSlice) {
+        return false;
+    }
+
+    m_formulas[*index].zSlice = zSlice;
+    incrementRevision();
+    return true;
+}
+
+bool Document::hideOtherFormulas(FormulaId id) {
+    if (!findFormulaIndex(id).has_value()) {
+        return false;
+    }
+
+    bool changed = false;
+    for (Formula& formula : m_formulas) {
+        const bool visible = formula.id == id;
+        if (formula.visible != visible) {
+            formula.visible = visible;
+            changed = true;
+        }
+    }
+
+    if (changed) {
+        incrementRevision();
+    }
+    return changed;
 }
 
 bool Document::setViewState(const ViewState& state) {

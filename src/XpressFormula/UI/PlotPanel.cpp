@@ -62,7 +62,8 @@ void PlotPanel::render(const std::vector<Model::Formula>& formulas,
                        PlotSettings& settings,
                        const Model::SceneSummary& scene,
                        const PlotRenderOverrides* overrides,
-                       const PlotQualityDecision* qualityDecision) {
+                       const PlotQualityDecision* qualityDecision,
+                       std::optional<float> runtimeAzimuthDeg) {
     normalizePlotSettings(settings);
 
     // Update the viewport transform from the ImGui window
@@ -101,7 +102,8 @@ void PlotPanel::render(const std::vector<Model::Formula>& formulas,
             Plotting::PlotInteractionState{ isDraggingLeft, isZoomingView },
             overrides,
             qualityDecision,
-            Plotting::PlotQualityPurpose::Interactive
+            Plotting::PlotQualityPurpose::Interactive,
+            runtimeAzimuthDeg
         });
     const EffectivePlotSettings& effective = plan.effective;
 
@@ -127,27 +129,6 @@ void PlotPanel::render(const std::vector<Model::Formula>& formulas,
         }
     }
 
-    // Helper to build Surface3DOptions from the current settings (avoids duplicating
-    // the same field list for Surface3D and ScalarField3D render kinds).
-    auto make3DOptions = [&]() {
-        Plotting::PlotRenderer::Surface3DOptions options;
-        options.azimuthDeg = plan.camera.azimuthDeg;
-        options.elevationDeg = plan.camera.elevationDeg;
-        options.zScale = plan.camera.zScale;
-        options.resolution = effective.surfaceResolution;
-        options.implicitResolution = effective.implicitSurfaceResolution;
-        options.opacity = effective.surfaceOpacity;
-        options.wireOpacity = effective.wireOpacity;
-        options.wireThickness = effective.wireThickness;
-        options.wireStride = effective.wireStride;
-        options.showEnvelope = effective.showEnvelope;
-        options.envelopeThickness = effective.envelopeThickness;
-        // Axis triad is an alternative to coordinate overlays in 3D mode, so keep them
-        // mutually exclusive to avoid redundant on-screen guidance.
-        options.showAxisTriad = effective.showAxisTriad;
-        return options;
-    };
-
     auto drawFormulas = [&](Plotting::PlotRenderer::SurfacePlanePass3D planePass,
                             bool enable3DOverlays) {
         for (const Plotting::PlotFormulaDispatch& dispatch : plan.formulas) {
@@ -169,8 +150,10 @@ void PlotPanel::render(const std::vector<Model::Formula>& formulas,
                         dl, vt, f.compiled.ast, f.color.data(), 2.0f);
                     break;
                 case Plotting::PlotFormulaDispatchKind::ExplicitSurface3D: {
-                    auto options = make3DOptions();
-                    options.planePass = planePass;
+                    auto options = Plotting::PlotRenderer::makeSurface3DOptions(
+                        effective,
+                        plan.camera,
+                        planePass);
                     if (!enable3DOverlays) {
                         options.showEnvelope = false;
                         options.showAxisTriad = false;
@@ -180,9 +163,11 @@ void PlotPanel::render(const std::vector<Model::Formula>& formulas,
                     break;
                 }
                 case Plotting::PlotFormulaDispatchKind::ImplicitSurface3D: {
-                    auto options = make3DOptions();
-                    options.implicitZCenter = static_cast<float>(f.zSlice);
-                    options.planePass = planePass;
+                    auto options = Plotting::PlotRenderer::makeSurface3DOptions(
+                        effective,
+                        plan.camera,
+                        planePass,
+                        static_cast<float>(f.zSlice));
                     if (!enable3DOverlays) {
                         options.showEnvelope = false;
                         options.showAxisTriad = false;
@@ -214,10 +199,8 @@ void PlotPanel::render(const std::vector<Model::Formula>& formulas,
     };
 
     if (is3DMode) {
-        Plotting::PlotRenderer::Surface3DOptions reference3D;
-        reference3D.azimuthDeg = plan.camera.azimuthDeg;
-        reference3D.elevationDeg = plan.camera.elevationDeg;
-        reference3D.zScale = plan.camera.zScale;
+        const Plotting::PlotRenderer::Surface3DOptions reference3D =
+            Plotting::PlotRenderer::makeSurface3DOptions(effective, plan.camera);
 
         if (use3DGridPlaneInterleave) {
             drawFormulas(Plotting::PlotRenderer::SurfacePlanePass3D::BelowGridPlane, false);

@@ -3,6 +3,7 @@
 #include "../XpressFormula/Plotting/Meshing/ImplicitMeshCache.h"
 #include "../XpressFormula/Plotting/PlotQualityPolicy.h"
 #include "../XpressFormula/Plotting/PlotRenderPlan.h"
+#include "../XpressFormula/Plotting/PlotRenderer.h"
 #include "../XpressFormula/Plotting/Projection3D.h"
 
 #include <cmath>
@@ -151,6 +152,59 @@ TEST_CASE(PlotRenderPlan_Force2DDispatchesSurfaceAsHeatmap) {
     Assert::IsFalse(plan.is3DMode);
     Assert::AreEqual(XFModel::XYRenderMode::Heatmap2D, plan.effective.renderMode);
     Assert::AreEqual(XFPlot::PlotFormulaDispatchKind::Heatmap2D, plan.formulas[0].kind);
+}
+
+TEST_CASE(PlotRenderPlan_RuntimeAzimuthAffectsCameraOnly) {
+    XFModel::PlotSettings settings;
+    settings.azimuthDeg = 30.0f;
+    XFModel::Formula surface = formula("x + y");
+    const std::vector<XFModel::Formula> formulas{ surface };
+
+    const XFPlot::PlotRenderPlan interactivePlan = XFPlot::buildPlotRenderPlan(
+        XFPlot::PlotRenderPlanInput{
+            std::span<const XFModel::Formula>(formulas.data(), formulas.size()),
+            settings,
+            sceneWith(false, true),
+            XFPlot::PlotInteractionState{},
+            nullptr,
+            nullptr,
+            XFPlot::PlotQualityPurpose::Interactive,
+            75.0f
+        });
+    const XFPlot::PlotRenderPlan exportPlan = XFPlot::buildPlotRenderPlan(
+        XFPlot::PlotRenderPlanInput{
+            std::span<const XFModel::Formula>(formulas.data(), formulas.size()),
+            settings,
+            sceneWith(false, true),
+            XFPlot::PlotInteractionState{}
+        });
+
+    Assert::AreEqual(75.0f, interactivePlan.camera.azimuthDeg);
+    Assert::AreEqual(30.0f, interactivePlan.effective.azimuthDeg);
+    Assert::AreEqual(30.0f, exportPlan.camera.azimuthDeg);
+}
+
+TEST_CASE(PlotRenderer_SurfaceOptionsUseEffectivePolicyValues) {
+    XFModel::PlotSettings settings;
+    settings.wireThickness = XFModel::plotLimits().wireThickness.max;
+    settings.envelopeThickness = XFModel::plotLimits().envelopeThickness.max;
+    XFModel::Formula surface = formula("x + y");
+    const std::vector<XFModel::Formula> formulas{ surface };
+
+    const XFPlot::PlotRenderPlan plan = XFPlot::buildPlotRenderPlan(
+        XFPlot::PlotRenderPlanInput{
+            std::span<const XFModel::Formula>(formulas.data(), formulas.size()),
+            settings,
+            sceneWith(false, true),
+            XFPlot::PlotInteractionState{}
+        });
+    const XFPlot::PlotRenderer::Surface3DOptions options =
+        XFPlot::PlotRenderer::makeSurface3DOptions(plan.effective, plan.camera);
+
+    Assert::AreEqual(XFModel::plotLimits().wireThickness.max, options.wireThickness);
+    Assert::AreEqual(XFModel::plotLimits().envelopeThickness.max, options.envelopeThickness);
+    Assert::AreEqual(XFModel::kDefaultWireThickness,
+                     XFPlot::PlotRenderer::Surface3DOptions{}.wireThickness);
 }
 
 TEST_CASE(PlotQualityPolicy_InteractionThrottleReducesExpensiveSettings) {

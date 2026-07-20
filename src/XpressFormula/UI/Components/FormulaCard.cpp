@@ -125,9 +125,9 @@ void drawMetadata(const Model::Formula& formula,
 
 } // namespace
 
-FormulaCardAction renderFormulaCard(Model::Formula& formula,
+FormulaCardResult renderFormulaCard(const Model::Formula& formula,
                                     const FormulaCardContext& context) {
-    FormulaCardAction action;
+    FormulaCardResult result;
     const std::string cardIdText = "formula_" + std::to_string(formula.id);
     UiKit::IdScope cardId(cardIdText.c_str());
 
@@ -165,8 +165,8 @@ FormulaCardAction renderFormulaCard(Model::Formula& formula,
                       ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
     auto setActionIfEmpty = [&](FormulaCardActionType type) {
-        if (!hasAction(action)) {
-            action = makeAction(type, formula.id);
+        if (!hasAction(result.action)) {
+            result.action = makeAction(type, formula.id);
         }
     };
 
@@ -202,14 +202,22 @@ FormulaCardAction renderFormulaCard(Model::Formula& formula,
         }
     };
 
-    ImGui::Checkbox("##visible", &formula.visible);
-    ImGui::SetItemTooltip("%s Formula %d.", formula.visible ? "Hide" : "Show", context.index + 1);
+    bool visible = formula.visible;
+    if (ImGui::Checkbox("##visible", &visible)) {
+        result.visibilityChanged = true;
+        result.visible = visible;
+    }
+    ImGui::SetItemTooltip("%s Formula %d.", visible ? "Hide" : "Show", context.index + 1);
     ImGui::SameLine();
 
-    ImGui::ColorEdit4("##color", formula.color.data(),
-                      ImGuiColorEditFlags_NoInputs |
-                      ImGuiColorEditFlags_NoLabel |
-                      ImGuiColorEditFlags_NoTooltip);
+    Model::ColorRgba color = formula.color;
+    if (ImGui::ColorEdit4("##color", color.data(),
+                          ImGuiColorEditFlags_NoInputs |
+                          ImGuiColorEditFlags_NoLabel |
+                          ImGuiColorEditFlags_NoTooltip)) {
+        result.colorChanged = true;
+        result.color = color;
+    }
     ImGui::SetItemTooltip("Set Formula %d color.", context.index + 1);
     ImGui::SameLine();
 
@@ -306,17 +314,19 @@ FormulaCardAction renderFormulaCard(Model::Formula& formula,
         float zSlice = static_cast<float>(formula.zSlice);
         if (formula.compiled.equation) {
             if (ImGui::SliderFloat("z slice / center", &zSlice, -10.0f, 10.0f, "z = %.2f")) {
-                formula.zSlice = zSlice;
+                result.zSliceChanged = true;
+                result.zSlice = static_cast<double>(zSlice);
             }
         } else {
             if (ImGui::SliderFloat("z slice", &zSlice, -10.0f, 10.0f, "z = %.2f")) {
-                formula.zSlice = zSlice;
+                result.zSliceChanged = true;
+                result.zSlice = static_cast<double>(zSlice);
             }
         }
     }
 
     ImGui::EndChild();
-    return action;
+    return result;
 }
 
 } // namespace XpressFormula::UI::Components

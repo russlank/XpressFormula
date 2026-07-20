@@ -145,31 +145,39 @@ Write-Host "Expected release tag: $expectedTag"
 
 ## v1.6.0 Release Verification Record
 
-Last updated: 2026-07-19
+Last updated: 2026-07-20
 
-Automated verification completed locally with Visual Studio MSBuild 18.8.2:
+Automated verification completed locally with Visual Studio MSBuild 18.8.2+ce25c0108 (`msbuild -version`: 18.8.2.30814):
 
 - [x] Debug x64 app build succeeds:
   `MSBuild src\XpressFormula\XpressFormula.vcxproj /p:Configuration=Debug /p:Platform=x64 /p:SolutionDir="C:\MyData\Projects\Digixoil\XpressFormula\src\" /m`
+  Output: `src\x64\Debug\XpressFormula.exe`.
 - [x] Release x64 app build succeeds:
   `MSBuild src\XpressFormula\XpressFormula.vcxproj /p:Configuration=Release /p:Platform=x64 /p:SolutionDir="C:\MyData\Projects\Digixoil\XpressFormula\src\" /m`
+  Output: `src\x64\Release\XpressFormula.exe`.
 - [x] Debug x64 test project builds:
   `MSBuild src\XpressFormula.Tests\XpressFormula.Tests.vcxproj /p:Configuration=Debug /p:Platform=x64 /m`
+  Output: `src\XpressFormula.Tests\x64\Debug\XpressFormula.Tests.exe`.
 - [x] Release x64 test project builds:
   `MSBuild src\XpressFormula.Tests\XpressFormula.Tests.vcxproj /p:Configuration=Release /p:Platform=x64 /m`
-- [x] No new compiler warnings in the above builds (`0 Warning(s)`).
-- [x] Automated tests pass: `build\bin\debug-tests\XpressFormula.Tests.exe` reported `378/378 tests passed`.
-- [x] Release test executable also reported `378/378 tests passed`.
+  Output: `src\XpressFormula.Tests\x64\Release\XpressFormula.Tests.exe`.
+- [x] No compiler warnings in the above builds (`0 Warning(s)`, `0 Error(s)`).
+- [x] Debug automated tests pass: `src\XpressFormula.Tests\x64\Debug\XpressFormula.Tests.exe` reported `458/458 tests passed`.
+- [x] Release automated tests pass: `src\XpressFormula.Tests\x64\Release\XpressFormula.Tests.exe` reported `458/458 tests passed`.
+- [x] Architecture boundary check passes:
+  `powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\check-architecture-boundaries.ps1`
 - [x] Existing core tests pass.
 - [x] New project-session tests pass.
 - [x] Export settings and metadata tests pass.
 - [x] UI layout-plan tests pass.
 - [x] Formula-list action tests pass.
+- [ ] PR Validation was not run in this local verification pass.
 
 Manual verification still required before tagging:
 
+- [ ] Plotting workflows: 2D curves, discontinuities, implicit contours, heatmaps, scalar-field cross-sections, 3D explicit surfaces, implicit surfaces, multiple implicit surfaces, camera presets, auto-rotation dirty-state behavior, grid-plane interleave, axis triad, coordinates, and wire/envelope thickness minimums and maximums.
 - [ ] Project workflows: New, Open valid `.xfplot`, Save, Save As, Recent reopen, dirty marker set/clear, Save/Discard/Cancel before New/Open/Close, unsupported schema error, malformed file error, invalid formula warning, Unicode formula round trip, multiple save/load cycles retaining values.
-- [ ] Export workflows: every export profile, transparent PNG, grayscale export, metadata sidecar output, metadata JSON opens in a parser/editor, preview/final export parity, offscreen fallback behavior if reproducible.
+- [ ] Export workflows: every export profile, transparent PNG, grayscale export, metadata sidecar output, metadata JSON opens in a parser/editor, preview/final export parity, save/copy/open/reveal/copy-path, offscreen fallback behavior if reproducible.
 - [ ] Responsive UI: wide/medium/compact/extra-compact toolbar, minimum/default/maximum sidebar width, narrow/short windows, formula cards at narrow widths, and 100%, 125%, 150%, and 200% Windows scaling where available.
 
 ## How to Change Versions

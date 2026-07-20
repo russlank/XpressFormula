@@ -108,7 +108,8 @@ void FormulaPanel::requestDeleteFormula(Model::FormulaId formulaId) {
     m_openDeleteConfirmPopupNextFrame = true;
 }
 
-void FormulaPanel::renderDeleteConfirmationDialog(std::vector<Model::Formula>& formulas) {
+void FormulaPanel::renderDeleteConfirmationDialog(std::span<const Model::Formula> formulas,
+                                                  FormulaPanelActions& actions) {
     if (m_openDeleteConfirmPopupNextFrame) {
         ImGui::OpenPopup(kDeleteFormulaPopupId);
         m_openDeleteConfirmPopupNextFrame = false;
@@ -149,9 +150,13 @@ void FormulaPanel::renderDeleteConfirmationDialog(std::vector<Model::Formula>& f
             UiKit::StyleColorScope hoveredColor(
                 ImGuiCol_ButtonHovered, ImVec4(0.86f, 0.22f, 0.22f, 1.0f));
             if (ImGui::Button("Delete", ImVec2(120.0f, 0.0f))) {
-                FormulaListActions::deleteFormula(formulas,
-                                                  *m_pendingDeleteFormulaId,
-                                                  &m_editorState.targetId);
+                actions.commands.push_back(FormulaPanelCommand{
+                    FormulaPanelCommandType::RemoveFormula,
+                    *m_pendingDeleteFormulaId
+                });
+                if (m_editorState.targetId == m_pendingDeleteFormulaId) {
+                    m_editorState.targetId.reset();
+                }
                 m_pendingDeleteFormulaId.reset();
                 ImGui::CloseCurrentPopup();
             }
@@ -284,7 +289,8 @@ void FormulaPanel::renderExampleHelpDialog() {
     }
 }
 
-void FormulaPanel::renderEditorDialog(std::vector<Model::Formula>& formulas) {
+void FormulaPanel::renderEditorDialog(std::span<const Model::Formula> formulas,
+                                      FormulaPanelActions& actions) {
     if (m_openEditorPopupNextFrame) {
         ImGui::OpenPopup(kFormulaEditorPopupId);
         m_openEditorPopupNextFrame = false;
@@ -320,7 +326,7 @@ void FormulaPanel::renderEditorDialog(std::vector<Model::Formula>& formulas) {
             return;
         }
 
-        Model::Formula& formula = formulas[*formulaIndex];
+        const Model::Formula& formula = formulas[*formulaIndex];
 
         {
         UiKit::StyleVarScope itemSpacing(
@@ -379,7 +385,13 @@ void FormulaPanel::renderEditorDialog(std::vector<Model::Formula>& formulas) {
         ImGui::Separator();
         ImGui::Dummy(ImVec2(0.0f, 4.0f));
         if (ImGui::Button("Apply", ImVec2(120.0f, 0.0f))) {
-            m_editorState.applyTo(formula);
+            Model::Formula updated = formula;
+            m_editorState.applyTo(updated);
+            actions.commands.push_back(FormulaPanelCommand{
+                FormulaPanelCommandType::UpdateFormula,
+                formula.id,
+                std::move(updated)
+            });
             m_editorState.close();
             ImGui::CloseCurrentPopup();
         }
@@ -519,7 +531,9 @@ void FormulaPanel::renderEditorDialog(std::vector<Model::Formula>& formulas) {
     }
 }
 
-void FormulaPanel::render(std::vector<Model::Formula>& formulas) {
+FormulaPanelActions FormulaPanel::render(std::span<const Model::Formula> formulas) {
+    FormulaPanelActions actions;
+
     ImGui::TextUnformatted("Formulas");
     ImGui::Separator();
 
@@ -528,8 +542,12 @@ void FormulaPanel::render(std::vector<Model::Formula>& formulas) {
         int idx = m_nextColorIndex % kPaletteSize;
         applyPaletteColor(entry, idx);
         m_nextColorIndex++;
-        formulas.push_back(std::move(entry));
-        openEditor(formulas.back());
+        openEditor(entry);
+        actions.commands.push_back(FormulaPanelCommand{
+            FormulaPanelCommandType::AddFormula,
+            entry.id,
+            std::move(entry)
+        });
     }
 
     ImGui::Spacing();
@@ -552,7 +570,11 @@ void FormulaPanel::render(std::vector<Model::Formula>& formulas) {
                 applyPaletteColor(entry, idx);
                 m_nextColorIndex++;
                 entry.compile();
-                formulas.push_back(std::move(entry));
+                actions.commands.push_back(FormulaPanelCommand{
+                    FormulaPanelCommandType::AddFormula,
+                    entry.id,
+                    std::move(entry)
+                });
             }
             if (ImGui::IsItemHovered()) {
                 ImGui::BeginTooltip();
@@ -583,8 +605,8 @@ void FormulaPanel::render(std::vector<Model::Formula>& formulas) {
     }
 
     for (int i = 0; i < static_cast<int>(formulas.size()); ++i) {
-        Model::Formula& formula = formulas[static_cast<std::size_t>(i)];
-        const Components::FormulaCardAction action = Components::renderFormulaCard(
+        const Model::Formula& formula = formulas[static_cast<std::size_t>(i)];
+        const Components::FormulaCardResult card = Components::renderFormulaCard(
             formula,
             Components::FormulaCardContext{
                 i,
@@ -592,12 +614,36 @@ void FormulaPanel::render(std::vector<Model::Formula>& formulas) {
                 ImGui::GetContentRegionAvail().x
             });
 
-        switch (action.type) {
+        if (card.visibilityChanged) {
+            actions.commands.push_back(FormulaPanelCommand{
+                FormulaPanelCommandType::SetVisibility,
+                formula.id,
+                {},
+                0,
+                card.visible
+            });
+        }
+        if (card.colorChanged) {
+            FormulaPanelCommand command;
+            command.type = FormulaPanelCommandType::SetColor;
+            command.formulaId = formula.id;
+            command.color = card.color;
+            actions.commands.push_back(command);
+        }
+        if (card.zSliceChanged) {
+            FormulaPanelCommand command;
+            command.type = FormulaPanelCommandType::SetZSlice;
+            command.formulaId = formula.id;
+            command.zSlice = card.zSlice;
+            actions.commands.push_back(command);
+        }
+
+        switch (card.action.type) {
             case Components::FormulaCardActionType::Edit:
                 openEditor(formula);
                 break;
             case Components::FormulaCardActionType::Duplicate:
-                duplicateId = action.formulaId;
+                duplicateId = card.action.formulaId;
                 break;
             case Components::FormulaCardActionType::Copy: {
                 const std::string expression = FormulaListActions::formulaExpression(formula);
@@ -605,22 +651,22 @@ void FormulaPanel::render(std::vector<Model::Formula>& formulas) {
                 break;
             }
             case Components::FormulaCardActionType::HideOthers:
-                hideOthersId = action.formulaId;
+                hideOthersId = card.action.formulaId;
                 break;
             case Components::FormulaCardActionType::MoveUp:
-                moveId = action.formulaId;
+                moveId = card.action.formulaId;
                 if (i > 0) {
                     moveToIndex = static_cast<std::size_t>(i - 1);
                 }
                 break;
             case Components::FormulaCardActionType::MoveDown:
-                moveId = action.formulaId;
+                moveId = card.action.formulaId;
                 if (i + 1 < static_cast<int>(formulas.size())) {
                     moveToIndex = static_cast<std::size_t>(i + 1);
                 }
                 break;
             case Components::FormulaCardActionType::RequestDelete:
-                requestDeleteFormula(action.formulaId);
+                requestDeleteFormula(card.action.formulaId);
                 break;
             case Components::FormulaCardActionType::None:
             default:
@@ -629,18 +675,29 @@ void FormulaPanel::render(std::vector<Model::Formula>& formulas) {
     }
 
     if (hideOthersId.has_value()) {
-        FormulaListActions::hideOtherFormulas(formulas, *hideOthersId);
+        actions.commands.push_back(FormulaPanelCommand{
+            FormulaPanelCommandType::HideOtherFormulas,
+            *hideOthersId
+        });
     }
     if (duplicateId.has_value()) {
-        FormulaListActions::duplicateFormula(formulas, *duplicateId, &m_editorState.targetId);
+        actions.commands.push_back(FormulaPanelCommand{
+            FormulaPanelCommandType::DuplicateFormula,
+            *duplicateId
+        });
     }
     if (moveId.has_value() && moveToIndex.has_value()) {
-        FormulaListActions::moveFormula(formulas, *moveId, *moveToIndex,
-                                        &m_editorState.targetId);
+        FormulaPanelCommand command;
+        command.type = FormulaPanelCommandType::MoveFormula;
+        command.formulaId = *moveId;
+        command.toIndex = *moveToIndex;
+        actions.commands.push_back(command);
     }
 
-    renderDeleteConfirmationDialog(formulas);
-    renderEditorDialog(formulas);
+    renderDeleteConfirmationDialog(formulas, actions);
+    renderEditorDialog(formulas, actions);
+
+    return actions;
 }
 
 } // namespace XpressFormula::UI

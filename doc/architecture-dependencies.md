@@ -10,19 +10,19 @@ XpressFormula.Expression
   Core tokenization, parsing, AST, shared AST queries, formula compilation/classification, evaluation, functions, examples, and version parsing helpers.
 
 XpressFormula.Model
-  Formula identity/state/compiled formula model, scene summary analysis, persistent view state, transient viewport geometry, and ViewTransform. Header-only settings models are listed here until they move to Model.
+  Formula identity/state/compiled formula model, revision-tracked Document commands, scene summary analysis, persistent view state, transient viewport geometry, plot policy, and ViewTransform.
 
 XpressFormula.Plotting
-  PlotRenderer and plotting draw logic.
+  Plot render planning, quality policy, projection, geometry/sampling/meshing helpers, implicit mesh cache, PlotRenderer, and the current ImGui draw-list backend.
 
 XpressFormula.Infrastructure
-  JSON parsing/writing, UTF conversion helpers, atomic file replacement, project persistence serialization/repository code, recent-project storage, Windows platform services, and other infrastructure services.
+  JSON parsing/writing, UTF conversion helpers, atomic file replacement, project persistence serialization/repository code, recent-project storage, export settings/metadata/output workflow, image post-processing, Windows platform services, and other infrastructure services.
 
 XpressFormula.UI
   Formula/control/plot panels, FormulaCard/PlotToolbar components, dynamic formula editor state, formula presentation helpers, UiKit, and Dear ImGui core sources.
 
 XpressFormula.App
-  Current Application orchestration and ImGui Win32/DX11 backend sources.
+  Application orchestration, document/project/export/update controllers, export output adapters, runtime plot state, and ImGui Win32/DX11 backend sources.
 
 XpressFormula
   Executable host: main.cpp, resources, and project references.
@@ -52,7 +52,7 @@ The current code predates the final architecture, so some file paths still live 
 - `Model` must not include ImGui, Win32, D3D11, or JSON parser types.
 - `Plotting` should not gain new UI workflow or platform responsibilities.
 - `Infrastructure` must not mutate live application state directly.
-- `UI` panels must not perform atomic file writes, WIC encoding, shell actions, clipboard operations, or HTTP calls.
+- `UI` panels and reusable UI components must not perform atomic file writes, WIC encoding, shell actions, clipboard operations, or HTTP calls.
 - `App` may coordinate side effects during the migration, but new platform code should move behind Platform/Windows services in later modernization phases.
 - Tests must not re-add production `.cpp` files directly; add a production project reference instead.
 
@@ -65,8 +65,11 @@ The current code predates the final architecture, so some file paths still live 
 - `XpressFormula.Plotting`
 - `XpressFormula.Infrastructure`
 - `XpressFormula.UI`
+- `XpressFormula.App`
 
 This makes tests consume the same production object code used by the executable. Header-only helpers are still compiled in test translation units until later modernization phases give them `.cpp` ownership.
+
+Run `tools\check-architecture-boundaries.ps1` from the repository root before architecture-boundary PRs. It enforces the most important source and project-file rules locally.
 
 ## Migration Rules
 
@@ -82,7 +85,8 @@ This makes tests consume the same production object code used by the executable.
 
 - `XpressFormula.UI::FormulaEntry` remains only as a transitional alias for `XpressFormula.Model::Formula`; it no longer stores duplicated domain state. Formula labels and display counts are computed through UI presentation helpers.
 - `XpressFormula.Plotting` still includes ImGui because rendering currently writes directly to `ImDrawList`. A later plotting foundation phase is expected to introduce geometry generation before an ImGui backend.
-- `XpressFormula.App` still owns Win32 window procedure, D3D device/swapchain orchestration, WIC COM initialization lifetime, file-dialog workflow decisions, and export/update orchestration. Later platform, export, document-controller, and composition phases are expected to extract these remaining responsibilities.
+- `XpressFormula.Plotting` now has pure geometry, sampling, and meshing helpers that must stay ImGui-free; the ImGui dependency is confined to the draw-list backend and renderer layer.
+- `XpressFormula.App` still owns Win32 window procedure, D3D device/swapchain orchestration, WIC COM initialization lifetime, file-dialog workflow decisions, update orchestration, and D3D capture/offscreen rendering. Export output adapters now live outside `UI::Application`, but the application host still coordinates the workflow.
 
 ## No-Feature-Change Constraint
 
