@@ -8,6 +8,8 @@
 #include "ExportSettings.h"
 #include "PlotPanel.h"
 #include "PlotSettings.h"
+#include "../Application/ExportController.h"
+#include "../Application/ExportPreviewTexture.h"
 #include "../Core/ViewTransform.h"
 #include "../Infrastructure/Persistence/ProjectMapper.h"
 #include "../Infrastructure/Persistence/ProjectRepository.h"
@@ -116,32 +118,11 @@ private:
                                int& width, int& height);
     void renderExportDialog(float sidebarWidth, float viewportHeight);
     void initialiseExportDialogSize();
-    void cleanupExportPreviewResources();
     bool refreshExportPreviewTexture();
-    void applyExportPostProcessing(std::vector<std::uint8_t>& pixels,
-                                   int sourceWidth, int sourceHeight,
-                                   std::vector<std::uint8_t>& outputPixels,
-                                   int& outputWidth, int& outputHeight);
-    static void resizePixelsBilinear(const std::vector<std::uint8_t>& srcPixels,
-                                     int srcWidth, int srcHeight,
-                                     int dstWidth, int dstHeight,
-                                     std::vector<std::uint8_t>& dstPixels);
-    static void convertPixelsRgbaToBgra(std::vector<std::uint8_t>& pixels);
-    static void unpremultiplyPixels(std::vector<std::uint8_t>& pixels);
-    static void convertPixelsToGrayscale(std::vector<std::uint8_t>& pixels);
-    static void convertPixelsToGrayscaleRgba(std::vector<std::uint8_t>& pixels);
-    bool saveImageToPath(const std::wstring& path,
-                         const std::vector<std::uint8_t>& pixels,
-                         int width, int height, std::string& error);
-    std::string buildExportMetadataJson(const ExportSettings& settings,
-                                        const std::wstring& imagePath,
-                                        int width, int height) const;
     bool writeExportMetadataSidecar(const ExportSettings& settings,
                                     const std::wstring& imagePath,
                                     int width, int height,
                                     std::string& error) const;
-    bool copyPixelsToClipboard(const std::vector<std::uint8_t>& pixels,
-                               int width, int height, std::string& error);
     void openLastSavedExport();
     void showLastSavedExportInFolder();
     void copyLastSavedExportPath();
@@ -177,33 +158,8 @@ private:
     std::wstring              m_pendingProjectPath;
     bool                      m_openProjectDiscardPopupNextFrame = false;
     float                     m_sidebarWidth = 360.0f;
-    bool                      m_exportDialogOpen = false;
-    bool                      m_exportDialogOpenRequested = false;
-    bool                      m_exportDialogPopupOpenNextFrame = false;
-    bool                      m_exportDialogCenterOnOpen = false;
-    bool                      m_exportDialogSizeInitialized = false;
-    float                     m_exportSettingsPaneWidth = 420.0f;
-    ExportSettings            m_exportDialogSettings;
-    ExportSettings            m_pendingExportSettings;
-    bool                      m_scheduledSavePlotImage = false;
-    bool                      m_scheduledCopyPlotImage = false;
-    bool                      m_pendingSavePlotImage = false;
-    bool                      m_pendingCopyPlotImage = false;
-    ID3D11Texture2D*          m_exportPreviewTexture = nullptr;
-    ID3D11ShaderResourceView* m_exportPreviewSrv = nullptr;
-    int                       m_exportPreviewWidth = 0;
-    int                       m_exportPreviewHeight = 0;
-    bool                      m_exportPreviewDirty = false;
-    bool                      m_exportPreviewRefreshRequested = false;
-    bool                      m_exportPreviewUseFinalQualityOnce = false;
-    std::chrono::steady_clock::time_point m_exportPreviewLastChanged;
-    float                     m_exportPreviewZoom = 0.0f; // 0 means fit to preview pane.
-    float                     m_exportPreviewPanX = 0.0f;
-    float                     m_exportPreviewPanY = 0.0f;
-    bool                      m_exportPreviewCheckerboard = true;
-    std::string               m_exportPreviewStatus;
-    std::string               m_exportStatus;
-    std::wstring              m_lastExportSavedPath;
+    XpressFormula::Application::ExportController m_exportController;
+    XpressFormula::Application::ExportPreviewTexture m_exportPreview;
     std::future<UpdateCheckResult> m_updateCheckFuture;
     bool                      m_updateCheckInProgress = false;
     bool                      m_startupCheckDone = false;

@@ -96,6 +96,10 @@
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="..\XpressFormula\Infrastructure\Export\ExportMetadataSerializer.cpp" />
+    <ClCompile Include="..\XpressFormula\Infrastructure\Export\ExportOutputWorkflow.cpp" />
+    <ClCompile Include="..\XpressFormula\Infrastructure\Export\ExportRenderRequest.cpp" />
+    <ClCompile Include="..\XpressFormula\Infrastructure\Export\ImageProcessor.cpp" />
     <ClCompile Include="..\XpressFormula\Infrastructure\FileSystem\AtomicFileWriter.cpp" />
     <ClCompile Include="..\XpressFormula\Infrastructure\Persistence\ProjectMapper.cpp" />
     <ClCompile Include="..\XpressFormula\Infrastructure\Persistence\ProjectRepository.cpp" />
@@ -112,6 +116,11 @@
     <ClCompile Include="InfrastructureBoundary.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\XpressFormula\Infrastructure\Export\ExportMetadataSerializer.h" />
+    <ClInclude Include="..\XpressFormula\Infrastructure\Export\ExportOutputWorkflow.h" />
+    <ClInclude Include="..\XpressFormula\Infrastructure\Export\ExportRenderRequest.h" />
+    <ClInclude Include="..\XpressFormula\Infrastructure\Export\ExportSettings.h" />
+    <ClInclude Include="..\XpressFormula\Infrastructure\Export\ImageProcessor.h" />
     <ClInclude Include="..\XpressFormula\Infrastructure\FileSystem\AtomicFileWriter.h" />
     <ClInclude Include="..\XpressFormula\Infrastructure\Persistence\ProjectMapper.h" />
     <ClInclude Include="..\XpressFormula\Infrastructure\Persistence\ProjectRepository.h" />

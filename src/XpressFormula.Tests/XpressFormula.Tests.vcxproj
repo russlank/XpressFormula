@@ -148,6 +148,8 @@
     <ClCompile Include="FormulaEntryTests.cpp" />
     <ClCompile Include="FormulaEditorStateTests.cpp" />
     <ClCompile Include="UpdateVersionUtilsTests.cpp" />
+    <ClCompile Include="..\XpressFormula\Application\ExportController.cpp" />
+    <ClCompile Include="ExportSubsystemTests.cpp" />
     <ClCompile Include="ExportSettingsTests.cpp" />
     <ClCompile Include="ProjectSessionTests.cpp" />
     <ClCompile Include="InfrastructureSerializationTests.cpp" />
