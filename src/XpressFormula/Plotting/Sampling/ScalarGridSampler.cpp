@@ -51,16 +51,16 @@ ScalarCellGrid sampleScalarCellGrid(const Core::ASTNodePtr& ast,
     double lo = std::numeric_limits<double>::max();
     double hi = std::numeric_limits<double>::lowest();
 
-    Core::Evaluator::Variables vars;
+    Core::EvaluationContext context;
     if (zValue.has_value()) {
-        vars["z"] = *zValue;
+        context.z = *zValue;
     }
 
     for (int iy = 0; iy < grid.rows; ++iy) {
-        vars["y"] = grid.bounds.yMin + (static_cast<double>(iy) + 0.5) * dy;
+        context.y = grid.bounds.yMin + (static_cast<double>(iy) + 0.5) * dy;
         for (int ix = 0; ix < grid.columns; ++ix) {
-            vars["x"] = grid.bounds.xMin + (static_cast<double>(ix) + 0.5) * dx;
-            const double value = Core::Evaluator::evaluate(ast, vars);
+            context.x = grid.bounds.xMin + (static_cast<double>(ix) + 0.5) * dx;
+            const double value = Core::Evaluator::evaluate(ast, context);
             grid.values[static_cast<size_t>(iy * grid.columns + ix)] = value;
             if (std::isfinite(value)) {
                 grid.hasFiniteValue = true;
@@ -94,17 +94,17 @@ ScalarLattice sampleScalarLattice(const Core::ASTNodePtr& ast,
     const double dx = lattice.stepX();
     const double dy = lattice.stepY();
 
-    Core::Evaluator::Variables vars;
+    Core::EvaluationContext context;
     if (zValue.has_value()) {
-        vars["z"] = *zValue;
+        context.z = *zValue;
     }
 
     for (int iy = 0; iy <= lattice.cellsY; ++iy) {
-        vars["y"] = lattice.bounds.yMin + static_cast<double>(iy) * dy;
+        context.y = lattice.bounds.yMin + static_cast<double>(iy) * dy;
         for (int ix = 0; ix <= lattice.cellsX; ++ix) {
-            vars["x"] = lattice.bounds.xMin + static_cast<double>(ix) * dx;
+            context.x = lattice.bounds.xMin + static_cast<double>(ix) * dx;
             lattice.values[static_cast<size_t>(iy * (lattice.cellsX + 1) + ix)] =
-                Core::Evaluator::evaluate(ast, vars);
+                Core::Evaluator::evaluate(ast, context);
         }
     }
 

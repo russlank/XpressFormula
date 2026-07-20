@@ -141,13 +141,13 @@ The app later evaluates this tree many times with different variable values.
 
 ### 5. Constants and Built-In Functions
 
-The parser recognizes constants like:
+The parser recognizes constants from the shared constant registry, including:
 
 - `pi`
 - `e`
 - `tau`
 
-It also validates function names against a built-in list (`sin`, `cos`, `pow`, `log`, ...).
+It also validates function names against the shared function registry (`sin`, `cos`, `pow`, `log`, ...).
 
 Why validate during parsing?
 
@@ -207,19 +207,22 @@ This classification happens in the expression compiler and is stored on `Model::
 
 ## Part 3: AST Evaluation
 
-The evaluator computes a numeric result from the AST for a given set of variables.
+The evaluator computes a numeric result from the AST for a fixed `x`, `y`, `z`
+sample context. Variable nodes resolve their slot during parsing, so sampling
+loops update numeric fields instead of performing string-map lookup for every
+sample.
 
 Example:
 
 - AST for `sin(x) + y`
-- variables `{ x = 1.0, y = 2.0 }`
+- context `{ x = 1.0, y = 2.0 }`
 - result `sin(1.0) + 2.0`
 
 ### NaN as an Error Signal
 
 The evaluator returns `NaN` for invalid cases, for example:
 
-- missing variables
+- unsupported variable slots and missing values in the compatibility map adapter
 - divide by zero
 - `sqrt(-1)` in real numbers
 - invalid function arguments

@@ -16,7 +16,7 @@ Formula text
   -> Tokenizer (text -> tokens)
   -> Parser (tokens -> AST)
   -> FormulaEntry (AST + equation normalization + render kind classification)
-  -> Evaluator (AST + variables -> double samples)
+  -> Evaluator (AST + EvaluationContext -> double samples)
   -> PlotRenderer (samples -> lines/contours/triangles)
   -> ImGui DrawList (pixels)
 ```
@@ -25,6 +25,7 @@ Primary files:
 
 - [`src/XpressFormula/Core/Tokenizer.cpp`](../src/XpressFormula/Core/Tokenizer.cpp)
 - [`src/XpressFormula/Core/Parser.cpp`](../src/XpressFormula/Core/Parser.cpp)
+- [`src/XpressFormula/Core/ConstantRegistry.cpp`](../src/XpressFormula/Core/ConstantRegistry.cpp)
 - [`src/XpressFormula/Core/FunctionRegistry.cpp`](../src/XpressFormula/Core/FunctionRegistry.cpp)
 - [`src/XpressFormula/UI/FormulaEntry.h`](../src/XpressFormula/UI/FormulaEntry.h)
 - [`src/XpressFormula/Core/Evaluator.cpp`](../src/XpressFormula/Core/Evaluator.cpp)
@@ -85,7 +86,7 @@ Common values:
 - Defined in: [`src/XpressFormula/Core/ASTNode.h`](../src/XpressFormula/Core/ASTNode.h)
 - Used by:
   - parser variable detection
-  - evaluator variable lookup
+  - evaluator fixed-slot lookup
   - formula classification (`FormulaEntry`)
 
 ### `Core::BinaryOpNode`
@@ -126,13 +127,21 @@ Common values:
   - `FormulaEntry::parse()` for formula/equation setup
   - formula editor live validation preview
 
-### `Core::Evaluator::Variables`
+### `Core::EvaluationContext`
 
-- Type: `std::unordered_map<std::string, double>`
-- Represents: variable assignment environment for evaluation
+- Type: fixed `double x`, `double y`, `double z` sample values
+- Represents: primary variable assignment environment for evaluation
 - Defined in: [`src/XpressFormula/Core/Evaluator.h`](../src/XpressFormula/Core/Evaluator.h)
 - Used by:
   - all plot sampling paths (`Curve2D`, `Heatmap`, `CrossSection`, `Surface3D`, implicit contour/surface)
+
+### `Core::Evaluator::Variables`
+
+- Type: `std::unordered_map<std::string, double>`
+- Represents: compatibility adapter for older named-variable callers
+- Defined in: [`src/XpressFormula/Core/Evaluator.h`](../src/XpressFormula/Core/Evaluator.h)
+- Used by:
+  - tests and non-render callers that have not moved to `EvaluationContext`
 
 ### `Core::FunctionInfo` / Function Registry
 
@@ -150,9 +159,10 @@ Common values:
   - equivalent formula or explanatory note
   - loadable example
   - minimum and maximum arity
+  - evaluator callback
 - Used by:
   - parser known-function validation
-  - evaluator strict arity checks and dispatch
+  - evaluator strict arity checks and callback dispatch
   - formula editor supported-functions reference and details help
 
 ### `Core::Vec2`
@@ -195,7 +205,14 @@ Key methods:
 ### `Core::PI`, `Core::E`, `Core::TAU`
 
 - Defined in: [`src/XpressFormula/Core/MathConstants.h`](../src/XpressFormula/Core/MathConstants.h)
-- Represents: standard math constants
+- Represents: standard numeric math constants
+
+### `Core::ConstantInfo` / Constant Registry
+
+- Defined in:
+  - [`src/XpressFormula/Core/ConstantRegistry.h`](../src/XpressFormula/Core/ConstantRegistry.h)
+  - [`src/XpressFormula/Core/ConstantRegistry.cpp`](../src/XpressFormula/Core/ConstantRegistry.cpp)
+- Represents: expression-language constant names, values, and descriptions
 - Used by:
   - parser constant resolution (`pi`, `e`, `tau`)
   - user expressions through parser constant handling
@@ -416,8 +433,8 @@ Files:
 
 | Goal | Primary place | Usually also touch |
 |---|---|---|
-| Add a new math function (e.g. `clamp`) | `FunctionRegistry.cpp` + `Evaluator.cpp` | docs/tests; the Formula Editor reference is generated from the registry |
-| Add a constant (e.g. `phi`) | `MathConstants.h` | `Parser.cpp`, docs/tests |
+| Add a new math function (e.g. `clamp`) | `FunctionRegistry.h` + `FunctionRegistry.cpp` | callback/docs/tests; the Formula Editor reference is generated from the registry |
+| Add a constant (e.g. `phi`) | `MathConstants.h` + `ConstantRegistry.cpp` | parser/evaluator docs/tests |
 | Change operator behavior/precedence | `Parser.cpp` | tests, docs |
 | Change invalid math handling | `Evaluator.cpp` | renderers (if `NaN` policy changes) |
 | Add a new plot mode | `FormulaEntry.h` + `PlotPanel.cpp` | `PlotRenderer.*`, docs |
@@ -442,10 +459,10 @@ Where used:
 ### Evaluate an AST at a sample point
 
 ```cpp
-XpressFormula::Core::Evaluator::Variables vars;
-vars["x"] = 1.0;
-vars["y"] = 2.0;
-double v = XpressFormula::Core::Evaluator::evaluate(ast, vars);
+XpressFormula::Core::EvaluationContext context;
+context.x = 1.0;
+context.y = 2.0;
+double v = XpressFormula::Core::Evaluator::evaluate(ast, context);
 ```
 
 Where used:
@@ -495,7 +512,7 @@ Appears in:
 
 Used for:
 
-- variable lookup by name during evaluation
+- compatibility calls that still pass named variables
 
 Appears in:
 
@@ -519,14 +536,12 @@ Appears in:
 
 Used for:
 
-- variable collection
-- built-in function name validation
-- constant name detection
+- parse-result variable collection
 
 Appears in:
 
 - `Parser.*`
-- `FormulaEntry.h`
+- `AstQueries.*`
 
 ### `<limits>`
 

@@ -18,7 +18,7 @@ std::vector<Geometry::Polyline> sampleCurve2D(const Core::ASTNodePtr& ast,
     const double dx = (options.xMax - options.xMin) / static_cast<double>(sampleCount);
     const double maxYJump = options.maxYJump > 0.0 ? options.maxYJump : 0.0;
 
-    Core::Evaluator::Variables vars;
+    Core::EvaluationContext context;
     Geometry::Polyline current;
     current.points.reserve(static_cast<size_t>(sampleCount + 1));
 
@@ -31,8 +31,8 @@ std::vector<Geometry::Polyline> sampleCurve2D(const Core::ASTNodePtr& ast,
 
     for (int i = 0; i <= sampleCount; ++i) {
         const double x = options.xMin + static_cast<double>(i) * dx;
-        vars["x"] = x;
-        const double y = Core::Evaluator::evaluate(ast, vars);
+        context.x = x;
+        const double y = Core::Evaluator::evaluate(ast, context);
 
         if (!std::isfinite(y)) {
             flushCurrent();

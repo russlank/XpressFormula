@@ -43,8 +43,6 @@ private:
     std::vector<Token> m_tokens;
     size_t             m_pos = 0;
     std::string        m_error;
-
-    static const std::set<std::string> s_constants;
 };
 
 } // namespace XpressFormula::Core

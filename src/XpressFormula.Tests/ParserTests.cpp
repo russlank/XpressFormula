@@ -1,6 +1,7 @@
 // ParserTests.cpp - Unit tests for the expression parser.
 #include "CppUnitTest.h"
 #include "../XpressFormula/Core/Parser.h"
+#include "../XpressFormula/Core/ConstantRegistry.h"
 #include "../XpressFormula/Core/FunctionRegistry.h"
 #include <cstring>
 #include <set>
@@ -308,12 +309,41 @@ TEST_CASE(Parse_FunctionRegistryMetadataIsValid) {
         Assert::IsTrue(info.example != nullptr && info.example[0] != '\0');
         Assert::IsTrue(info.minArity >= 0);
         Assert::IsTrue(info.maxArity >= info.minArity);
+        Assert::IsTrue(info.evaluate != nullptr);
+        Assert::IsTrue(functionAcceptsArity(info, static_cast<std::size_t>(info.minArity)));
+        Assert::IsFalse(functionAcceptsArity(
+            info, static_cast<std::size_t>(info.maxArity + 1)));
         Assert::IsTrue(names.insert(info.name).second,
             (std::wstring(L"Duplicate function name: ") + widenParserText(info.name)).c_str());
 
         auto parsed = Parser::parse(info.example);
         Assert::IsTrue(parsed.success(),
             (std::wstring(L"Function example failed to parse: ") + widenParserText(info.name)).c_str());
+    }
+}
+
+TEST_CASE(Parse_FunctionCallReferencesRegistryDefinition) {
+    auto parsed = Parser::parse("sin(x)");
+    Assert::IsTrue(parsed.success());
+
+    auto* call = static_cast<FunctionCallNode*>(parsed.ast.get());
+    Assert::IsTrue(call->definition == findFunctionInfo("sin"));
+}
+
+TEST_CASE(Parse_ConstantsComeFromRegistry) {
+    std::set<std::string> names;
+
+    for (const ConstantInfo& constant : constantRegistry()) {
+        Assert::IsTrue(constant.name != nullptr && constant.name[0] != '\0');
+        Assert::IsTrue(constant.description != nullptr && constant.description[0] != '\0');
+        Assert::IsTrue(names.insert(constant.name).second,
+            (std::wstring(L"Duplicate constant name: ") + widenParserText(constant.name)).c_str());
+
+        auto parsed = Parser::parse(constant.name);
+        Assert::IsTrue(parsed.success());
+        Assert::IsTrue(parsed.ast->type() == NodeType::Number);
+        Assert::IsTrue(parsed.variables.empty());
+        Assert::IsTrue(findConstantInfo(constant.name) == &constant);
     }
 }
 

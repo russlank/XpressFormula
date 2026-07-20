@@ -1,6 +1,7 @@
 // FunctionRegistry.h - Shared metadata for built-in expression functions.
 #pragma once
 
+#include <cstddef>
 #include <span>
 #include <string_view>
 
@@ -64,6 +65,8 @@ enum class FunctionId {
     Fbm3,
 };
 
+using FunctionEvaluator = double (*)(std::span<const double>);
+
 struct FunctionInfo {
     FunctionId id;
     const char* name;
@@ -75,10 +78,14 @@ struct FunctionInfo {
     const char* example;
     int minArity;
     int maxArity;
+    FunctionEvaluator evaluate;
 };
 
 std::span<const FunctionInfo> functionRegistry();
 const FunctionInfo* findFunctionInfo(std::string_view name);
 bool isBuiltinFunction(std::string_view name);
+bool functionAcceptsArity(const FunctionInfo& info, std::size_t arity) noexcept;
+double evaluateFunction(const FunctionInfo& info, std::span<const double> args);
+double evaluateFunction(std::string_view name, std::span<const double> args);
 
 } // namespace XpressFormula::Core

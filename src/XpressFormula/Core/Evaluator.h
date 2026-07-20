@@ -2,21 +2,31 @@
 #pragma once
 
 #include "ASTNode.h"
-#include <unordered_map>
+
 #include <string>
+#include <unordered_map>
 
 namespace XpressFormula::Core {
+
+struct EvaluationContext {
+    double x = 0.0;
+    double y = 0.0;
+    double z = 0.0;
+};
 
 class Evaluator {
 public:
     using Variables = std::unordered_map<std::string, double>;
 
-    /// Evaluate the AST with the given variable values. Returns NaN on error.
+    /// Evaluate the AST with fixed x/y/z slots. Returns NaN on error.
+    static double evaluate(const ASTNodePtr& node, const EvaluationContext& context);
+
+    /// Compatibility adapter for callers that still pass variable maps.
     static double evaluate(const ASTNodePtr& node, const Variables& vars);
 
 private:
-    static double evaluateFunction(const std::string& name,
-                                   const std::vector<double>& args);
+    static double variableValue(const VariableNode& variable,
+                                const EvaluationContext& context);
 };
 
 } // namespace XpressFormula::Core

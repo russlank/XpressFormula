@@ -1,14 +1,11 @@
 // Parser.cpp - Recursive-descent expression parser implementation.
 #include "Parser.h"
 #include "Tokenizer.h"
-#include "MathConstants.h"
+#include "ConstantRegistry.h"
 #include "FunctionRegistry.h"
 #include "../Expression/AstQueries.h"
 
 namespace XpressFormula::Core {
-
-// ---- built-in names ---------------------------------------------------------
-const std::set<std::string> Parser::s_constants = { "pi", "e", "tau" };
 
 // ---- construction -----------------------------------------------------------
 Parser::Parser(const std::vector<Token>& tokens) : m_tokens(tokens) {}
@@ -137,7 +134,8 @@ ASTNodePtr Parser::parsePrimary() {
 
         // Function call?
         if (current().type == TokenType::LeftParen) {
-            if (!isBuiltinFunction(name)) {
+            const FunctionInfo* function = findFunctionInfo(name);
+            if (!function) {
                 m_error = "Unknown function '" + name +
                           "' at position " + std::to_string(pos);
                 return nullptr;
@@ -146,16 +144,13 @@ ASTNodePtr Parser::parsePrimary() {
             auto args = parseArgList();
             if (!m_error.empty()) return nullptr;
             if (!expect(TokenType::RightParen, "function call")) return nullptr;
-            return std::make_shared<FunctionCallNode>(std::move(name), std::move(args));
+            return std::make_shared<FunctionCallNode>(
+                std::move(name), std::move(args), function);
         }
 
         // Known constant?
-        if (s_constants.find(name) != s_constants.end()) {
-            double value = 0.0;
-            if (name == "pi")  value = PI;
-            else if (name == "e")   value = E;
-            else if (name == "tau") value = TAU;
-            return std::make_shared<NumberNode>(value);
+        if (const ConstantInfo* constant = findConstantInfo(name)) {
+            return std::make_shared<NumberNode>(constant->value);
         }
 
         // Variable

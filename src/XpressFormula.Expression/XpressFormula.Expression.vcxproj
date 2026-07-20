@@ -101,6 +101,7 @@
     <ClCompile Include="..\XpressFormula\Core\Tokenizer.cpp" />
     <ClCompile Include="..\XpressFormula\Core\Parser.cpp" />
     <ClCompile Include="..\XpressFormula\Core\Evaluator.cpp" />
+    <ClCompile Include="..\XpressFormula\Core\ConstantRegistry.cpp" />
     <ClCompile Include="..\XpressFormula\Core\FunctionRegistry.cpp" />
     <ClCompile Include="..\XpressFormula\Core\ExampleFormulaCatalog.cpp" />
   </ItemGroup>
@@ -114,6 +115,7 @@
     <ClInclude Include="..\XpressFormula\Core\ASTNode.h" />
     <ClInclude Include="..\XpressFormula\Core\Parser.h" />
     <ClInclude Include="..\XpressFormula\Core\Evaluator.h" />
+    <ClInclude Include="..\XpressFormula\Core\ConstantRegistry.h" />
     <ClInclude Include="..\XpressFormula\Core\FunctionRegistry.h" />
     <ClInclude Include="..\XpressFormula\Core\ExampleFormulaCatalog.h" />
     <ClInclude Include="..\XpressFormula\Core\UpdateVersionUtils.h" />

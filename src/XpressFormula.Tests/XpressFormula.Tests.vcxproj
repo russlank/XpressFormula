@@ -161,6 +161,7 @@
     <ClCompile Include="PlotSettingsTests.cpp" />
     <ClCompile Include="PlottingFoundationTests.cpp" />
     <ClCompile Include="PlottingGeometryGenerationTests.cpp" />
+    <ClCompile Include="ExpressionRuntimeBenchmarkTests.cpp" />
     <ClCompile Include="FormulaListActionsTests.cpp" />
     <ClCompile Include="UiKitLayoutTests.cpp" />
   </ItemGroup>

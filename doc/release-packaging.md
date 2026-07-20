@@ -162,8 +162,9 @@ Automated verification completed locally with Visual Studio MSBuild 18.8.2+ce25c
   `MSBuild src\XpressFormula.Tests\XpressFormula.Tests.vcxproj /p:Configuration=Release /p:Platform=x64 /m`
   Output: `src\XpressFormula.Tests\x64\Release\XpressFormula.Tests.exe`.
 - [x] No compiler warnings in the above builds (`0 Warning(s)`, `0 Error(s)`).
-- [x] Debug automated tests pass: `src\XpressFormula.Tests\x64\Debug\XpressFormula.Tests.exe` reported `459/459 tests passed`.
-- [x] Release automated tests pass: `src\XpressFormula.Tests\x64\Release\XpressFormula.Tests.exe` reported `459/459 tests passed`.
+- [x] Debug automated tests pass: `src\XpressFormula.Tests\x64\Debug\XpressFormula.Tests.exe` reported `469/469 tests passed`.
+- [x] Release automated tests pass: `src\XpressFormula.Tests\x64\Release\XpressFormula.Tests.exe` reported `469/469 tests passed`.
+- [x] Expression runtime benchmark harness passes when enabled with `XF_RUN_EXPRESSION_BENCHMARK=1`; local Release x64 run reported curve `97.8928 ms -> 71.1519 ms`, explicit surface `136.382 ms -> 99.5032 ms`, and implicit field `69.1287 ms -> 42.6645 ms`.
 - [x] Architecture boundary check passes:
   `powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\check-architecture-boundaries.ps1`
 - [x] Architecture boundary check rejects a temporary forbidden Infrastructure -> UI include; the probe file was removed before this record was updated.

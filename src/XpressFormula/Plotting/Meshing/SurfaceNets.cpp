@@ -100,14 +100,14 @@ ImplicitMeshEntry buildSurfaceNetsMesh(const Core::ASTNodePtr& ast,
                                    static_cast<size_t>(ny + 1) *
                                    static_cast<size_t>(nz + 1),
                                std::numeric_limits<double>::quiet_NaN());
-    Core::Evaluator::Variables vars;
+    Core::EvaluationContext context;
     for (int iz = 0; iz <= nz; ++iz) {
-        vars["z"] = options.bounds.zMin + static_cast<double>(iz) * dz;
+        context.z = options.bounds.zMin + static_cast<double>(iz) * dz;
         for (int iy = 0; iy <= ny; ++iy) {
-            vars["y"] = options.bounds.yMin + static_cast<double>(iy) * dy;
+            context.y = options.bounds.yMin + static_cast<double>(iy) * dy;
             for (int ix = 0; ix <= nx; ++ix) {
-                vars["x"] = options.bounds.xMin + static_cast<double>(ix) * dx;
-                values[gridIndex(ix, iy, iz)] = Core::Evaluator::evaluate(ast, vars);
+                context.x = options.bounds.xMin + static_cast<double>(ix) * dx;
+                values[gridIndex(ix, iy, iz)] = Core::Evaluator::evaluate(ast, context);
             }
         }
     }

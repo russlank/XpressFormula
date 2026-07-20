@@ -18,7 +18,7 @@ FormulaDiagnostic diagnostic(DiagnosticCode code, std::string message, std::size
 std::string unsupportedVariablesError(const VariableSet& variables) {
     std::vector<std::string> unsupported;
     for (const std::string& name : variables) {
-        if (name != "x" && name != "y" && name != "z") {
+        if (Core::variableSlotFromName(name) == Core::VariableSlot::Unknown) {
             unsupported.push_back(name);
         }
     }

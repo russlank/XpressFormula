@@ -32,14 +32,14 @@ ExplicitSurfaceMesh sampleExplicitSurface(const Core::ASTNodePtr& ast,
     double zMin = std::numeric_limits<double>::max();
     double zMax = std::numeric_limits<double>::lowest();
 
-    Core::Evaluator::Variables vars;
+    Core::EvaluationContext context;
     for (int iy = 0; iy <= mesh.cellsY; ++iy) {
         const double y = mesh.bounds2D.yMin + static_cast<double>(iy) * dy;
-        vars["y"] = y;
+        context.y = y;
         for (int ix = 0; ix <= mesh.cellsX; ++ix) {
             const double x = mesh.bounds2D.xMin + static_cast<double>(ix) * dx;
-            vars["x"] = x;
-            const double z = Core::Evaluator::evaluate(ast, vars);
+            context.x = x;
+            const double z = Core::Evaluator::evaluate(ast, context);
 
             SurfaceVertex& vertex = mesh.vertices[mesh.indexOf(ix, iy)];
             vertex.position = Geometry::Vec3{ x, y, z };

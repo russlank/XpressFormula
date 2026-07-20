@@ -7,6 +7,7 @@
 #include "UiKit/ResponsiveLayout.h"
 #include "UiKit/UiMetrics.h"
 #include "UiKit/UiScopes.h"
+#include "../Core/ConstantRegistry.h"
 #include "../Core/FunctionRegistry.h"
 #include "imgui.h"
 #include <algorithm>
@@ -88,6 +89,22 @@ bool canCopyEquivalent(const Core::FunctionInfo& fn) {
     return fn.equivalentFormula != nullptr &&
            fn.equivalentFormula[0] != '\0' &&
            std::string_view(fn.equivalentFormula).find("not expressible") == std::string_view::npos;
+}
+
+const std::string& constantNamesText() {
+    static const std::string text = [] {
+        std::string value = "Constants: ";
+        bool first = true;
+        for (const Core::ConstantInfo& constant : Core::constantRegistry()) {
+            if (!first) {
+                value += ", ";
+            }
+            value += constant.name;
+            first = false;
+        }
+        return value;
+    }();
+    return text;
 }
 
 } // namespace
@@ -339,7 +356,7 @@ void FormulaPanel::renderEditorDialog(std::span<const Model::Formula> formulas,
 
         ImGui::TextWrapped("Enter an expression or equation. Supported forms include y=f(x), "
                            "z=f(x,y), F(x,y)=0, and F(x,y,z)=0.");
-        ImGui::TextWrapped("Variables: x, y, z    Constants: pi, e, tau");
+        ImGui::Text("Variables: x, y, z    %s", constantNamesText().c_str());
         ImGui::Dummy(ImVec2(0.0f, 4.0f));
 
         if (m_focusEditorInput) {

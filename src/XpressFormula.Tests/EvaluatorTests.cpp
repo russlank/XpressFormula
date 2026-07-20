@@ -2,8 +2,13 @@
 #include "CppUnitTest.h"
 #include "../XpressFormula/Core/Parser.h"
 #include "../XpressFormula/Core/Evaluator.h"
+#include "../XpressFormula/Core/ConstantRegistry.h"
+#include "../XpressFormula/Core/FunctionRegistry.h"
 #include "../XpressFormula/Core/MathConstants.h"
+#include <array>
 #include <cmath>
+#include <span>
+#include <vector>
 
 using namespace Microsoft::VisualStudio::CppUnitTestFramework;
 using namespace XpressFormula::Core;
@@ -30,6 +35,22 @@ static void assertNaN(double actual) {
 static void assertInNoiseRange(double actual) {
     Assert::IsTrue(std::isfinite(actual));
     Assert::IsTrue(actual >= -1.000001 && actual <= 1.000001);
+}
+
+static std::vector<double> sampleArgsForArity(int arity) {
+    const double samples[] = { 0.25, 0.75, 0.5, 1.25, 0.8, 1.5 };
+    std::vector<double> args;
+    args.reserve(static_cast<std::size_t>(arity));
+    for (int i = 0; i < arity; ++i) {
+        args.push_back(samples[i]);
+    }
+    return args;
+}
+
+static double evalContext(const char* expr, const EvaluationContext& context) {
+    auto r = Parser::parse(expr);
+    Assert::IsTrue(r.success(), L"Parse failed");
+    return Evaluator::evaluate(r.ast, context);
 }
 
 // --- Literals ---
@@ -96,8 +117,32 @@ TEST_CASE(Eval_Subtraction) {
         assertClose(5.0, eval("x", { {"x", 5.0} }));
     }
 
-    TEST_CASE(Eval_TwoVariables) {
+TEST_CASE(Eval_TwoVariables) {
         assertClose(7.0, eval("x + y", { {"x", 3.0}, {"y", 4.0} }));
+    }
+
+    TEST_CASE(Eval_FixedContextVariableSlots) {
+        auto r = Parser::parse("x + y * 10 + z * 100");
+        Assert::IsTrue(r.success());
+
+        EvaluationContext context;
+        context.x = 1.0;
+        context.y = 2.0;
+        context.z = 3.0;
+
+        assertClose(321.0, Evaluator::evaluate(r.ast, context));
+    }
+
+    TEST_CASE(Eval_VariableNodesResolveSlotsDuringParsing) {
+        auto r = Parser::parse("x");
+        Assert::IsTrue(r.success());
+        auto* variable = static_cast<VariableNode*>(r.ast.get());
+        Assert::IsTrue(variable->slot == VariableSlot::X);
+
+        auto unsupported = Parser::parse("radius");
+        Assert::IsTrue(unsupported.success());
+        auto* unknown = static_cast<VariableNode*>(unsupported.ast.get());
+        Assert::IsTrue(unknown->slot == VariableSlot::Unknown);
     }
 
     TEST_CASE(Eval_UnknownVariable) {
@@ -222,7 +267,7 @@ TEST_CASE(Eval_Gaussian) {
     }
 
 TEST_CASE(Eval_NullAST) {
-    double result = Evaluator::evaluate(nullptr, {});
+    double result = Evaluator::evaluate(nullptr, EvaluationContext{});
     Assert::IsTrue(std::isnan(result));
 }
 
@@ -231,6 +276,12 @@ TEST_CASE(Eval_NullAST) {
 // --- Constants ---
 TEST_CASE(Eval_Tau) {
     assertClose(TAU, eval("tau"));
+}
+
+TEST_CASE(Eval_ConstantsMatchRegistryValues) {
+    for (const ConstantInfo& constant : constantRegistry()) {
+        assertClose(constant.value, eval(constant.name), 1e-15);
+    }
 }
 
 // --- Hyperbolic functions ---
@@ -366,7 +417,7 @@ TEST_CASE(Eval_SingleArgFuncWithThreeArgs) {
 TEST_CASE(Eval_TwoArgFuncWithExtraArgs) {
     auto r = Parser::parse("log(10, 100, 999)");
     Assert::IsTrue(r.success());
-    double result = Evaluator::evaluate(r.ast, {});
+    double result = Evaluator::evaluate(r.ast, EvaluationContext{});
     assertNaN(result);
 }
 
@@ -376,10 +427,39 @@ TEST_CASE(Eval_StrictArityForNewFunctions) {
     assertNaN(eval("length3(1, 2)"));
 }
 
+TEST_CASE(Eval_FunctionRegistryCallbacksValidateArityAndEvaluate) {
+    const FunctionInfo* sinInfo = findFunctionInfo("sin");
+    Assert::IsTrue(sinInfo != nullptr);
+    std::array<double, 1> sinArgs{ PI / 2.0 };
+    assertClose(1.0, evaluateFunction(*sinInfo, sinArgs));
+    Assert::IsTrue(std::isnan(evaluateFunction(*sinInfo, std::span<const double>{})));
+
+    const FunctionInfo* logInfo = findFunctionInfo("log");
+    Assert::IsTrue(logInfo != nullptr);
+    std::array<double, 1> naturalLogArgs{ E };
+    std::array<double, 2> baseLogArgs{ 2.0, 8.0 };
+    assertClose(1.0, evaluateFunction(*logInfo, naturalLogArgs));
+    assertClose(3.0, evaluateFunction(*logInfo, baseLogArgs));
+}
+
+TEST_CASE(Eval_EveryFunctionRegistryCallbackAcceptsValidSampleArgs) {
+    for (const FunctionInfo& info : functionRegistry()) {
+        const std::vector<double> minArgs = sampleArgsForArity(info.minArity);
+        const double minResult = evaluateFunction(info, minArgs);
+        Assert::IsTrue(std::isfinite(minResult));
+
+        if (info.maxArity != info.minArity) {
+            const std::vector<double> maxArgs = sampleArgsForArity(info.maxArity);
+            const double maxResult = evaluateFunction(info, maxArgs);
+            Assert::IsTrue(std::isfinite(maxResult));
+        }
+    }
+}
+
 TEST_CASE(Eval_EmptyArgFunction) {
     auto r = Parser::parse("sin()");
     Assert::IsTrue(r.success());
-    double result = Evaluator::evaluate(r.ast, {});
+    double result = Evaluator::evaluate(r.ast, EvaluationContext{});
     assertNaN(result);
 }
 
@@ -574,6 +654,31 @@ TEST_CASE(Eval_ThreeVarPartiallyDefined) {
     // When 'z' is missing, result should be NaN
     double result = eval("x + y + z", { {"x", 1.0}, {"y", 2.0} });
     Assert::IsTrue(std::isnan(result));
+}
+
+TEST_CASE(Eval_MapCompatibilityMatchesFixedContextForXyz) {
+    const char* expression =
+        "sin(x) + cos(y) + z^2 + smoothstep(0,1,saturate(x-y))";
+    auto parsed = Parser::parse(expression);
+    Assert::IsTrue(parsed.success());
+
+    EvaluationContext context;
+    context.x = 0.37;
+    context.y = -0.21;
+    context.z = 0.43;
+
+    const Evaluator::Variables variables = {
+        { "x", context.x },
+        { "y", context.y },
+        { "z", context.z }
+    };
+
+    assertClose(Evaluator::evaluate(parsed.ast, variables),
+                Evaluator::evaluate(parsed.ast, context));
+}
+
+TEST_CASE(Eval_FixedContextDefaultsUnsetSlotsToZero) {
+    assertClose(1.0, evalContext("x + y + z", EvaluationContext{ 1.0, 0.0, 0.0 }));
 }
 
 // --- Edge precision ---

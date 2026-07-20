@@ -2,10 +2,13 @@
 #pragma once
 
 #include <string>
+#include <string_view>
 #include <vector>
 #include <memory>
 
 namespace XpressFormula::Core {
+
+struct FunctionInfo;
 
 enum class NodeType {
     Number,
@@ -17,6 +20,20 @@ enum class NodeType {
 
 enum class BinaryOperator { Add, Subtract, Multiply, Divide, Power };
 enum class UnaryOperator  { Negate, Plus };
+enum class VariableSlot { Unknown, X, Y, Z };
+
+inline VariableSlot variableSlotFromName(std::string_view name) noexcept {
+    if (name == "x") {
+        return VariableSlot::X;
+    }
+    if (name == "y") {
+        return VariableSlot::Y;
+    }
+    if (name == "z") {
+        return VariableSlot::Z;
+    }
+    return VariableSlot::Unknown;
+}
 
 /// Base class for all AST nodes.
 class ASTNode {
@@ -39,7 +56,13 @@ public:
 class VariableNode : public ASTNode {
 public:
     std::string name;
-    explicit VariableNode(std::string n) : name(std::move(n)) {}
+    VariableSlot slot = VariableSlot::Unknown;
+
+    explicit VariableNode(std::string n)
+        : name(std::move(n)),
+          slot(variableSlotFromName(name)) {
+    }
+
     NodeType type() const override { return NodeType::Variable; }
 };
 
@@ -69,8 +92,14 @@ class FunctionCallNode : public ASTNode {
 public:
     std::string            name;
     std::vector<ASTNodePtr> arguments;
-    FunctionCallNode(std::string n, std::vector<ASTNodePtr> args)
-        : name(std::move(n)), arguments(std::move(args)) {}
+    const FunctionInfo* definition = nullptr;
+
+    FunctionCallNode(std::string n, std::vector<ASTNodePtr> args,
+                     const FunctionInfo* functionDefinition = nullptr)
+        : name(std::move(n)),
+          arguments(std::move(args)),
+          definition(functionDefinition) {}
+
     NodeType type() const override { return NodeType::FunctionCall; }
 };
 
