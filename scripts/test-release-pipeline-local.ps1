@@ -47,6 +47,11 @@ try {
     Write-Host "Version: $version"
     Write-Host "Configuration=$Configuration Platform=$Platform PlatformToolset=$PlatformToolset"
 
+    powershell -NoProfile -ExecutionPolicy Bypass -File ".\tools\check-architecture-boundaries.ps1"
+    if ($LASTEXITCODE -ne 0) {
+        throw "Architecture boundary check failed with exit code $LASTEXITCODE."
+    }
+
     $repoUrl = (& git config --get remote.origin.url 2>$null)
     if ($repoUrl) {
         $repoUrl = $repoUrl.Trim()

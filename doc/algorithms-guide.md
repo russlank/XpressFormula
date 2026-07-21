@@ -212,6 +212,10 @@ sample context. Variable nodes resolve their slot during parsing, so sampling
 loops update numeric fields instead of performing string-map lookup for every
 sample.
 
+Built-in functions and constants are resolved through shared registries, so the
+parser, evaluator, and formula-help UI use the same function metadata, arity
+rules, callbacks, and constant values.
+
 Example:
 
 - AST for `sin(x) + y`

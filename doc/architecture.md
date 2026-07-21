@@ -3,14 +3,15 @@
 
 ## High-Level Design
 
-XpressFormula is moving toward explicit production modules around the existing source layout:
+XpressFormula uses a modular monolith built from explicit production modules:
 
 - `Expression`: expression tokenization, parsing, AST queries, compilation/classification, and evaluation
 - `Model`: durable formula/view models and pure scene analysis
 - `Plotting`: draw routines for grid/axes/curves/heat maps/implicit contours and 3D surfaces (explicit + implicit)
-- `UI`/`App`: ImGui panels, application orchestration, and current platform/rendering side effects
+- `UI`: ImGui panels and reusable immediate-mode components
+- `App`: application orchestration, controllers, export/update workflows, and Win32/DX11 backend integration
 
-The architecture modernization now adds build-enforced production library boundaries around the existing source layout. See [`architecture-dependencies.md`](architecture-dependencies.md) for the current project graph, forbidden dependencies, and migration exceptions.
+Production library boundaries are build- and CI-checked. See [`architecture-dependencies.md`](architecture-dependencies.md) for the current project graph, forbidden dependencies, and remaining exceptions.
 
 ## Production Project Boundaries
 
@@ -38,7 +39,7 @@ Executable -> App and production libraries
 Tests -> production libraries
 ```
 
-This first boundary step references existing files from new static-library projects. File moves are deferred until later modernization phases establish stable models and pure helpers.
+Some file paths still reflect the original source layout, but project ownership now carries the architecture boundary. Prefer preserving ownership and dependency direction over broad folder movement.
 
 ## Module Breakdown
 
@@ -57,7 +58,7 @@ This first boundary step references existing files from new static-library proje
 - [`src/XpressFormula/Model/ViewState.h`](../src/XpressFormula/Model/ViewState.h)
   - Persistent center/scale view state and transient viewport geometry types.
 - [`src/XpressFormula/Core/Evaluator.h`](../src/XpressFormula/Core/Evaluator.h) and [`src/XpressFormula/Core/Evaluator.cpp`](../src/XpressFormula/Core/Evaluator.cpp)
-  - Evaluates AST values for provided variables.
+  - Evaluates AST values with fixed `x`, `y`, and `z` sample slots and registry-backed function callbacks.
 - [`src/XpressFormula/Core/ViewTransform.h`](../src/XpressFormula/Core/ViewTransform.h) and [`src/XpressFormula/Core/ViewTransform.cpp`](../src/XpressFormula/Core/ViewTransform.cpp)
   - Handles world-to-screen mapping, zoom, pan, and grid spacing from explicit `ViewState` plus `Viewport`.
 - [`src/XpressFormula/Core/UpdateVersionUtils.h`](../src/XpressFormula/Core/UpdateVersionUtils.h)
@@ -162,6 +163,21 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\check-architecture-b
 ```
 
 The script checks that infrastructure does not include UI, Expression and Model stay free of UI/Win32/ImGui/JSON dependencies, pure plotting geometry/meshing stays free of ImGui, reusable UI does not implement platform internals, and the test project does not compile production `.cpp` files directly.
+
+## Quality Gate
+
+Production projects build with MSVC warning level `/W4`, conformance mode (`/permissive-`), and `/Zc:__cplusplus`. First-party warnings should be fixed at source. Vendor warnings are isolated through project configuration when needed.
+
+Pull-request validation runs the architecture boundary check, Debug x64 app/test builds and tests, and Release x64 app/test builds and tests. Release packaging also runs the boundary check and Release test suite before creating packages.
+
+## Architecture Decisions
+
+Durable architecture decisions are recorded in [`doc/adr`](adr/README.md):
+
+- [0001: Modular Monolith](adr/0001-modular-monolith.md)
+- [0002: Internal JSON](adr/0002-internal-json.md)
+- [0003: Document Revision Dirty State](adr/0003-document-revision-dirty-state.md)
+- [0004: Geometry Render Backend](adr/0004-geometry-render-backend.md)
 
 ## Formula Rendering Modes
 

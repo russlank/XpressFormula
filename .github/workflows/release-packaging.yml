@@ -109,6 +109,10 @@ jobs:
         run: |
           msbuild -version
 
+      - name: Check Architecture Boundaries
+        shell: pwsh
+        run: .\tools\check-architecture-boundaries.ps1
+
       - name: Install WiX CLI
         shell: pwsh
         run: |

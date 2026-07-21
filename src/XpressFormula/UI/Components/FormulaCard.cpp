@@ -210,13 +210,13 @@ FormulaCardResult renderFormulaCard(const Model::Formula& formula,
     ImGui::SetItemTooltip("%s Formula %d.", visible ? "Hide" : "Show", context.index + 1);
     ImGui::SameLine();
 
-    Model::ColorRgba color = formula.color;
-    if (ImGui::ColorEdit4("##color", color.data(),
+    Model::ColorRgba formulaColor = formula.color;
+    if (ImGui::ColorEdit4("##color", formulaColor.data(),
                           ImGuiColorEditFlags_NoInputs |
                           ImGuiColorEditFlags_NoLabel |
                           ImGuiColorEditFlags_NoTooltip)) {
         result.colorChanged = true;
-        result.color = color;
+        result.color = formulaColor;
     }
     ImGui::SetItemTooltip("Set Formula %d color.", context.index + 1);
     ImGui::SameLine();

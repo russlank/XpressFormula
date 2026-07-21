@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: MIT -->
 # Architecture Dependencies
 
-This document records the production library boundaries introduced for the architecture modernization work. The current shape is intentionally conservative: projects reference existing source files in place, and later modernization phases may move files after the domain models stabilize.
+This document records the current production library boundaries for the XpressFormula modular monolith. Some source paths remain transitional, but project ownership and dependency direction are enforced by build files, tests, and the boundary script.
 
 ## Current Production Projects
 
@@ -44,16 +44,16 @@ XpressFormula  -> App and production libraries
 Tests          -> production libraries under test
 ```
 
-The current code predates the final architecture, so some file paths still live under `Core` or `UI` even when their project ownership now points toward Expression, Model, or Infrastructure. Prefer changing ownership through projects first, then moving files when later modernization work changes the underlying model.
+Some file paths still live under `Core` or `UI` even when their project ownership points toward Expression, Model, or Infrastructure. Prefer changing ownership through projects first, then moving files only when it improves clarity without changing behavior.
 
 ## Forbidden Dependencies
 
-- `Expression` must not include ImGui, Win32, D3D11, UI widgets, filesystem, or project JSON types.
-- `Model` must not include ImGui, Win32, D3D11, or JSON parser types.
+- `Expression` and the core expression runtime must not include ImGui, Win32, D3D11, UI widgets, filesystem, or project JSON types.
+- `Model` must not include ImGui, Win32, D3D11, JSON parser types, or project repository types.
 - `Plotting` should not gain new UI workflow or platform responsibilities.
 - `Infrastructure` must not mutate live application state directly.
 - `UI` panels and reusable UI components must not perform atomic file writes, WIC encoding, shell actions, clipboard operations, or HTTP calls.
-- `App` may coordinate side effects during the migration, but new platform code should move behind Platform/Windows services in later modernization phases.
+- `App` coordinates side effects and backend lifetimes, but new platform implementation code should move behind `Platform/Windows` services.
 - Tests must not re-add production `.cpp` files directly; add a production project reference instead.
 
 ## Test Consumption Rule
@@ -69,7 +69,7 @@ The current code predates the final architecture, so some file paths still live 
 
 This makes tests consume the same production object code used by the executable. Header-only helpers are still compiled in test translation units until later modernization phases give them `.cpp` ownership.
 
-Run `tools\check-architecture-boundaries.ps1` from the repository root before architecture-boundary PRs. It enforces the most important source and project-file rules locally.
+Run `tools\check-architecture-boundaries.ps1` from the repository root before architecture-boundary PRs. It enforces the most important source and project-file rules locally and runs in PR/release workflows.
 
 ## Migration Rules
 
@@ -84,8 +84,7 @@ Run `tools\check-architecture-boundaries.ps1` from the repository root before ar
 ## Current Exceptions
 
 - `XpressFormula.UI::FormulaEntry` remains only as a transitional alias for `XpressFormula.Model::Formula`; it no longer stores duplicated domain state. Formula labels and display counts are computed through UI presentation helpers.
-- `XpressFormula.Plotting` still includes ImGui because rendering currently writes directly to `ImDrawList`. A later plotting foundation phase is expected to introduce geometry generation before an ImGui backend.
-- `XpressFormula.Plotting` now has pure geometry, sampling, and meshing helpers that must stay ImGui-free; the ImGui dependency is confined to the draw-list backend and renderer layer.
+- `XpressFormula.Plotting` still includes ImGui because the product currently renders through `ImDrawList`. Pure geometry, sampling, meshing, projection, and render-plan helpers must stay ImGui-free; the ImGui dependency is confined to the draw-list backend and renderer layer.
 - `XpressFormula.App` still owns Win32 window procedure, D3D device/swapchain orchestration, WIC COM initialization lifetime, file-dialog workflow decisions, update orchestration, and D3D capture/offscreen rendering. Export output adapters now live outside `UI::Application`, but the application host still coordinates the workflow.
 
 ## No-Feature-Change Constraint

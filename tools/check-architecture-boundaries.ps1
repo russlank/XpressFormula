@@ -63,8 +63,8 @@ Test-RuleSet `
     )
 
 Test-RuleSet `
-    -RuleName 'Expression must stay pure' `
-    -Roots @('src\XpressFormula\Expression') `
+    -RuleName 'Expression and core runtime must stay pure' `
+    -Roots @('src\XpressFormula\Core', 'src\XpressFormula\Expression') `
     -Patterns @(
         @{ Regex = $includeUiPattern; Message = 'expression source includes a UI header' },
         @{ Regex = '#\s*include\s*[<"].*Platform[\\/]Windows'; Message = 'expression source includes Windows platform services' },
@@ -81,6 +81,8 @@ Test-RuleSet `
         @{ Regex = '#\s*include\s*[<"]Windows\.h'; Message = 'model source includes Windows.h' },
         @{ Regex = '#\s*include\s*[<"]imgui\.h'; Message = 'model source includes ImGui' },
         @{ Regex = '#\s*include\s*[<"].*Infrastructure[\\/]Serialization'; Message = 'model source includes JSON infrastructure' },
+        @{ Regex = '#\s*include\s*[<"].*Infrastructure[\\/]Persistence[\\/]ProjectRepository'; Message = 'model source includes the project repository' },
+        @{ Regex = '\bProjectRepository\b'; Message = 'model source references the project repository' },
         @{ Regex = '\bJson(Parser|Writer|Value)?\b'; Message = 'model source references JSON infrastructure names' }
     )
 

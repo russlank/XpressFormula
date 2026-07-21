@@ -12,6 +12,8 @@ The project uses a lightweight in-repo test harness ([`src/XpressFormula.Tests/C
 
 The test project links the production static libraries (`XpressFormula.Expression`, `XpressFormula.Model`, `XpressFormula.Plotting`, `XpressFormula.Infrastructure`, `XpressFormula.UI`, and `XpressFormula.App`) instead of compiling production `.cpp` files directly. When adding a new production `.cpp`, add it to the owning production library and reference that library from tests as needed.
 
+Current local closure count: `469` test cases.
+
 ## What Is Covered
 
 - Tokenization
@@ -40,6 +42,8 @@ The test project links the production static libraries (`XpressFormula.Expressio
   - responsive plot toolbar, formula-card breakpoints, splitter clamping, and modal sizing
 - Plot runtime and render planning
   - transient auto-rotation offset behavior, export-deterministic camera planning, centralized 3D option construction, and mesh/render-plan policies
+- Expression runtime benchmark harness
+  - opt-in timing comparison for fixed-slot expression evaluation versus the map compatibility adapter
 
 ## Running Tests
 
@@ -68,7 +72,16 @@ Architecture boundary check:
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\check-architecture-boundaries.ps1
 ```
 
+Optional expression runtime benchmark:
+
+```powershell
+$env:XF_RUN_EXPRESSION_BENCHMARK = '1'
+.\src\XpressFormula.Tests\x64\Release\XpressFormula.Tests.exe
+```
+
 CI PR validation runs the architecture boundary check, builds Debug application and test targets, runs Debug tests, builds Release application and test targets, and runs Release tests. The workflow uses explicit, non-colliding `IntDir` and `OutDir` values under `build\obj\...` and `build\bin\...`, then runs tests from those configured output directories.
+
+Release packaging also runs the architecture boundary check and the Release test suite before package creation. Production projects build at `/W4` with conformance mode and `/Zc:__cplusplus`; first-party warnings should be fixed rather than broadly suppressed.
 
 ## Interpreting Results
 

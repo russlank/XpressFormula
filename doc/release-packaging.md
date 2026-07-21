@@ -56,6 +56,8 @@ These are passed through MSBuild properties: `XfBuildRepoUrl`, `XfBuildBranch`,
 
 The workflow currently uses `windows-2025-vs2026` to get MSBuild 18.x/VS 2026 toolchain on GitHub-hosted runners.
 
+Release packaging runs the architecture boundary check and the Release test suite before package creation. A failed boundary check, build, or test run blocks artifact upload and release publication.
+
 ## Local Packaging (Windows)
 
 Prerequisites:
@@ -145,7 +147,7 @@ Write-Host "Expected release tag: $expectedTag"
 
 ## v1.6.0 Release Verification Record
 
-Last updated: 2026-07-20
+Last updated: 2026-07-21
 
 Automated verification completed locally with Visual Studio MSBuild 18.8.2+ce25c0108 (`msbuild -version`: 18.8.2.30814):
 
@@ -167,6 +169,9 @@ Automated verification completed locally with Visual Studio MSBuild 18.8.2+ce25c
 - [x] Expression runtime benchmark harness passes when enabled with `XF_RUN_EXPRESSION_BENCHMARK=1`; local Release x64 run reported curve `97.8928 ms -> 71.1519 ms`, explicit surface `136.382 ms -> 99.5032 ms`, and implicit field `69.1287 ms -> 42.6645 ms`.
 - [x] Architecture boundary check passes:
   `powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\check-architecture-boundaries.ps1`
+- [x] Production projects build with `/W4`, conformance mode, and `/Zc:__cplusplus`.
+- [x] Local release workflow dry run without packaging passes:
+  `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-release-pipeline-local.ps1 -SkipPackaging`
 - [x] Architecture boundary check rejects a temporary forbidden Infrastructure -> UI include; the probe file was removed before this record was updated.
 - [x] Existing core tests pass.
 - [x] New project-session tests pass.
