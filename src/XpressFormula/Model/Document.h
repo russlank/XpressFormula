@@ -31,6 +31,7 @@ public:
     private:
         Document* m_document = nullptr;
         std::vector<FormulaState> m_before;
+        std::vector<Formula> m_restoreBefore;
     };
 
     class ViewEdit {
@@ -87,10 +88,10 @@ public:
     [[nodiscard]] bool setViewTransform(const Core::ViewTransform& view);
     [[nodiscard]] bool setPlotSettings(const PlotSettings& settings);
 
-    void replaceState(std::vector<Formula> formulas,
-                      const Core::ViewTransform& view,
-                      const PlotSettings& plotSettings,
-                      bool markClean);
+    [[nodiscard]] bool replaceState(std::vector<Formula> formulas,
+                                    const Core::ViewTransform& view,
+                                    const PlotSettings& plotSettings,
+                                    bool markClean);
     void markSaved() noexcept;
 
     [[nodiscard]] FormulaEdit editFormulas();

@@ -164,6 +164,78 @@ TEST_CASE(UpdateController_CancelPendingCheckDoesNotApplyStaleResult) {
     Assert::AreEqual(std::string("new"), controller.latestTag());
 }
 
+TEST_CASE(UpdateController_CancelPendingCheckWithNoRequestIsHarmless) {
+    XFApp::UpdateController controller([](bool manualRequest) {
+        return successfulUpdate(manualRequest, "unused", true);
+    });
+
+    Assert::IsFalse(controller.cancelPendingCheckForShutdown());
+    Assert::IsFalse(controller.checkInProgress());
+    Assert::IsFalse(controller.cancelPendingCheckForShutdown());
+}
+
+TEST_CASE(UpdateController_CancelPendingCheckReturnsWithoutWaitingForBlockedFetcher) {
+    auto started = std::make_shared<std::promise<void>>();
+    auto release = std::make_shared<std::promise<void>>();
+    auto finished = std::make_shared<std::promise<void>>();
+    std::shared_future<void> releaseGate = release->get_future().share();
+    std::future<void> startedFuture = started->get_future();
+    std::future<void> finishedFuture = finished->get_future();
+
+    XFApp::UpdateController controller(
+        [started, releaseGate, finished](bool manualRequest) {
+            started->set_value();
+            releaseGate.wait();
+            finished->set_value();
+            return successfulUpdate(manualRequest, "late", true);
+        });
+
+    Assert::IsTrue(controller.requestManualCheck());
+    Assert::IsTrue(
+        startedFuture.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
+
+    const auto beforeCancel = std::chrono::steady_clock::now();
+    Assert::IsTrue(controller.cancelPendingCheckForShutdown());
+    const auto cancelDuration = std::chrono::steady_clock::now() - beforeCancel;
+
+    Assert::IsTrue(cancelDuration < std::chrono::milliseconds(100));
+    Assert::IsFalse(controller.checkInProgress());
+    Assert::AreEqual(std::string("Update check cancelled."), controller.status());
+    Assert::IsFalse(controller.cancelPendingCheckForShutdown());
+
+    release->set_value();
+    Assert::IsTrue(
+        finishedFuture.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
+    Assert::IsFalse(controller.poll());
+    Assert::IsFalse(controller.latestTag() == "late");
+}
+
+TEST_CASE(UpdateController_DestructionWhileFetcherIsBlockedIsSafe) {
+    auto started = std::make_shared<std::promise<void>>();
+    auto release = std::make_shared<std::promise<void>>();
+    auto finished = std::make_shared<std::promise<void>>();
+    std::shared_future<void> releaseGate = release->get_future().share();
+    std::future<void> startedFuture = started->get_future();
+    std::future<void> finishedFuture = finished->get_future();
+
+    {
+        XFApp::UpdateController controller(
+            [started, releaseGate, finished](bool manualRequest) {
+                started->set_value();
+                releaseGate.wait();
+                finished->set_value();
+                return successfulUpdate(manualRequest, "late", true);
+            });
+        Assert::IsTrue(controller.requestManualCheck());
+        Assert::IsTrue(
+            startedFuture.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
+    }
+
+    release->set_value();
+    Assert::IsTrue(
+        finishedFuture.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
+}
+
 TEST_CASE(UpdateController_OpenReleasePageResultUpdatesNoticeAndStatus) {
     XFApp::UpdateController controller([](bool manualRequest) {
         return successfulUpdate(manualRequest, "5.0.0", true);

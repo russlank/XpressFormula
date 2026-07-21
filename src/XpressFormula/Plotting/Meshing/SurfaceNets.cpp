@@ -6,8 +6,10 @@
 #include "../../Model/PlotPolicy.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <limits>
+#include <set>
 #include <vector>
 
 namespace XpressFormula::Plotting::Meshing {
@@ -15,6 +17,8 @@ namespace XpressFormula::Plotting::Meshing {
 namespace {
 
 using Point3 = Geometry::Vec3;
+using PointKey = std::array<double, 3>;
+using TriangleKey = std::array<PointKey, 3>;
 
 struct CellVertex {
     Point3 p;
@@ -40,6 +44,43 @@ struct CellVertex {
 
 [[nodiscard]] double lenSq3(const Point3& v) noexcept {
     return v.x * v.x + v.y * v.y + v.z * v.z;
+}
+
+[[nodiscard]] bool pointFinite(const Point3& point) noexcept {
+    return std::isfinite(point.x) &&
+           std::isfinite(point.y) &&
+           std::isfinite(point.z);
+}
+
+[[nodiscard]] PointKey makePointKey(const Point3& point) noexcept {
+    return PointKey{ point.x, point.y, point.z };
+}
+
+[[nodiscard]] TriangleKey makeTriangleKey(const Point3& a,
+                                          const Point3& b,
+                                          const Point3& c) noexcept {
+    TriangleKey key{ makePointKey(a), makePointKey(b), makePointKey(c) };
+    std::sort(key.begin(), key.end());
+    return key;
+}
+
+bool appendUniqueIntersection(std::array<Point3, 12>& points,
+                              std::size_t& count,
+                              const Point3& point,
+                              double toleranceSquared) noexcept {
+    if (!pointFinite(point) || count >= points.size()) {
+        return false;
+    }
+
+    for (std::size_t i = 0; i < count; ++i) {
+        if (lenSq3(sub3(points[i], point)) <= toleranceSquared) {
+            return false;
+        }
+    }
+
+    points[count] = point;
+    ++count;
+    return true;
 }
 
 [[nodiscard]] bool interpolateIso(const Point3& a,
@@ -129,9 +170,18 @@ ImplicitMeshEntry buildSurfaceNetsMesh(const Core::ASTNodePtr& ast,
                                          CellVertex{});
     const double sampleStepWorld = std::max({ dx, dy, dz });
     const double areaTolSq = std::max(1e-16, sampleStepWorld * sampleStepWorld * 1e-10);
+    const double intersectionTolSq =
+        std::max(1e-24, sampleStepWorld * sampleStepWorld * 1e-18);
+    std::set<TriangleKey> emittedTriangles;
 
     auto pushWorldTriangle = [&](const Point3& a, const Point3& b, const Point3& c) {
+        if (!pointFinite(a) || !pointFinite(b) || !pointFinite(c)) {
+            return;
+        }
         if (!Geometry::triangleAreaValid(a, b, c, areaTolSq)) {
+            return;
+        }
+        if (!emittedTriangles.insert(makeTriangleKey(a, b, c)).second) {
             return;
         }
 
@@ -208,22 +258,30 @@ ImplicitMeshEntry buildSurfaceNetsMesh(const Core::ASTNodePtr& ast,
                     continue;
                 }
 
-                Point3 sum{ 0.0, 0.0, 0.0 };
-                int intersectionCount = 0;
+                std::array<Point3, 12> intersections{};
+                std::size_t intersectionCount = 0;
                 for (const auto& edge : kCubeEdges) {
                     Point3 ip{};
                     if (!interpolateIso(corners[edge[0]], cornerValues[edge[0]],
                                         corners[edge[1]], cornerValues[edge[1]], ip)) {
                         continue;
                     }
-                    sum.x += ip.x;
-                    sum.y += ip.y;
-                    sum.z += ip.z;
-                    ++intersectionCount;
+                    (void)appendUniqueIntersection(
+                        intersections,
+                        intersectionCount,
+                        ip,
+                        intersectionTolSq);
                 }
 
                 if (intersectionCount < 3) {
                     continue;
+                }
+
+                Point3 sum{ 0.0, 0.0, 0.0 };
+                for (std::size_t i = 0; i < intersectionCount; ++i) {
+                    sum.x += intersections[i].x;
+                    sum.y += intersections[i].y;
+                    sum.z += intersections[i].z;
                 }
 
                 CellVertex& cv = cellVertices[cellIndex(ix, iy, iz)];

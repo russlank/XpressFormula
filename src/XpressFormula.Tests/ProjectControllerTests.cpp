@@ -1,5 +1,6 @@
 // ProjectControllerTests.cpp - Project workflow tests without ImGui.
 #include "CppUnitTest.h"
+#include "../XpressFormula/Core/InputLimits.h"
 #include "../XpressFormula/Application/ProjectController.h"
 #include "../XpressFormula/Infrastructure/Persistence/ProjectMapper.h"
 #include "../XpressFormula/Infrastructure/Persistence/ProjectRepository.h"
@@ -13,6 +14,7 @@
 
 using namespace Microsoft::VisualStudio::CppUnitTestFramework;
 namespace XFApp = XpressFormula::Application;
+namespace XFInputLimits = XpressFormula::Core::InputLimits;
 namespace XFPersist = XpressFormula::Infrastructure::Persistence;
 namespace XFModel = XpressFormula::Model;
 namespace XFWin = XpressFormula::Platform::Windows;
@@ -131,6 +133,26 @@ TEST_CASE(ProjectController_FailedSaveDoesNotMarkDocumentClean) {
     Assert::IsFalse(harness.controller.saveToPath(document, dir.wstring(), error));
     Assert::IsTrue(document.dirty());
     Assert::IsFalse(error.empty());
+
+    std::error_code ignored;
+    std::filesystem::remove_all(dir, ignored);
+}
+
+TEST_CASE(ProjectController_SaveAsRejectedByProjectLimitsCreatesNoDestination) {
+    const std::filesystem::path dir = uniqueProjectControllerTestDirectory();
+    const std::filesystem::path projectPath = dir / L"oversized-expression.xfplot";
+    ControllerHarness harness(dir);
+    XFModel::Document document = makeDocument();
+    XFModel::Formula oversized = makeFormula("x");
+    oversized.setExpression(std::string(XFInputLimits::kMaxFormulaLength + 1, 'x'));
+    Assert::IsTrue(document.updateFormula(document.formulas()[0].id, oversized));
+    harness.dialog.saveResult.status = XFWin::DialogStatus::Selected;
+    harness.dialog.saveResult.path = projectPath.wstring();
+
+    Assert::IsFalse(harness.controller.saveAs(document));
+    Assert::IsTrue(document.dirty());
+    Assert::IsFalse(std::filesystem::exists(projectPath));
+    Assert::IsTrue(harness.controller.status().find("expression length") != std::string::npos);
 
     std::error_code ignored;
     std::filesystem::remove_all(dir, ignored);

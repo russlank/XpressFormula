@@ -12,7 +12,7 @@ The project uses a lightweight in-repo test harness ([`src/XpressFormula.Tests/C
 
 The test project links the production static libraries (`XpressFormula.Expression`, `XpressFormula.Model`, `XpressFormula.Plotting`, `XpressFormula.Infrastructure`, `XpressFormula.UI`, and `XpressFormula.App`) instead of compiling production `.cpp` files directly. When adding a new production `.cpp`, add it to the owning production library and reference that library from tests as needed.
 
-Current local closure count: `514` test cases.
+Current local closure count: `531` test cases.
 
 ## What Is Covered
 

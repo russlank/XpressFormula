@@ -59,6 +59,12 @@ XFPersist::ProjectSession makeRepositorySession(const std::string& expression) {
     return session;
 }
 
+XFPersist::ProjectFormulaRecord makeFormulaRecord(const std::string& expression) {
+    XFPersist::ProjectFormulaRecord formula;
+    formula.expression = expression;
+    return formula;
+}
+
 } // namespace
 
 TEST_CASE(ProjectRepository_SaveLoadAndAtomicOverwrite) {
@@ -124,6 +130,107 @@ TEST_CASE(ProjectRepository_RejectsOversizedFileBeforeParsing) {
 
     Assert::IsFalse(result.success);
     Assert::IsTrue(result.error.find("larger than the supported limit") != std::string::npos);
+
+    std::error_code ignored;
+    std::filesystem::remove_all(dir, ignored);
+}
+
+TEST_CASE(ProjectRepository_ReadsAtMostConfiguredLimitPlusSentinel) {
+    const std::filesystem::path dir = uniquePersistenceTestDirectory();
+    const std::filesystem::path exactPath = dir / L"exact-limit.xfplot";
+    const std::filesystem::path oversizedPath = dir / L"oversized.xfplot";
+    {
+        std::ofstream out(exactPath, std::ios::binary | std::ios::trunc);
+        out.seekp(static_cast<std::streamoff>(XFInputLimits::kMaxProjectFileBytes - 1));
+        out.put('{');
+    }
+    {
+        std::ofstream out(oversizedPath, std::ios::binary | std::ios::trunc);
+        out.seekp(static_cast<std::streamoff>(XFInputLimits::kMaxProjectFileBytes));
+        out.put('{');
+    }
+
+    XFPersist::ProjectRepository repository;
+    const XFPersist::ProjectLoadResult exact = repository.load(exactPath);
+    Assert::IsFalse(exact.success);
+    Assert::IsFalse(exact.error.empty());
+    Assert::IsFalse(exact.error.find("larger than the supported limit") != std::string::npos);
+
+    const XFPersist::ProjectLoadResult oversized = repository.load(oversizedPath);
+    Assert::IsFalse(oversized.success);
+    Assert::IsTrue(oversized.error.find("larger than the supported limit") != std::string::npos);
+
+    std::error_code ignored;
+    std::filesystem::remove_all(dir, ignored);
+}
+
+TEST_CASE(ProjectRepository_SaveValidatesFormulaCountAndRoundTripsAtLimit) {
+    const std::filesystem::path dir = uniquePersistenceTestDirectory();
+    const std::filesystem::path projectPath = dir / L"limit.xfplot";
+    XFPersist::ProjectRepository repository;
+    XFPersist::ProjectSession session;
+    session.formulas.assign(XFInputLimits::kMaxProjectFormulas, makeFormulaRecord("x"));
+
+    const XFPersist::ProjectSaveResult saveResult = repository.save(projectPath, session);
+    Assert::IsTrue(saveResult.success);
+    Assert::IsTrue(std::filesystem::exists(projectPath));
+
+    const XFPersist::ProjectLoadResult loadResult = repository.load(projectPath);
+    Assert::IsTrue(loadResult.success);
+    Assert::AreEqual(XFInputLimits::kMaxProjectFormulas, loadResult.session.formulas.size());
+
+    session.formulas.push_back(makeFormulaRecord("x"));
+    const XFPersist::ProjectSaveResult rejected = repository.save(dir / L"too-many.xfplot", session);
+    Assert::IsFalse(rejected.success);
+    Assert::IsTrue(rejected.error.find("more formulas") != std::string::npos);
+    Assert::IsFalse(std::filesystem::exists(dir / L"too-many.xfplot"));
+
+    std::error_code ignored;
+    std::filesystem::remove_all(dir, ignored);
+}
+
+TEST_CASE(ProjectRepository_SaveValidatesExpressionLengthAndPreservesExistingTarget) {
+    const std::filesystem::path dir = uniquePersistenceTestDirectory();
+    const std::filesystem::path projectPath = dir / L"project.xfplot";
+    XFPersist::ProjectRepository repository;
+    writeTextFile(projectPath, "old-bytes");
+
+    XFPersist::ProjectSession valid;
+    valid.formulas.push_back(makeFormulaRecord(std::string(XFInputLimits::kMaxFormulaLength, 'x')));
+    Assert::IsTrue(repository.save(dir / L"max-expression.xfplot", valid).success);
+
+    XFPersist::ProjectSession invalid;
+    invalid.formulas.push_back(
+        makeFormulaRecord(std::string(XFInputLimits::kMaxFormulaLength + 1, 'x')));
+    const XFPersist::ProjectSaveResult rejected = repository.save(projectPath, invalid);
+    Assert::IsFalse(rejected.success);
+    Assert::IsTrue(rejected.error.find("expression length") != std::string::npos);
+    Assert::AreEqual(std::string("old-bytes"), readTextFile(projectPath));
+
+    const std::filesystem::path saveAsPath = dir / L"rejected-save-as.xfplot";
+    Assert::IsFalse(repository.save(saveAsPath, invalid).success);
+    Assert::IsFalse(std::filesystem::exists(saveAsPath));
+
+    std::error_code ignored;
+    std::filesystem::remove_all(dir, ignored);
+}
+
+TEST_CASE(ProjectRepository_SaveValidatesSerializedSizeBeforeWriting) {
+    const std::filesystem::path dir = uniquePersistenceTestDirectory();
+    const std::filesystem::path projectPath = dir / L"too-large-json.xfplot";
+    XFPersist::ProjectRepository repository;
+    XFPersist::ProjectSession session;
+    const std::string largeExpression(XFInputLimits::kMaxFormulaLength, 'x');
+    const std::size_t formulaCount =
+        static_cast<std::size_t>(
+            XFInputLimits::kMaxProjectFileBytes / XFInputLimits::kMaxFormulaLength) + 1;
+    session.formulas.assign(formulaCount, makeFormulaRecord(largeExpression));
+
+    const XFPersist::ProjectSaveResult result = repository.save(projectPath, session);
+
+    Assert::IsFalse(result.success);
+    Assert::IsTrue(result.error.find("file-size limit") != std::string::npos);
+    Assert::IsFalse(std::filesystem::exists(projectPath));
 
     std::error_code ignored;
     std::filesystem::remove_all(dir, ignored);

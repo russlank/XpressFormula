@@ -177,17 +177,23 @@ bool sameFormulaPersistentState(const Formula& lhs, const Formula& rhs) {
 
 Document::FormulaEdit::FormulaEdit(Document& document)
     : m_document(&document),
-      m_before(captureFormulaStates(document.m_formulas)) {
+      m_before(captureFormulaStates(document.m_formulas)),
+      m_restoreBefore(document.m_formulas) {
 }
 
 Document::FormulaEdit::FormulaEdit(FormulaEdit&& other) noexcept
     : m_document(other.m_document),
-      m_before(std::move(other.m_before)) {
+      m_before(std::move(other.m_before)),
+      m_restoreBefore(std::move(other.m_restoreBefore)) {
     other.m_document = nullptr;
 }
 
 Document::FormulaEdit::~FormulaEdit() {
     if (m_document) {
+        if (m_document->m_formulas.size() > Core::InputLimits::kMaxProjectFormulas) {
+            m_document->m_formulas = std::move(m_restoreBefore);
+            return;
+        }
         for (std::size_t i = 0; i < m_document->m_formulas.size(); ++i) {
             normalizeFormula(m_document->m_formulas[i], m_document->m_formulas, i);
         }
@@ -278,6 +284,10 @@ bool Document::dirty() const noexcept {
 }
 
 FormulaId Document::addFormula(Formula formula) {
+    if (m_formulas.size() >= Core::InputLimits::kMaxProjectFormulas) {
+        return 0;
+    }
+
     normalizeFormula(formula, m_formulas, m_formulas.size());
     const FormulaId id = formula.id;
     m_formulas.push_back(std::move(formula));
@@ -304,6 +314,10 @@ bool Document::updateFormula(FormulaId id, Formula formula) {
 }
 
 bool Document::duplicateFormula(FormulaId id) {
+    if (m_formulas.size() >= Core::InputLimits::kMaxProjectFormulas) {
+        return false;
+    }
+
     const std::optional<std::size_t> index = findFormulaIndex(id);
     if (!index.has_value()) {
         return false;
@@ -438,10 +452,14 @@ bool Document::setPlotSettings(const PlotSettings& settings) {
     return true;
 }
 
-void Document::replaceState(std::vector<Formula> formulas,
+bool Document::replaceState(std::vector<Formula> formulas,
                             const Core::ViewTransform& view,
                             const PlotSettings& plotSettings,
                             bool markClean) {
+    if (formulas.size() > Core::InputLimits::kMaxProjectFormulas) {
+        return false;
+    }
+
     for (std::size_t i = 0; i < formulas.size(); ++i) {
         normalizeFormula(formulas[i], formulas, i);
     }
@@ -456,6 +474,7 @@ void Document::replaceState(std::vector<Formula> formulas,
     if (markClean) {
         markSaved();
     }
+    return true;
 }
 
 void Document::markSaved() noexcept {

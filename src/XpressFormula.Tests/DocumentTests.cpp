@@ -1,5 +1,6 @@
 // DocumentTests.cpp - Revision and dirty-state tests for the document aggregate.
 #include "CppUnitTest.h"
+#include "../XpressFormula/Core/InputLimits.h"
 #include "../XpressFormula/Model/Document.h"
 
 #include <limits>
@@ -7,6 +8,7 @@
 
 using namespace Microsoft::VisualStudio::CppUnitTestFramework;
 namespace XFCore = XpressFormula::Core;
+namespace XFInputLimits = XpressFormula::Core::InputLimits;
 namespace XFModel = XpressFormula::Model;
 
 namespace XpressFormulaTests {
@@ -219,7 +221,7 @@ TEST_CASE(Document_ReplaceStateCanEstablishCleanLoadedDocument) {
 
     std::vector<XFModel::Formula> formulas;
     formulas.push_back(makeFormula("cos(x)"));
-    document.replaceState(std::move(formulas), view, plot, true);
+    Assert::IsTrue(document.replaceState(std::move(formulas), view, plot, true));
 
     Assert::AreEqual(1, static_cast<int>(document.formulas().size()));
     Assert::AreEqual(4.5, document.view().centerY);
@@ -309,6 +311,63 @@ TEST_CASE(Document_EditScopesNormalizeImportedStateAndTrackIdChanges) {
     Assert::IsTrue(document.formulas()[1].id != firstId);
     Assert::IsTrue(document.formulas()[1].id != secondId);
     Assert::AreEqual(1.0f, document.formulas()[1].color[0]);
+}
+
+TEST_CASE(Document_RejectsFormulaCountBeyondProjectLimit) {
+    XFModel::Document document;
+    XFModel::Formula formula = makeFormula("x");
+
+    for (std::size_t i = 0; i < XFInputLimits::kMaxProjectFormulas; ++i) {
+        Assert::IsTrue(document.addFormula(formula) != 0);
+    }
+    document.markSaved();
+    const XFModel::Document::Revision beforeReject = document.revision();
+
+    Assert::AreEqual(
+        XFInputLimits::kMaxProjectFormulas,
+        document.formulas().size());
+    Assert::AreEqual(0ull, document.addFormula(formula));
+    Assert::AreEqual(beforeReject, document.revision());
+    Assert::AreEqual(XFInputLimits::kMaxProjectFormulas, document.formulas().size());
+
+    Assert::IsFalse(document.duplicateFormula(document.formulas().front().id));
+    Assert::AreEqual(beforeReject, document.revision());
+    Assert::AreEqual(XFInputLimits::kMaxProjectFormulas, document.formulas().size());
+}
+
+TEST_CASE(Document_RejectsOverLimitReplaceStateWithoutMutation) {
+    XFModel::Document document;
+    const XFModel::FormulaId existingId = document.addFormula(makeFormula("sin(x)"));
+    document.markSaved();
+    const XFModel::Document::Revision beforeReject = document.revision();
+
+    std::vector<XFModel::Formula> formulas;
+    formulas.assign(XFInputLimits::kMaxProjectFormulas + 1, makeFormula("x"));
+    XFCore::ViewTransform view;
+    XFModel::PlotSettings plot;
+
+    Assert::IsFalse(document.replaceState(std::move(formulas), view, plot, true));
+    Assert::AreEqual(beforeReject, document.revision());
+    Assert::AreEqual(1, static_cast<int>(document.formulas().size()));
+    Assert::AreEqual(existingId, document.formulas()[0].id);
+    Assert::AreEqual(std::string("sin(x)"), document.formulas()[0].expression);
+}
+
+TEST_CASE(Document_EditScopeRejectsOverLimitFormulaVector) {
+    XFModel::Document document;
+    const XFModel::FormulaId existingId = document.addFormula(makeFormula("sin(x)"));
+    document.markSaved();
+    const XFModel::Document::Revision beforeReject = document.revision();
+
+    {
+        auto edit = document.editFormulas();
+        edit.get().assign(XFInputLimits::kMaxProjectFormulas + 1, makeFormula("x"));
+    }
+
+    Assert::AreEqual(beforeReject, document.revision());
+    Assert::AreEqual(1, static_cast<int>(document.formulas().size()));
+    Assert::AreEqual(existingId, document.formulas()[0].id);
+    Assert::AreEqual(std::string("sin(x)"), document.formulas()[0].expression);
 }
 
 } // namespace XpressFormulaTests

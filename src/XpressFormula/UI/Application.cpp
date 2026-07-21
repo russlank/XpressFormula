@@ -72,7 +72,7 @@ XpressFormula::Model::Document makeDefaultProjectDocument() {
     formulas.push_back(std::move(defaultEntry));
 
     XpressFormula::Model::Document document;
-    document.replaceState(std::move(formulas), view, plot, true);
+    (void)document.replaceState(std::move(formulas), view, plot, true);
     return document;
 }
 
@@ -782,7 +782,7 @@ bool Application::refreshExportPreviewTexture() {
 // ---- shutdown ---------------------------------------------------------------
 
 void Application::shutdown() {
-    (void)m_updateController.waitForPendingCheck();
+    (void)m_updateController.cancelPendingCheckForShutdown();
 
     ImGui_ImplDX11_Shutdown();
     ImGui_ImplWin32_Shutdown();

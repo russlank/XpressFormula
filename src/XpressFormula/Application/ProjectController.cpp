@@ -156,11 +156,14 @@ bool ProjectController::openFromPath(Model::Document& document,
     std::vector<std::string> warnings = loaded.warnings;
     warnings.insert(warnings.end(), mapped.warnings.begin(), mapped.warnings.end());
 
-    document.replaceState(
+    if (!document.replaceState(
         std::move(mapped.document.formulas),
         mapped.document.view,
         mapped.document.plot,
-        true);
+        true)) {
+        error = "Project exceeds the supported formula-count limit.";
+        return false;
+    }
     m_currentPath = std::filesystem::absolute(std::filesystem::path(path)).wstring();
     addRecentProjectPath(m_currentPath);
     m_documentReplaced = true;

@@ -30,7 +30,7 @@ Equation parsing is handled as:
 
 ## Numeric Literals
 
-Numeric literals use decimal syntax with optional fractional and scientific-notation parts. At least one decimal digit is required, so `.5` and `5.` are valid but `.` is not. The parser rejects malformed, incomplete, out-of-range, underflowing, and non-finite numbers with normal formula diagnostics instead of throwing exceptions from the editor/compiler path.
+Numeric literals use decimal syntax with optional fractional and scientific-notation parts. At least one decimal digit is required, so `.5` and `5.` are valid but `.` is not. Zero-valued scientific notation such as `0e999`, `0e-9999`, and `0.000e123` is valid. Non-zero values that overflow or underflow the supported floating-point range, such as `1e309` or `1e-9999`, are rejected with normal formula diagnostics instead of throwing exceptions from the editor/compiler path.
 
 ## Operator Behavior
 

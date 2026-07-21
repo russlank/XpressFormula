@@ -30,8 +30,7 @@ bool applyFormulaPanelCommand(Model::Document& document,
                               const FormulaPanelCommand& command) {
     return std::visit(Overloaded{
         [&document](const AddFormulaCommand& add) {
-            document.addFormula(add.formula);
-            return true;
+            return document.addFormula(add.formula) != 0;
         },
         [&document](const UpdateFormulaCommand& update) {
             return document.updateFormula(update.formulaId, update.formula);

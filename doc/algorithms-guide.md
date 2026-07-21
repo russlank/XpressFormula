@@ -392,8 +392,10 @@ Exact-zero and degenerate fields follow the same defensive policy as contour ext
 - non-finite samples do not produce crossings
 - an edge with one exact-zero endpoint can contribute that endpoint
 - an edge with both endpoints exactly zero is ignored
-- a cell must have at least three useful edge crossings before it can create a surface-net vertex
+- repeated exact-zero edge hits inside one cell are deduplicated before counting or averaging
+- a cell must have at least three unique useful edge crossings before it can create a surface-net vertex
 - constant-zero fields produce no mesh instead of a meaningless filled volume
+- duplicate and degenerate triangles are rejected before they enter the mesh
 
 Why this is better than the earlier point cloud:
 

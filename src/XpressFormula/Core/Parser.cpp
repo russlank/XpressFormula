@@ -33,8 +33,18 @@ bool containsDecimalDigit(std::string_view text) noexcept {
     return false;
 }
 
-bool containsNonZeroDigit(std::string_view text) noexcept {
+bool significandContainsNonZeroDigit(std::string_view text) noexcept {
+    if (!text.empty() && (text.front() == '+' || text.front() == '-')) {
+        text.remove_prefix(1);
+    }
+
     for (char ch : text) {
+        if (ch == 'e' || ch == 'E') {
+            break;
+        }
+        if (ch == '.') {
+            continue;
+        }
         if (ch >= '1' && ch <= '9') {
             return true;
         }
@@ -54,15 +64,17 @@ NumberLiteralParseResult parseNumberLiteral(std::string_view text) {
     const char* const end = begin + text.size();
     const std::from_chars_result parsed =
         std::from_chars(begin, end, result.value, std::chars_format::general);
+    const bool nonZeroSignificand = significandContainsNonZeroDigit(text);
 
     if (parsed.ec == std::errc::invalid_argument || parsed.ptr != end) {
         result.error = "Invalid numeric literal";
         return result;
     }
 
-    if (parsed.ec == std::errc::result_out_of_range ||
+    if ((parsed.ec == std::errc::result_out_of_range &&
+         (result.value != 0.0 || nonZeroSignificand)) ||
         !std::isfinite(result.value) ||
-        (result.value == 0.0 && containsNonZeroDigit(text))) {
+        (result.value == 0.0 && nonZeroSignificand)) {
         result.error = "Numeric literal is outside the supported range";
         return result;
     }

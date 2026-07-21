@@ -109,7 +109,7 @@ Some file paths still reflect the original source layout, but project ownership 
 5. `Application` calls `Model::analyzeScene()` after document revision changes and passes the resulting `SceneSummary` to the control panel, toolbar, and plot panel.
 6. `PlotPanel` updates only the transient viewport geometry on `ViewTransform` and delegates render planning plus drawing to `Plotting`.
 7. `Plotting` evaluates formulas through `Core::Evaluator`, plans passes/effective settings, and draws based on variable dimensionality and equation form.
-8. `Application` also polls a background GitHub release check future and updates sidebar notification state when a result arrives.
+8. `Application` also polls a background GitHub release-check worker and updates sidebar notification state when a result arrives. Shutdown cancels any pending check without waiting for the network request to finish; late worker results are ignored.
 9. Auto-rotation is tracked as transient runtime azimuth offset, not by editing saved plot settings. New/open, camera preset/reset/manual camera edit, and disabling auto-rotate reset the runtime offset.
 10. Export requests resolve aspect/framing settings, trigger a plot-only offscreen render pass (temporary D3D11 render target and viewport) with export-specific overrides, then post-processing (pixel-format normalization, optional resize/grayscale) before file/clipboard output. Exports use the persisted base camera azimuth unless a caller intentionally supplies a runtime camera value.
 11. Project New/Open/Save/Save As workflows stay in application controllers; `.xfplot` parsing completes before active formulas, view, or plot settings are mutated.
@@ -139,7 +139,9 @@ Important rules:
 - Clamp or ignore unsafe numeric values before applying them to the live view and plot settings.
 - Persist only `ViewState` center/scale values; viewport origin/size is frame layout state and is not written to `.xfplot`.
 - Keep unknown fields tolerated for schema version 1 so future writers can add data without breaking older builds.
-- Write project files through a temporary file followed by replacement so failed writes do not leave a partial target file.
+- Read project files through a bounded binary loop, with the configured file-size limit plus one sentinel byte as the hard maximum.
+- Validate formula count, formula expression length, and serialized JSON size before opening a project save target.
+- Write project files through a unique same-directory temporary file followed by replacement so failed writes do not leave a partial target file.
 - Treat dirty state as a revision comparison against the last saved revision.
 
 ## UI Toolkit Boundary

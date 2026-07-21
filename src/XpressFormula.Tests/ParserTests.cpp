@@ -243,6 +243,39 @@ TEST_CASE(Parse_OutOfRangeNumbersAreRejectedWithoutThrowing) {
     Assert::IsTrue(tooSmall.error.find("outside the supported range") != std::string::npos);
 }
 
+TEST_CASE(Parse_ZeroScientificLiteralsAreAcceptedWithoutUnderflowFalsePositive) {
+    const char* validZeros[] = {
+        "0",
+        "-0",
+        "0.",
+        ".0",
+        "0e999",
+        "0e-9999",
+        "-0e999",
+        "0.000e123",
+        "0.0000E-99999"
+    };
+
+    for (const char* expression : validZeros) {
+        auto r = Parser::parse(expression);
+        Assert::IsTrue(r.success(), widenParserText(r.error.c_str()).c_str());
+    }
+}
+
+TEST_CASE(Parse_NonZeroScientificUnderflowAndOverflowRemainRejected) {
+    const char* invalidNumbers[] = {
+        "1e-9999",
+        "0.1e-999999",
+        "1e309"
+    };
+
+    for (const char* expression : invalidNumbers) {
+        auto r = Parser::parse(expression);
+        Assert::IsFalse(r.success());
+        Assert::IsTrue(r.error.find("outside the supported range") != std::string::npos);
+    }
+}
+
 TEST_CASE(Parse_VeryLongNumberIsRejectedWithoutThrowing) {
     std::string literal(4096, '9');
     auto r = Parser::parse(literal);

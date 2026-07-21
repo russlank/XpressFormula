@@ -9,8 +9,10 @@
 #include "../XpressFormula/Plotting/Sampling/ScalarGridSampler.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <limits>
+#include <set>
 #include <string>
 #include <utility>
 
@@ -49,6 +51,25 @@ static void assertVertexInside(const XFGeometry::PlaneClipVertex2D& vertex,
     } else {
         Assert::IsTrue(vertex.value >= plane - tolerance);
     }
+}
+
+static std::string roundedVertexKey(const XFGeometry::Vec3& point) {
+    const auto rounded = [](double value) -> long long {
+        return static_cast<long long>(std::llround(value * 1000000000.0));
+    };
+    return std::to_string(rounded(point.x)) + "," +
+        std::to_string(rounded(point.y)) + "," +
+        std::to_string(rounded(point.z));
+}
+
+static std::string triangleKey(const XFMesh::ImplicitMeshTriangle& triangle) {
+    std::array<std::string, 3> vertices{
+        roundedVertexKey(triangle.p0),
+        roundedVertexKey(triangle.p1),
+        roundedVertexKey(triangle.p2)
+    };
+    std::sort(vertices.begin(), vertices.end());
+    return vertices[0] + "|" + vertices[1] + "|" + vertices[2];
 }
 
 TEST_CASE(CurveSampler_SimpleLineProducesOnePolyline) {
@@ -249,6 +270,38 @@ TEST_CASE(SurfaceNets_ExactZeroPlaneOnGridProducesFiniteNonDegenerateTriangles) 
         Assert::IsTrue(std::isfinite(face.p0.z));
         Assert::IsTrue(std::isfinite(face.p1.z));
         Assert::IsTrue(std::isfinite(face.p2.z));
+    }
+}
+
+TEST_CASE(SurfaceNets_IsolatedExactZeroGridContactDoesNotEmitSpuriousPatch) {
+    const XFMesh::SurfaceNetsOptions options{
+        XFGeometry::Bounds3D{ -1.0, 1.0, -1.0, 1.0, -1.0, 1.0 },
+        16
+    };
+
+    const XFMesh::ImplicitMeshEntry positiveContact =
+        XFMesh::buildSurfaceNetsMesh(astFor("x^2+y^2+z^2"), options);
+    const XFMesh::ImplicitMeshEntry negativeContact =
+        XFMesh::buildSurfaceNetsMesh(astFor("-(x^2+y^2+z^2)"), options);
+
+    Assert::IsTrue(positiveContact.faces.empty());
+    Assert::IsFalse(positiveContact.surfaceBounds.valid());
+    Assert::IsTrue(negativeContact.faces.empty());
+    Assert::IsFalse(negativeContact.surfaceBounds.valid());
+}
+
+TEST_CASE(SurfaceNets_DoesNotEmitDuplicateTrianglesForDeterministicPlane) {
+    const XFMesh::ImplicitMeshEntry mesh =
+        XFMesh::buildSurfaceNetsMesh(
+            astFor("z"),
+            XFMesh::SurfaceNetsOptions{
+                XFGeometry::Bounds3D{ -1.0, 1.0, -1.0, 1.0, -1.0, 1.0 },
+                16
+            });
+
+    std::set<std::string> seen;
+    for (const XFMesh::ImplicitMeshTriangle& face : mesh.faces) {
+        Assert::IsTrue(seen.insert(triangleKey(face)).second);
     }
 }
 

@@ -96,6 +96,29 @@ TEST_CASE(FormulaEditorState_WrongArityPreviewIsInvalidWithoutThrowing) {
     Assert::IsTrue(editor.preview.diagnosticMessage().find("expects") != std::string::npos);
 }
 
+TEST_CASE(FormulaEditorState_ZeroScientificPreviewAcceptedAndUnderflowRejected) {
+    XFUI::FormulaEditorState editor;
+
+    editor.loadText("0e999");
+    Assert::IsTrue(editor.refreshPreview());
+    Assert::IsTrue(editor.previewAvailable);
+    Assert::IsTrue(editor.preview.isValid());
+
+    editor.loadText("1e-9999");
+    bool threw = false;
+    try {
+        Assert::IsTrue(editor.refreshPreview());
+    } catch (...) {
+        threw = true;
+    }
+
+    Assert::IsFalse(threw);
+    Assert::IsTrue(editor.previewAvailable);
+    Assert::IsFalse(editor.preview.isValid());
+    Assert::IsTrue(
+        editor.preview.diagnosticMessage().find("outside the supported range") != std::string::npos);
+}
+
 TEST_CASE(FormulaEditorState_PreviewRecompilesOnlyWhenTextChanges) {
     XFUI::FormulaEditorState editor;
     editor.loadText("sin(x)");
