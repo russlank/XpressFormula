@@ -12,16 +12,16 @@
 namespace XpressFormula::UI {
 
 ControlPanelActions ControlPanel::render(Core::ViewTransform& vt, PlotSettings& settings,
-                                         bool has2DFormula,
-                                         bool hasSurfaceFormula,
+                                         const Model::SceneSummary& scene,
                                          const std::string& exportStatus) {
     ControlPanelActions actions;
+    const PlotLimits& limits = plotLimits();
 
     ImGui::TextUnformatted("View");
     ImGui::Separator();
 
     float viewScale = static_cast<float>(std::clamp(
-        std::sqrt(std::max(1e-6, vt.scaleX * vt.scaleY)),
+        std::sqrt(std::max(1e-6, vt.state.scaleX * vt.state.scaleY)),
         0.1,
         100000.0));
     ImGui::SetNextItemWidth(-1.0f);
@@ -32,8 +32,8 @@ ControlPanelActions ControlPanel::render(Core::ViewTransform& vt, PlotSettings& 
                            "%.1f px/unit",
                            ImGuiSliderFlags_Logarithmic)) {
         const double newScale = std::clamp(static_cast<double>(viewScale), 0.1, 100000.0);
-        vt.scaleX = newScale;
-        vt.scaleY = newScale;
+        vt.state.scaleX = newScale;
+        vt.state.scaleY = newScale;
     }
     ImGui::SetItemTooltip("Adjust X and Y scale together in pixels per world unit.");
 
@@ -42,7 +42,7 @@ ControlPanelActions ControlPanel::render(Core::ViewTransform& vt, PlotSettings& 
     ImGui::TextUnformatted(buf);
     std::snprintf(buf, sizeof(buf), "Y: [%.4g, %.4g]", vt.worldYMin(), vt.worldYMax());
     ImGui::TextUnformatted(buf);
-    std::snprintf(buf, sizeof(buf), "Scale: %.1f x %.1f px/unit", vt.scaleX, vt.scaleY);
+    std::snprintf(buf, sizeof(buf), "Scale: %.1f x %.1f px/unit", vt.state.scaleX, vt.state.scaleY);
     ImGui::TextUnformatted(buf);
     ImGui::TextWrapped("Mouse: drag to pan; wheel to zoom; Shift/Ctrl wheel constrains X/Y.");
 
@@ -91,16 +91,15 @@ ControlPanelActions ControlPanel::render(Core::ViewTransform& vt, PlotSettings& 
         settings.xyRenderModePreference = XYRenderModePreference::Force2D;
     }
 
-    const XYRenderMode effectiveRenderMode =
-        settings.resolveXYRenderMode(has2DFormula, hasSurfaceFormula);
+    const XYRenderMode effectiveRenderMode = settings.resolveXYRenderMode(scene);
     ImGui::TextDisabled("Effective mode: %s",
                         (effectiveRenderMode == XYRenderMode::Surface3D)
                             ? "3D"
                             : "2D");
     if (settings.xyRenderModePreference == XYRenderModePreference::Auto) {
-        if (hasSurfaceFormula && has2DFormula) {
+        if (scene.hasVisible3D() && scene.hasVisible2D()) {
             ImGui::TextWrapped("Auto is using 2D because both 2D and 3D formulas are visible.");
-        } else if (hasSurfaceFormula) {
+        } else if (scene.hasVisible3D()) {
             ImGui::TextWrapped("Auto is using 3D because only 3D-capable formulas are visible.");
         } else {
             ImGui::TextWrapped("Auto is using 2D (no visible 3D-capable formulas).");
@@ -153,22 +152,22 @@ ControlPanelActions ControlPanel::render(Core::ViewTransform& vt, PlotSettings& 
                         UiKit::DisabledScope disabled(!settings.showWires);
                         displayGrid.sliderFloat("Wire Opacity",
                                                 settings.wireOpacity,
-                                                0.0f,
-                                                1.0f,
+                                                limits.wireOpacity.min,
+                                                limits.wireOpacity.max,
                                                 kDefaultWireOpacity,
                                                 "%.2f",
                                                 "Opacity for 3D mesh/wire overlays.");
                         displayGrid.sliderFloat("Wire Thickness",
                                                 settings.wireThickness,
-                                                0.0f,
-                                                2.5f,
+                                                limits.wireThickness.min,
+                                                limits.wireThickness.max,
                                                 kDefaultWireThickness,
                                                 "%.2f",
                                                 "Line thickness for 3D mesh/wire overlays.");
                         displayGrid.sliderInt("Wire Stride",
                                               settings.wireStride,
-                                              1,
-                                              8,
+                                              limits.wireStride.min,
+                                              limits.wireStride.max,
                                               kDefaultWireStride,
                                               "Draw every Nth wire row/column without changing surface sampling.");
                     }
@@ -178,8 +177,8 @@ ControlPanelActions ControlPanel::render(Core::ViewTransform& vt, PlotSettings& 
                     if (settings.showSurfaceEnvelope) {
                         displayGrid.sliderFloat("Envelope Thickness",
                                                 settings.envelopeThickness,
-                                                0.5f,
-                                                3.0f,
+                                                limits.envelopeThickness.min,
+                                                limits.envelopeThickness.max,
                                                 kDefaultEnvelopeThickness,
                                                 "%.2f",
                                                 "Thickness for the 3D bounding envelope.");
@@ -188,8 +187,8 @@ ControlPanelActions ControlPanel::render(Core::ViewTransform& vt, PlotSettings& 
                     if (settings.autoRotate) {
                         displayGrid.sliderFloat("Rotation Speed",
                                                 settings.autoRotateSpeedDegPerSec,
-                                                2.0f,
-                                                90.0f,
+                                                limits.autoRotateSpeedDegPerSec.min,
+                                                limits.autoRotateSpeedDegPerSec.max,
                                                 kDefaultAutoRotateSpeedDegPerSec,
                                                 "%.1f deg/s",
                                                 "Automatic camera rotation speed in degrees per second.");
@@ -224,48 +223,48 @@ ControlPanelActions ControlPanel::render(Core::ViewTransform& vt, PlotSettings& 
             if (cameraGrid.begin()) {
                 cameraGrid.sliderFloat("Azimuth",
                                        settings.azimuthDeg,
-                                       -180.0f,
-                                       180.0f,
+                                       limits.azimuthDeg.min,
+                                       limits.azimuthDeg.max,
                                        kDefaultAzimuthDeg,
                                        "%.1f deg",
                                        "Horizontal camera angle for 3D surfaces.");
                 cameraGrid.sliderFloat("Elevation",
                                        settings.elevationDeg,
-                                       -85.0f,
-                                       85.0f,
+                                       limits.elevationDeg.min,
+                                       limits.elevationDeg.max,
                                        kDefaultElevationDeg,
                                        "%.1f deg",
                                        "Vertical camera angle for 3D surfaces.");
                 cameraGrid.sliderFloat("Z Scale",
                                        settings.zScale,
-                                       0.1f,
-                                       8.0f,
+                                       limits.zScale.min,
+                                       limits.zScale.max,
                                        kDefaultZScale,
                                        "%.2f",
                                        "Vertical exaggeration applied to 3D geometry.");
                 cameraGrid.sliderInt("Surface Density",
                                      settings.surfaceResolution,
-                                     12,
-                                     96,
+                                     limits.surfaceResolution.min,
+                                     limits.surfaceResolution.max,
                                      kDefaultSurfaceResolution,
                                      "Sampling density for explicit z=f(x,y) surfaces.");
                 cameraGrid.sliderInt("Implicit Resolution",
                                      settings.implicitSurfaceResolution,
-                                     16,
-                                     96,
+                                     limits.implicitSurfaceResolution.min,
+                                     limits.implicitSurfaceResolution.max,
                                      kDefaultImplicitSurfaceResolution,
                                      "Grid resolution for implicit F(x,y,z)=0 surfaces.");
                 cameraGrid.sliderFloat("Surface Opacity",
                                        settings.surfaceOpacity,
-                                       0.25f,
-                                       1.0f,
+                                       limits.surfaceOpacity.min,
+                                       limits.surfaceOpacity.max,
                                        kDefaultSurfaceOpacity,
                                        "%.2f",
                                        "Surface fill opacity.");
             }
         }
 
-        if (hasSurfaceFormula) {
+        if (scene.hasVisible3D()) {
             ImGui::TextWrapped("Tip: Drag in the plot to pan X/Y domain and use wheel to zoom.");
         } else {
             ImGui::TextWrapped("No 3D-capable formulas are currently visible (z=f(x,y) or F(x,y,z)=0).");
@@ -276,8 +275,8 @@ ControlPanelActions ControlPanel::render(Core::ViewTransform& vt, PlotSettings& 
             if (heatmapGrid.begin()) {
                 heatmapGrid.sliderFloat("Heatmap Opacity",
                                         settings.heatmapOpacity,
-                                        0.1f,
-                                        1.0f,
+                                        limits.heatmapOpacity.min,
+                                        limits.heatmapOpacity.max,
                                         kDefaultHeatmapOpacity,
                                         "%.2f",
                                         "Opacity for heatmap and scalar-field cross-section fills.");
@@ -297,6 +296,7 @@ ControlPanelActions ControlPanel::render(Core::ViewTransform& vt, PlotSettings& 
         ImGui::TextWrapped("%s", exportStatus.c_str());
     }
 
+    normalizePlotSettings(settings);
     return actions;
 }
 

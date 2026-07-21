@@ -22,9 +22,9 @@ In practice, that means:
 
 XpressFormula follows that model cleanly:
 
-- data/state is stored in `Application`, `PlotSettings`, `FormulaEntry`, `ViewTransform`
+- persistent document state is stored in `Model::Document`; `Application` owns Win32/D3D/ImGui lifecycle and coordinates controllers
 - panels render UI from that state
-- panels mutate state directly (or return small action flags)
+- panels mutate focused document edit scopes or return explicit action/command payloads
 
 ## 2. Main UI Files and Responsibilities
 
@@ -40,8 +40,8 @@ The UI is split into focused panels:
   - plot canvas region, mouse interaction, renderer dispatch
 - [`src/XpressFormula/UI/PlotSettings.h`](../src/XpressFormula/UI/PlotSettings.h)
   - shared settings for rendering and camera behavior
-- [`src/XpressFormula/UI/ProjectSession.h`](../src/XpressFormula/UI/ProjectSession.h)
-  - versioned `.xfplot` records, JSON serialization/parsing, and safe session application helpers
+- [`src/XpressFormula/Infrastructure/Persistence`](../src/XpressFormula/Infrastructure/Persistence)
+  - versioned `.xfplot` DTOs, JSON serialization/parsing, repository I/O, recent-project storage, and safe mapping to/from `Model::Document`
 
 Why this split works well:
 
@@ -178,11 +178,12 @@ ImGui draws widgets, but your app owns the state.
 
 In XpressFormula:
 
-- formulas are stored in `Application::m_formulas`
-- camera/view state in `m_viewTransform`
-- render settings in `m_plotSettings`
+- formulas, persistent view state, and plot settings are stored in `Model::Document`
+- transient camera animation state lives in application runtime state
+- viewport geometry is frame/layout state
 - transient export requests in booleans/action flags
-- project path, dirty state, recent projects, and unsaved-change prompts in `Application`
+- project path, recent projects, and unsaved-change workflow live in `Application::ProjectController`
+- dirty state is calculated by `Model::Document` from revision and saved revision
 
 Panels receive references to these objects and render widgets directly from them.
 
@@ -201,17 +202,20 @@ This is the recommended mental model:
 
 Project files are deliberately outside the widget layer:
 
-- `Application` owns live state and project workflow commands.
-- `ProjectSession` converts live state to/from plain records.
+- `Model::Document` owns live formulas, persistent view state, plot settings, revision, saved revision, and dirty-state calculation.
+- `Application::ProjectController` owns current path, New/Open/Save/Save As workflow, recent-project integration, unsaved-change prompts, and project status/effects.
+- `ProjectSession.h` contains versioned DTO records only.
+- `ProjectSerializer.*` converts DTOs to/from JSON and validates schema.
+- `ProjectMapper.*` maps between DTOs and `Model::Document`.
+- `ProjectRepository.*` performs file reading and atomic project writing.
+- `RecentProjectsStore.*` stores, deduplicates, and cleans up recent-project paths.
 - Serializers do not know about ImGui IDs, popups, panels, or layout.
 - Open parses the full file before replacing active formulas, view, and plot settings.
-- Invalid loaded formulas are copied into edit buffers, reparsed, and surfaced as warnings instead of being silently dropped.
-- Dirty state is based on serialized state comparison with the last clean snapshot.
+- Invalid loaded formulas are copied into model state, reparsed, and surfaced as warnings instead of being silently dropped.
+- Dirty state is revision-based: real persistent mutations increment revision, successful saves call `markSaved()`, and transient viewport geometry or runtime auto-rotation do not dirty the document.
 - Save writes to a temporary file, then replaces the target path.
 
 The unsaved-change modal may request a close, but it must not destroy the Win32 window while ImGui is still rendering. It sets a deferred close flag; `Application::run()` processes that flag after the current frame is complete.
-
-`ProjectSession.h` currently contains both the schema and JSON parser/serializer. Keep it as the persistence boundary unless the format grows enough to justify splitting schema records from parsing code.
 
 ## 8. Panel Communication Pattern
 

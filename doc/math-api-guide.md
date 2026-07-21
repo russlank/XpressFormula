@@ -53,7 +53,7 @@ This table is the most important mental model for understanding the code.
 | Unary operation | `-a`, `+a` | `Core::UnaryOpNode` |
 | Binary operation | `a+b`, `a*b`, `a^b` | `Core::BinaryOpNode` |
 | Function application | `sin(x)`, `pow(a,b)` | `Core::FunctionCallNode` |
-| Evaluation context | Variable assignments | `Evaluator::Variables` (`unordered_map<string,double>`) |
+| Evaluation context | Fixed `x`, `y`, `z` sample values | `Core::EvaluationContext` |
 | Equation | `left = right` | Internally normalized to `(left - right) = 0` |
 | 2D viewport transform | World coordinates ↔ screen pixels | `Core::ViewTransform` |
 | Implicit curve/surface | Zero set of a function (`F(...)=0`) | AST + contour/mesh extraction in `PlotRenderer` |
@@ -253,17 +253,26 @@ Files:
 ### Public API
 
 ```cpp
+struct EvaluationContext {
+    double x = 0.0;
+    double y = 0.0;
+    double z = 0.0;
+};
+
 using Variables = std::unordered_map<std::string, double>;
+static double evaluate(const ASTNodePtr& node, const EvaluationContext& context);
 static double evaluate(const ASTNodePtr& node, const Variables& vars);
 ```
 
-The evaluator is a numerical interpreter for ASTs.
+The evaluator is a numerical interpreter for ASTs. Hot plotting paths use
+`EvaluationContext`, which avoids string hashing while sampling. `Variables`
+remains as a compatibility adapter for older callers and tests.
 
 ### Mathematical abstraction
 
-You can think of `Evaluator::evaluate(ast, vars)` as:
+You can think of `Evaluator::evaluate(ast, context)` as:
 
-- a function from `(expression tree, variable assignments)` to a real number
+- a function from `(expression tree, x/y/z sample point)` to a real number
 
 with the important caveat:
 
@@ -274,8 +283,8 @@ with the important caveat:
 ```cpp
 case NodeType::BinaryOp: {
     auto* bin = static_cast<BinaryOpNode*>(node.get());
-    double l = evaluate(bin->left,  vars);
-    double r = evaluate(bin->right, vars);
+    double l = evaluate(bin->left,  context);
+    double r = evaluate(bin->right, context);
     switch (bin->op) {
         case BinaryOperator::Add:      return l + r;
         case BinaryOperator::Subtract: return l - r;
@@ -305,13 +314,13 @@ Built-in function metadata lives in:
 - [`src/XpressFormula/Core/FunctionRegistry.h`](../src/XpressFormula/Core/FunctionRegistry.h)
 - [`src/XpressFormula/Core/FunctionRegistry.cpp`](../src/XpressFormula/Core/FunctionRegistry.cpp)
 
-The registry stores each function's parser name, UI signature, help text,
-category, detailed explanation, equivalent formula or explanatory note, loadable
-example, function ID, and min/max arity. `Parser` uses the registry to reject
-unknown function names. `Evaluator::evaluateFunction(name, args)` then looks up
-the same metadata, applies strict arity checks, and dispatches by `FunctionId`.
-The Formula Editor reads the same metadata for its Functions tab and detailed
-function help dialog.
+The registry stores each function's stable ID, parser name, UI signature, help
+text, category, detailed explanation, equivalent formula or explanatory note,
+loadable example, min/max arity, and evaluator callback. `Parser` uses the
+registry to reject unknown function names and stores the matched definition on
+`FunctionCallNode`. `Evaluator` then applies strict arity checks and invokes the
+same registry callback. The Formula Editor reads the same metadata for its
+Functions tab and detailed function help dialog.
 
 The function set includes:
 
@@ -326,10 +335,29 @@ The function set includes:
 Wrong argument counts return `NaN`; `log` intentionally supports both one and
 two arguments.
 
+### Expression runtime benchmark harness
+
+The optional benchmark test compares the compatibility map adapter that mirrors
+the previous hot sampling loops with the fixed-slot `EvaluationContext` path:
+
+```powershell
+$env:XF_RUN_EXPRESSION_BENCHMARK = '1'
+.\src\XpressFormula.Tests\x64\Release\XpressFormula.Tests.exe
+```
+
+Local Release x64 results recorded on 2026-07-20 with MSBuild
+18.8.2+ce25c0108:
+
+| Sampling shape | Map adapter baseline | Fixed-slot context | Ratio |
+|---|---:|---:|---:|
+| Curve, `200 x 4097` samples | `97.8928 ms` | `71.1519 ms` | `1.37583x` |
+| Explicit surface, `100 x 97^2` samples | `136.382 ms` | `99.5032 ms` | `1.37063x` |
+| Implicit field, `20 x 33^3` samples | `69.1287 ms` | `42.6645 ms` | `1.62029x` |
+
 ### Standard library dependencies and why
 
 - `<unordered_map>`
-  - fast variable lookup by name during repeated evaluation
+  - compatibility adapter for callers that still pass named variables
 - `<cmath>`
   - core real-valued math functions
 - `<algorithm>`
@@ -341,9 +369,11 @@ two arguments.
 
 ## 7. Math Constants API
 
-File:
+Files:
 
 - [`src/XpressFormula/Core/MathConstants.h`](../src/XpressFormula/Core/MathConstants.h)
+- [`src/XpressFormula/Core/ConstantRegistry.h`](../src/XpressFormula/Core/ConstantRegistry.h)
+- [`src/XpressFormula/Core/ConstantRegistry.cpp`](../src/XpressFormula/Core/ConstantRegistry.cpp)
 
 Defines:
 
@@ -351,14 +381,16 @@ Defines:
 - `E`
 - `TAU`
 
-This gives a consistent source of constants instead of relying on platform-specific macros.
+`MathConstants.h` owns the numeric values. `ConstantRegistry` is the single
+source for expression-language names such as `pi`, `e`, and `tau`, including
+future constant metadata. The parser resolves constants through that registry.
 
 ### Code Snippet
 
 ```cpp
-constexpr double PI  = 3.14159265358979323846;
-constexpr double E   = 2.71828182845904523536;
-constexpr double TAU = 2.0 * PI;
+for (const Core::ConstantInfo& constant : Core::constantRegistry()) {
+    // constant.name and constant.value are what user expressions see.
+}
 ```
 
 ## 8. ViewTransform API (Mathematical Coordinate Mapping)
@@ -559,7 +591,7 @@ This section is a practical "why these headers exist" map for contributors.
 ### Evaluator
 
 - `<unordered_map>`
-  - variable environment lookup
+  - legacy variable environment adapter
 - `<cmath>`
   - numerical math operations
 - `<limits>`
@@ -606,9 +638,9 @@ Conceptual use of the API:
 ```cpp
 auto parsed = XpressFormula::Core::Parser::parse("sin(x) + 2");
 if (parsed.success()) {
-    XpressFormula::Core::Evaluator::Variables vars;
-    vars["x"] = 1.0;
-    double y = XpressFormula::Core::Evaluator::evaluate(parsed.ast, vars);
+    XpressFormula::Core::EvaluationContext context;
+    context.x = 1.0;
+    double y = XpressFormula::Core::Evaluator::evaluate(parsed.ast, context);
 }
 ```
 
@@ -692,10 +724,9 @@ This is normal and expected in interactive plotting tools.
 
 ### Add a new built-in function
 
-1. Add the metadata row in `FunctionRegistry.cpp`
-2. Add a `FunctionId` in `FunctionRegistry.h`
-3. Implement the dispatch case in `Evaluator::evaluateFunction`
-4. Add parser, evaluator, docs, and example tests
+1. Add a `FunctionId` in `FunctionRegistry.h`
+2. Add the metadata row and evaluator callback in `FunctionRegistry.cpp`
+3. Add parser, evaluator, docs, and example tests
 5. Update `expression-language.md`
 
 The Formula Editor supported-functions reference is generated from the registry.
@@ -704,9 +735,9 @@ formula or note, and a parseable example so the help dialog stays complete.
 
 ### Add a new constant
 
-1. Add constant value in `MathConstants.h`
-2. Add constant name to `Parser::s_constants`
-3. Resolve it in `Parser::parsePrimary`
+1. Add the numeric value in `MathConstants.h` if it is not already available
+2. Add the public name and value row in `ConstantRegistry.cpp`
+3. Add parser/evaluator/docs tests
 4. Document it in `expression-language.md`
 
 ### Add a new render interpretation
@@ -732,7 +763,7 @@ If you want to understand the math stack end-to-end:
 ## 16. Glossary
 
 - **AST**: Abstract Syntax Tree, a structured representation of an expression
-- **Evaluation context**: variable bindings used during evaluation
+- **Evaluation context**: fixed `x`, `y`, and `z` sample values used during evaluation
 - **Implicit function**: function used via its zero set `F(...)=0`
 - **Scalar field**: a function assigning one scalar value to each point in space
 - **Affine transform**: linear transform plus translation (used in coordinate mapping)

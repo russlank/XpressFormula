@@ -1,6 +1,7 @@
 // FormulaCard.cpp - Responsive formula-list card implementation.
 #include "FormulaCard.h"
 #include "../FormulaListActions.h"
+#include "../FormulaPresentation.h"
 #include "../UiKit/ResponsiveLayout.h"
 #include "../UiKit/UiMetrics.h"
 #include "../UiKit/UiScopes.h"
@@ -38,14 +39,14 @@ std::string ellipsizeForWidth(const char* text, float maxWidth) {
     return value.empty() ? ellipsis : value + ellipsis;
 }
 
-const char* validationLabel(const FormulaEntry& formula) {
+const char* validationLabel(const Model::Formula& formula) {
     if (formula.isValid()) {
         return "Valid";
     }
     return FormulaListActions::formulaExpression(formula).empty() ? "Empty" : "Invalid";
 }
 
-ImVec4 validationColor(const FormulaEntry& formula) {
+ImVec4 validationColor(const Model::Formula& formula) {
     if (formula.isValid()) {
         return ImVec4(0.44f, 0.92f, 0.52f, 1.0f);
     }
@@ -70,15 +71,15 @@ void showWrappedTooltip(const char* first, const char* second = nullptr) {
     ImGui::EndTooltip();
 }
 
-FormulaCardAction makeAction(FormulaCardActionType type, int index) {
-    return FormulaCardAction{ type, index };
+FormulaCardAction makeAction(FormulaCardActionType type, Model::FormulaId id) {
+    return FormulaCardAction{ type, id };
 }
 
 bool hasAction(const FormulaCardAction& action) {
     return action.type != FormulaCardActionType::None;
 }
 
-void drawMetadata(const FormulaEntry& formula,
+void drawMetadata(const Model::Formula& formula,
                   bool includeValidation,
                   const char* validationText) {
     if (includeValidation) {
@@ -87,10 +88,11 @@ void drawMetadata(const FormulaEntry& formula,
 
         if (!formula.isValid()) {
             ImGui::SameLine();
-            if (!formula.error.empty()) {
+            const char* diagnostic = formulaDiagnosticText(formula);
+            if (diagnostic[0] != '\0') {
                 ImGui::TextDisabled("| hover for error details");
                 if (ImGui::IsItemHovered()) {
-                    showWrappedTooltip("Invalid formula", formula.error.c_str());
+                    showWrappedTooltip("Invalid formula", diagnostic);
                 }
             } else {
                 ImGui::TextDisabled("| no parsed formula yet");
@@ -105,16 +107,16 @@ void drawMetadata(const FormulaEntry& formula,
 
     if (formula.isValid()) {
         ImGui::TextDisabled("%s | %s | variables: %d",
-                            formula.typeLabel(),
-                            formula.isEquation ? "Equation" : "Expression",
-                            formula.variableCount);
-    } else if (!formula.error.empty()) {
+                            formulaTypeLabel(formula),
+                            formula.compiled.equation ? "Equation" : "Expression",
+                            displayedVariableCount(formula));
+    } else if (formulaDiagnosticText(formula)[0] != '\0') {
         UiKit::StyleColorScope color(ImGuiCol_Text, validationColor(formula));
         ImGui::TextUnformatted("Invalid");
         ImGui::SameLine();
         ImGui::TextDisabled("| hover for error details");
         if (ImGui::IsItemHovered()) {
-            showWrappedTooltip("Invalid formula", formula.error.c_str());
+            showWrappedTooltip("Invalid formula", formulaDiagnosticText(formula));
         }
     } else {
         ImGui::TextDisabled("Empty | no parsed formula yet");
@@ -123,12 +125,14 @@ void drawMetadata(const FormulaEntry& formula,
 
 } // namespace
 
-FormulaCardAction renderFormulaCard(FormulaEntry& formula,
+FormulaCardResult renderFormulaCard(const Model::Formula& formula,
                                     const FormulaCardContext& context) {
-    FormulaCardAction action;
-    UiKit::IdScope cardId(context.index);
+    FormulaCardResult result;
+    const std::string cardIdText = "formula_" + std::to_string(formula.id);
+    UiKit::IdScope cardId(cardIdText.c_str());
 
-    const bool showZSlice = formula.renderKind == FormulaRenderKind::ScalarField3D &&
+    const bool showZSlice =
+        formulaRenderKindFor(formula.compiled.kind) == FormulaRenderKind::ScalarField3D &&
         formula.isValid();
     const ImGuiStyle& style = ImGui::GetStyle();
     const float lineHeight = ImGui::GetTextLineHeightWithSpacing();
@@ -161,8 +165,8 @@ FormulaCardAction renderFormulaCard(FormulaEntry& formula,
                       ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
     auto setActionIfEmpty = [&](FormulaCardActionType type) {
-        if (!hasAction(action)) {
-            action = makeAction(type, context.index);
+        if (!hasAction(result.action)) {
+            result.action = makeAction(type, formula.id);
         }
     };
 
@@ -198,14 +202,22 @@ FormulaCardAction renderFormulaCard(FormulaEntry& formula,
         }
     };
 
-    ImGui::Checkbox("##visible", &formula.visible);
-    ImGui::SetItemTooltip("%s Formula %d.", formula.visible ? "Hide" : "Show", context.index + 1);
+    bool visible = formula.visible;
+    if (ImGui::Checkbox("##visible", &visible)) {
+        result.visibilityChanged = true;
+        result.visible = visible;
+    }
+    ImGui::SetItemTooltip("%s Formula %d.", visible ? "Hide" : "Show", context.index + 1);
     ImGui::SameLine();
 
-    ImGui::ColorEdit4("##color", formula.color,
-                      ImGuiColorEditFlags_NoInputs |
-                      ImGuiColorEditFlags_NoLabel |
-                      ImGuiColorEditFlags_NoTooltip);
+    Model::ColorRgba formulaColor = formula.color;
+    if (ImGui::ColorEdit4("##color", formulaColor.data(),
+                          ImGuiColorEditFlags_NoInputs |
+                          ImGuiColorEditFlags_NoLabel |
+                          ImGuiColorEditFlags_NoTooltip)) {
+        result.colorChanged = true;
+        result.color = formulaColor;
+    }
     ImGui::SetItemTooltip("Set Formula %d color.", context.index + 1);
     ImGui::SameLine();
 
@@ -214,8 +226,8 @@ FormulaCardAction renderFormulaCard(FormulaEntry& formula,
         ImGui::SameLine();
         UiKit::StyleColorScope color(ImGuiCol_Text, validationColor(formula));
         ImGui::TextUnformatted(validationText);
-        if (ImGui::IsItemHovered() && !formula.error.empty()) {
-            showWrappedTooltip("Invalid formula", formula.error.c_str());
+        if (ImGui::IsItemHovered() && formulaDiagnosticText(formula)[0] != '\0') {
+            showWrappedTooltip("Invalid formula", formulaDiagnosticText(formula));
         }
     }
 
@@ -299,15 +311,22 @@ FormulaCardAction renderFormulaCard(FormulaEntry& formula,
 
     if (showZSlice) {
         ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
-        if (formula.isEquation) {
-            ImGui::SliderFloat("z slice / center", &formula.zSlice, -10.0f, 10.0f, "z = %.2f");
+        float zSlice = static_cast<float>(formula.zSlice);
+        if (formula.compiled.equation) {
+            if (ImGui::SliderFloat("z slice / center", &zSlice, -10.0f, 10.0f, "z = %.2f")) {
+                result.zSliceChanged = true;
+                result.zSlice = static_cast<double>(zSlice);
+            }
         } else {
-            ImGui::SliderFloat("z slice", &formula.zSlice, -10.0f, 10.0f, "z = %.2f");
+            if (ImGui::SliderFloat("z slice", &zSlice, -10.0f, 10.0f, "z = %.2f")) {
+                result.zSliceChanged = true;
+                result.zSlice = static_cast<double>(zSlice);
+            }
         }
     }
 
     ImGui::EndChild();
-    return action;
+    return result;
 }
 
 } // namespace XpressFormula::UI::Components

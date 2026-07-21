@@ -2,7 +2,7 @@
 param(
     [string]$Configuration = "Release",
     [string]$Platform = "x64",
-    [string]$PlatformToolset = "v143",
+    [string]$PlatformToolset = "v145",
     [string]$WixVersion = "6.0.2",
     [string]$OutputDir = "artifacts\release",
     [switch]$SkipPackaging
@@ -22,6 +22,8 @@ try {
     $solutionDir = Join-Path $repoRoot "src\"
     $intDir = Join-Path $repoRoot "build\obj\"
     $outDir = Join-Path $repoRoot "build\bin\"
+    $testIntDir = Join-Path $repoRoot "build\test-obj\"
+    $testOutDir = Join-Path $repoRoot "build\test-bin\"
 
     $msbuild = (Get-Command msbuild -ErrorAction SilentlyContinue | Select-Object -First 1).Source
     if (-not $msbuild) {
@@ -44,6 +46,11 @@ try {
     Write-Host "Using MSBuild: $msbuild"
     Write-Host "Version: $version"
     Write-Host "Configuration=$Configuration Platform=$Platform PlatformToolset=$PlatformToolset"
+
+    powershell -NoProfile -ExecutionPolicy Bypass -File ".\tools\check-architecture-boundaries.ps1"
+    if ($LASTEXITCODE -ne 0) {
+        throw "Architecture boundary check failed with exit code $LASTEXITCODE."
+    }
 
     $repoUrl = (& git config --get remote.origin.url 2>$null)
     if ($repoUrl) {
@@ -85,8 +92,26 @@ try {
         throw "MSBuild failed with exit code $LASTEXITCODE."
     }
 
+    & $msbuild "src\XpressFormula.Tests\XpressFormula.Tests.vcxproj" /t:Build /m `
+        /p:Configuration=$Configuration `
+        /p:Platform=$Platform `
+        /p:PlatformToolset=$PlatformToolset `
+        /p:IntDir="$testIntDir" `
+        /p:OutDir="$testOutDir"
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "Test MSBuild failed with exit code $LASTEXITCODE."
+    }
+
+    $testExe = Join-Path $testOutDir "XpressFormula.Tests.exe"
+    & $testExe
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "Release tests failed with exit code $LASTEXITCODE."
+    }
+
     if ($SkipPackaging) {
-        Write-Host "SkipPackaging was set. Build stage completed successfully."
+        Write-Host "SkipPackaging was set. Build and test stages completed successfully."
         return
     }
 

@@ -3,6 +3,7 @@
 
 [![Latest Release](https://img.shields.io/github/v/release/russlank/XpressFormula?display_name=tag&sort=semver)](https://github.com/russlank/XpressFormula/releases/latest)
 [![Release Date](https://img.shields.io/github/release-date/russlank/XpressFormula)](https://github.com/russlank/XpressFormula/releases/latest)
+[![PR Validation](https://img.shields.io/github/actions/workflow/status/russlank/XpressFormula/pr-validation.yml?branch=main&label=PR%20validation)](https://github.com/russlank/XpressFormula/actions/workflows/pr-validation.yml)
 [![Release Packaging](https://img.shields.io/github/actions/workflow/status/russlank/XpressFormula/release-packaging.yml?branch=main&label=release%20packaging)](https://github.com/russlank/XpressFormula/actions/workflows/release-packaging.yml)
 [![License](https://img.shields.io/github/license/russlank/XpressFormula)](LICENSE)
 [![Documentation](https://img.shields.io/badge/docs-index-blue)](doc/index.md)
@@ -36,14 +37,17 @@ The app supports:
 
 - Fast interactive plotting in a native C++ application
 - Clear separation between parsing/evaluation logic and UI/rendering
+- Modular monolith architecture with CI-checked production boundaries
 - Simple local development workflow (Visual Studio, VS Code, CLI)
 - Solid unit/integration test coverage for core math and transform logic
 
 ## Requirements
 
 - Windows 10/11
-- Visual Studio 2022/2026 with C++ workload
+- Visual Studio 2026 or Build Tools 2026 with the C++ workload (MSBuild 18.x, MSVC platform toolset `v145`)
 - Windows SDK (10.0+)
+
+The repository, CI, and release scripts default to `v145`. Visual Studio 2022 users need to retarget locally to an installed toolset such as `v143`.
 
 ## Quick Start
 
@@ -70,6 +74,8 @@ Common path:
 - Documentation index: [`doc/index.md`](doc/index.md)
 - Run and debug guide: [`doc/run-guide.md`](doc/run-guide.md)
 - Architecture overview: [`doc/architecture.md`](doc/architecture.md)
+- Architecture dependency rules: [`doc/architecture-dependencies.md`](doc/architecture-dependencies.md)
+- Architecture decision records: [`doc/adr/README.md`](doc/adr/README.md)
 - Math API guide (internal math abstractions and APIs): [`doc/math-api-guide.md`](doc/math-api-guide.md)
 - Math API cheatsheet (quick reference + where used): [`doc/math-api-cheatsheet.md`](doc/math-api-cheatsheet.md)
 - Algorithms guide (parsing/rendering/meshing): [`doc/algorithms-guide.md`](doc/algorithms-guide.md)
@@ -80,6 +86,7 @@ Common path:
 - Release and packaging guide: [`doc/release-packaging.md`](doc/release-packaging.md)
 - Windows code signing guide (Defender/SmartScreen mitigation): [`doc/code-signing.md`](doc/code-signing.md)
 - Vendor dependencies: [`doc/project-vendors.md`](doc/project-vendors.md)
+- Contributing guide: [`CONTRIBUTING.md`](CONTRIBUTING.md)
 
 ## Third-Party Dependencies
 

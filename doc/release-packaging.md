@@ -43,7 +43,7 @@ The release job pins key versions with environment variables:
 - `DOTNET_VERSION` (currently `9.0.x`)
 - `PYTHON_VERSION` (currently `3.12`)
 - `WIX_VERSION` (currently `6.0.2`)
-- `MSVC_PLATFORM_TOOLSET` (currently `v143`)
+- `MSVC_PLATFORM_TOOLSET` (currently `v145`)
 - `BUILD_CONFIGURATION` (currently `Release`)
 - `BUILD_PLATFORM` (currently `x64`)
 
@@ -56,13 +56,17 @@ These are passed through MSBuild properties: `XfBuildRepoUrl`, `XfBuildBranch`,
 
 The workflow currently uses `windows-2025-vs2026` to get MSBuild 18.x/VS 2026 toolchain on GitHub-hosted runners.
 
+Release packaging runs the architecture boundary check and the Release test suite before package creation. A failed boundary check, build, or test run blocks artifact upload and release publication.
+
 ## Local Packaging (Windows)
 
 Prerequisites:
 
-- Visual Studio C++ build tools with toolset `v143` installed
+- Visual Studio 2026 or Build Tools 2026 with the C++ workload and toolset `v145` installed
 - WiX Toolset v6 CLI (`wix`)
 - WiX Burn extension (`WixToolset.Bal.wixext`) matching your WiX v6 version
+
+The repository, CI, and local release simulation default to `v145`. Older Visual Studio installations can be used only by explicitly retargeting local builds to an installed toolset such as `v143`.
 
 Install WiX CLI and extension:
 
@@ -84,10 +88,23 @@ $solutionDir = (Resolve-Path .\src).Path + '\'
 msbuild src\XpressFormula\XpressFormula.vcxproj /t:Build /m `
   /p:Configuration=Release `
   /p:Platform=x64 `
-  /p:PlatformToolset=v143 `
+  /p:PlatformToolset=v145 `
   /p:SolutionDir="$solutionDir" `
   /p:IntDir="$PWD\build\obj\" `
   /p:OutDir="$PWD\build\bin\"
+```
+
+Build and run release tests before packaging:
+
+```powershell
+msbuild src\XpressFormula.Tests\XpressFormula.Tests.vcxproj /t:Build /m `
+  /p:Configuration=Release `
+  /p:Platform=x64 `
+  /p:PlatformToolset=v145 `
+  /p:IntDir="$PWD\build\test-obj\" `
+  /p:OutDir="$PWD\build\test-bin\"
+
+.\build\test-bin\XpressFormula.Tests.exe
 ```
 
 Create packages:
@@ -117,7 +134,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-release-pipel
 
 # Override toolset or output directory
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-release-pipeline-local.ps1 `
-  -PlatformToolset v143 `
+  -PlatformToolset v145 `
   -WixVersion 6.0.2 `
   -OutputDir artifacts\release-local
 ```
@@ -132,31 +149,51 @@ Write-Host "Expected release tag: $expectedTag"
 
 ## v1.6.0 Release Verification Record
 
-Last updated: 2026-07-18
+Last updated: 2026-07-21
 
-Automated verification completed locally with Visual Studio MSBuild 18.8.2:
+Verified branch head: `12eaf18408be9a612bb85529ce2c0d8e1b567e12`
 
+Automated verification completed locally with Visual Studio MSBuild 18.8.2+ce25c0108 (`msbuild -version`: 18.8.2.30814):
+
+- [x] Architecture boundary check passes:
+  `powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\check-architecture-boundaries.ps1`
 - [x] Debug x64 app build succeeds:
-  `MSBuild src\XpressFormula\XpressFormula.vcxproj /p:Configuration=Debug /p:Platform=x64 /p:SolutionDir="C:\MyData\Projects\Digixoil\XpressFormula\src\" /m`
+  `.\scripts\invoke-msbuild.ps1 -ProjectPath "src\XpressFormula\XpressFormula.vcxproj" -Configuration Debug -Platform x64 -Targets Build`
+  Output: `src\XpressFormula\x64\Debug\XpressFormula.exe`.
 - [x] Release x64 app build succeeds:
-  `MSBuild src\XpressFormula\XpressFormula.vcxproj /p:Configuration=Release /p:Platform=x64 /p:SolutionDir="C:\MyData\Projects\Digixoil\XpressFormula\src\" /m`
+  `.\scripts\invoke-msbuild.ps1 -ProjectPath "src\XpressFormula\XpressFormula.vcxproj" -Configuration Release -Platform x64 -Targets Build`
+  Output: `src\XpressFormula\x64\Release\XpressFormula.exe`.
 - [x] Debug x64 test project builds:
-  `MSBuild src\XpressFormula.Tests\XpressFormula.Tests.vcxproj /p:Configuration=Debug /p:Platform=x64 /m`
+  `.\scripts\invoke-msbuild.ps1 -ProjectPath "src\XpressFormula.Tests\XpressFormula.Tests.vcxproj" -Configuration Debug -Platform x64 -Targets Build`
+  Output: `src\XpressFormula.Tests\x64\Debug\XpressFormula.Tests.exe`.
 - [x] Release x64 test project builds:
-  `MSBuild src\XpressFormula.Tests\XpressFormula.Tests.vcxproj /p:Configuration=Release /p:Platform=x64 /m`
-- [x] No new compiler warnings in the above builds (`0 Warning(s)`).
-- [x] Automated tests pass: `src\XpressFormula.Tests\x64\Debug\XpressFormula.Tests.exe` reported `359/359 tests passed`.
-- [x] Release test executable also reported `359/359 tests passed`.
-- [x] Existing core tests pass.
-- [x] New project-session tests pass.
-- [x] Export settings and metadata tests pass.
-- [x] UI layout-plan tests pass.
-- [x] Formula-list action tests pass.
+  `.\scripts\invoke-msbuild.ps1 -ProjectPath "src\XpressFormula.Tests\XpressFormula.Tests.vcxproj" -Configuration Release -Platform x64 -Targets Build`
+  Output: `src\XpressFormula.Tests\x64\Release\XpressFormula.Tests.exe`.
+- [x] No compiler warnings in the above builds (`0 Warning(s)`, `0 Error(s)`).
+- [x] Debug automated tests pass: `src\XpressFormula.Tests\x64\Debug\XpressFormula.Tests.exe` reported `531/531 tests passed`.
+- [x] Release automated tests pass: `src\XpressFormula.Tests\x64\Release\XpressFormula.Tests.exe` reported `531/531 tests passed`.
+- [x] Local release workflow dry run without packaging passes from a clean detached worktree at the verified head:
+  `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-release-pipeline-local.ps1 -SkipPackaging`
+- [x] PR Validation passes on the verified head:
+  run `#8`, workflow run `29855326680`, result `success`.
+- [x] First-party app, library, and test projects build with `/W4`, conformance mode, and `/Zc:__cplusplus`.
+- [x] Existing core tests, project/session persistence tests, export settings and metadata tests, UI layout-plan tests, formula-list action tests, update-controller tests, and plotting geometry tests pass.
+- [ ] Expression runtime benchmark was not rerun for Prompt 15.1 because evaluator runtime allocation behavior did not change in this closure pass.
+
+Prompt 15.1 smoke coverage recorded by automated tests:
+
+- [x] Formula input: malformed dot input, zero-valued scientific literals, true non-zero underflow/overflow, and wrong function arity.
+- [x] Shutdown: non-blocking cancellation, late-result ignore, repeated cancellation, and controller destruction while a fake fetcher is blocked.
+- [x] Projects: bounded project reads, formula-count limits, expression-length limits, serialized-size limits, rejected Save As, and old-target preservation.
+- [x] Plotting: isolated exact-zero contact, exact-grid-plane mesh, constant-zero field, duplicate triangle rejection, and deterministic Surface Nets output.
 
 Manual verification still required before tagging:
 
+- [ ] Interactive formula editor workflows: Add/Cancel, Add/Apply, Edit/Cancel, and live error display in the running UI.
+- [ ] Interactive shutdown workflow: start a manual update check in the running app, close immediately, and confirm no visible delay or crash.
+- [ ] Plotting workflows: 2D curves, discontinuities, implicit contours, heatmaps, scalar-field cross-sections, 3D explicit surfaces, implicit surfaces, multiple implicit surfaces, camera presets, auto-rotation dirty-state behavior, grid-plane interleave, axis triad, coordinates, and wire/envelope thickness minimums and maximums.
 - [ ] Project workflows: New, Open valid `.xfplot`, Save, Save As, Recent reopen, dirty marker set/clear, Save/Discard/Cancel before New/Open/Close, unsupported schema error, malformed file error, invalid formula warning, Unicode formula round trip, multiple save/load cycles retaining values.
-- [ ] Export workflows: every export profile, transparent PNG, grayscale export, metadata sidecar output, metadata JSON opens in a parser/editor, preview/final export parity, offscreen fallback behavior if reproducible.
+- [ ] Export workflows: every export profile, transparent PNG, grayscale export, metadata sidecar output, metadata JSON opens in a parser/editor, preview/final export parity, save/copy/open/reveal/copy-path, offscreen fallback behavior if reproducible.
 - [ ] Responsive UI: wide/medium/compact/extra-compact toolbar, minimum/default/maximum sidebar width, narrow/short windows, formula cards at narrow widths, and 100%, 125%, 150%, and 200% Windows scaling where available.
 
 ## How to Change Versions

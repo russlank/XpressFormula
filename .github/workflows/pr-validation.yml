@@ -1,0 +1,92 @@
+# SPDX-License-Identifier: MIT
+name: PR Validation
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: windows-2025-vs2026
+    env:
+      BUILD_PLATFORM: x64
+      MSVC_PLATFORM_TOOLSET: v145
+      DEBUG_APP_INTDIR: ${{ github.workspace }}\build\obj\debug-app\
+      DEBUG_APP_OUTDIR: ${{ github.workspace }}\build\bin\debug-app\
+      DEBUG_TEST_INTDIR: ${{ github.workspace }}\build\obj\debug-tests\
+      DEBUG_TEST_OUTDIR: ${{ github.workspace }}\build\bin\debug-tests\
+      RELEASE_APP_INTDIR: ${{ github.workspace }}\build\obj\release-app\
+      RELEASE_APP_OUTDIR: ${{ github.workspace }}\build\bin\release-app\
+      RELEASE_TEST_INTDIR: ${{ github.workspace }}\build\obj\release-tests\
+      RELEASE_TEST_OUTDIR: ${{ github.workspace }}\build\bin\release-tests\
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+        with:
+          vs-version: "[18.0,19.0)"
+          vs-prerelease: true
+
+      - name: Show MSBuild Version
+        shell: pwsh
+        run: msbuild -version
+
+      - name: Check Architecture Boundaries
+        shell: pwsh
+        run: .\tools\check-architecture-boundaries.ps1
+
+      - name: Build Debug App
+        shell: pwsh
+        run: |
+          msbuild src\XpressFormula\XpressFormula.vcxproj /t:Build /m `
+            /p:Configuration=Debug `
+            /p:Platform=$env:BUILD_PLATFORM `
+            /p:PlatformToolset=$env:MSVC_PLATFORM_TOOLSET `
+            /p:IntDir="$env:DEBUG_APP_INTDIR" `
+            /p:OutDir="$env:DEBUG_APP_OUTDIR"
+
+      - name: Build Debug Tests
+        shell: pwsh
+        run: |
+          msbuild src\XpressFormula.Tests\XpressFormula.Tests.vcxproj /t:Build /m `
+            /p:Configuration=Debug `
+            /p:Platform=$env:BUILD_PLATFORM `
+            /p:PlatformToolset=$env:MSVC_PLATFORM_TOOLSET `
+            /p:IntDir="$env:DEBUG_TEST_INTDIR" `
+            /p:OutDir="$env:DEBUG_TEST_OUTDIR"
+
+      - name: Run Debug Tests
+        shell: pwsh
+        run: |
+          & "$env:DEBUG_TEST_OUTDIR\XpressFormula.Tests.exe"
+
+      - name: Build Release App
+        shell: pwsh
+        run: |
+          msbuild src\XpressFormula\XpressFormula.vcxproj /t:Build /m `
+            /p:Configuration=Release `
+            /p:Platform=$env:BUILD_PLATFORM `
+            /p:PlatformToolset=$env:MSVC_PLATFORM_TOOLSET `
+            /p:IntDir="$env:RELEASE_APP_INTDIR" `
+            /p:OutDir="$env:RELEASE_APP_OUTDIR"
+
+      - name: Build Release Tests
+        shell: pwsh
+        run: |
+          msbuild src\XpressFormula.Tests\XpressFormula.Tests.vcxproj /t:Build /m `
+            /p:Configuration=Release `
+            /p:Platform=$env:BUILD_PLATFORM `
+            /p:PlatformToolset=$env:MSVC_PLATFORM_TOOLSET `
+            /p:IntDir="$env:RELEASE_TEST_INTDIR" `
+            /p:OutDir="$env:RELEASE_TEST_OUTDIR"
+
+      - name: Run Release Tests
+        shell: pwsh
+        run: |
+          & "$env:RELEASE_TEST_OUTDIR\XpressFormula.Tests.exe"

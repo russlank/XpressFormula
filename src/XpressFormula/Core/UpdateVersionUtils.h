@@ -2,6 +2,8 @@
 // UpdateVersionUtils.h - Small helpers for parsing release tags and comparing versions.
 #pragma once
 
+#include "../Infrastructure/Serialization/JsonParser.h"
+
 #include <cctype>
 #include <string>
 #include <string_view>
@@ -101,59 +103,22 @@ inline bool isRemoteVersionNewer(std::string_view currentVersion, std::string_vi
     return compareSemanticVersion(current, remote) < 0;
 }
 
-// Minimal JSON string-field extractor for simple GitHub API responses.
-// It understands \" and \\ escapes, which is sufficient for tag_name/html_url parsing.
 inline std::string extractJsonStringField(std::string_view json, std::string_view key) {
-    const std::string quotedKey = "\"" + std::string(key) + "\"";
-    std::size_t pos = json.find(quotedKey);
-    if (pos == std::string_view::npos) {
-        return {};
-    }
-    pos = json.find(':', pos + quotedKey.size());
-    if (pos == std::string_view::npos) {
-        return {};
-    }
-    ++pos;
-    while (pos < json.size() && std::isspace(static_cast<unsigned char>(json[pos])) != 0) {
-        ++pos;
-    }
-    if (pos >= json.size() || json[pos] != '"') {
-        return {};
-    }
-    ++pos;
+    using XpressFormula::Infrastructure::Serialization::JsonParser;
+    using XpressFormula::Infrastructure::Serialization::JsonValue;
 
-    std::string value;
-    value.reserve(64);
-    while (pos < json.size()) {
-        const char ch = json[pos++];
-        if (ch == '"') {
-            return value;
-        }
-        if (ch == '\\') {
-            if (pos >= json.size()) {
-                return {};
-            }
-            const char esc = json[pos++];
-            switch (esc) {
-                case '"': value.push_back('"'); break;
-                case '\\': value.push_back('\\'); break;
-                case '/': value.push_back('/'); break;
-                case 'b': value.push_back('\b'); break;
-                case 'f': value.push_back('\f'); break;
-                case 'n': value.push_back('\n'); break;
-                case 'r': value.push_back('\r'); break;
-                case 't': value.push_back('\t'); break;
-                default:
-                    // Keep uncommon escapes as-is; GitHub tag/url fields should not need more.
-                    value.push_back(esc);
-                    break;
-            }
-            continue;
-        }
-        value.push_back(ch);
+    JsonValue root;
+    JsonParser parser(json);
+    std::string error;
+    if (!parser.parse(root, error) || root.type != JsonValue::Type::Object) {
+        return {};
     }
 
-    return {};
+    const JsonValue* field = root.find(key);
+    if (!field || field->type != JsonValue::Type::String) {
+        return {};
+    }
+    return field->text;
 }
 
 } // namespace XpressFormula::Core::UpdateVersionUtils

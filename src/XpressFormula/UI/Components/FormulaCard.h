@@ -1,7 +1,7 @@
 // FormulaCard.h - Responsive formula-list card component.
 #pragma once
 
-#include "../FormulaEntry.h"
+#include "../../Model/Formula.h"
 
 namespace XpressFormula::UI::Components {
 
@@ -24,10 +24,20 @@ enum class FormulaCardActionType {
 
 struct FormulaCardAction {
     FormulaCardActionType type = FormulaCardActionType::None;
-    int formulaIndex = -1;
+    Model::FormulaId formulaId = 0;
 };
 
-FormulaCardAction renderFormulaCard(FormulaEntry& formula,
+struct FormulaCardResult {
+    FormulaCardAction action;
+    bool visibilityChanged = false;
+    bool visible = true;
+    bool colorChanged = false;
+    Model::ColorRgba color;
+    bool zSliceChanged = false;
+    double zSlice = 0.0;
+};
+
+FormulaCardResult renderFormulaCard(const Model::Formula& formula,
                                     const FormulaCardContext& context);
 
 } // namespace XpressFormula::UI::Components

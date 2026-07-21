@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32">
+      <Configuration>Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32">
+      <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>17.0</VCProjectVersion>
+    <Keyword>Win32Proj</Keyword>
+    <ProjectGuid>{E310CE87-5D86-4E95-97EC-E6C994B7F140}</ProjectGuid>
+    <RootNamespace>XpressFormulaInfrastructure</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings" />
+  <ImportGroup Label="Shared" />
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'">
+    <ClCompile>
+      <WarningLevel>Level4</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <AdditionalOptions>/Zc:__cplusplus %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalIncludeDirectories>$(MSBuildProjectDirectory)\..\XpressFormula;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'">
+    <ClCompile>
+      <WarningLevel>Level4</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <AdditionalOptions>/Zc:__cplusplus %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalIncludeDirectories>$(MSBuildProjectDirectory)\..\XpressFormula;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Platform)'=='Win32'">
+    <ClCompile>
+      <PreprocessorDefinitions>WIN32;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="..\XpressFormula\Infrastructure\Export\ExportMetadataSerializer.cpp" />
+    <ClCompile Include="..\XpressFormula\Infrastructure\Export\ExportOutputWorkflow.cpp" />
+    <ClCompile Include="..\XpressFormula\Infrastructure\Export\ExportRenderRequest.cpp" />
+    <ClCompile Include="..\XpressFormula\Infrastructure\Export\ExportSettings.cpp" />
+    <ClCompile Include="..\XpressFormula\Infrastructure\Export\ImageProcessor.cpp" />
+    <ClCompile Include="..\XpressFormula\Infrastructure\FileSystem\AtomicFileWriter.cpp" />
+    <ClCompile Include="..\XpressFormula\Infrastructure\Persistence\ProjectMapper.cpp" />
+    <ClCompile Include="..\XpressFormula\Infrastructure\Persistence\ProjectRepository.cpp" />
+    <ClCompile Include="..\XpressFormula\Infrastructure\Persistence\ProjectSerializer.cpp" />
+    <ClCompile Include="..\XpressFormula\Infrastructure\Persistence\RecentProjectsStore.cpp" />
+    <ClCompile Include="..\XpressFormula\Infrastructure\Serialization\JsonParser.cpp" />
+    <ClCompile Include="..\XpressFormula\Infrastructure\Serialization\JsonWriter.cpp" />
+    <ClCompile Include="..\XpressFormula\Platform\Windows\ClipboardService.cpp" />
+    <ClCompile Include="..\XpressFormula\Platform\Windows\FileDialogService.cpp" />
+    <ClCompile Include="..\XpressFormula\Platform\Windows\ShellService.cpp" />
+    <ClCompile Include="..\XpressFormula\Platform\Windows\Utf.cpp" />
+    <ClCompile Include="..\XpressFormula\Platform\Windows\WicImageEncoder.cpp" />
+    <ClCompile Include="..\XpressFormula\Platform\Windows\WinHttpClient.cpp" />
+    <ClCompile Include="InfrastructureBoundary.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\XpressFormula\Infrastructure\Export\ExportMetadataSerializer.h" />
+    <ClInclude Include="..\XpressFormula\Infrastructure\Export\ExportOutputWorkflow.h" />
+    <ClInclude Include="..\XpressFormula\Infrastructure\Export\ExportRenderRequest.h" />
+    <ClInclude Include="..\XpressFormula\Infrastructure\Export\ExportSettings.h" />
+    <ClInclude Include="..\XpressFormula\Infrastructure\Export\ImageProcessor.h" />
+    <ClInclude Include="..\XpressFormula\Infrastructure\FileSystem\AtomicFileWriter.h" />
+    <ClInclude Include="..\XpressFormula\Infrastructure\Persistence\ProjectMapper.h" />
+    <ClInclude Include="..\XpressFormula\Infrastructure\Persistence\ProjectRepository.h" />
+    <ClInclude Include="..\XpressFormula\Infrastructure\Persistence\ProjectSerializer.h" />
+    <ClInclude Include="..\XpressFormula\Infrastructure\Persistence\ProjectSession.h" />
+    <ClInclude Include="..\XpressFormula\Infrastructure\Persistence\RecentProjectsStore.h" />
+    <ClInclude Include="..\XpressFormula\Infrastructure\Serialization\JsonParser.h" />
+    <ClInclude Include="..\XpressFormula\Infrastructure\Serialization\JsonValue.h" />
+    <ClInclude Include="..\XpressFormula\Infrastructure\Serialization\JsonWriter.h" />
+    <ClInclude Include="..\XpressFormula\Platform\Windows\ClipboardService.h" />
+    <ClInclude Include="..\XpressFormula\Platform\Windows\ComPtr.h" />
+    <ClInclude Include="..\XpressFormula\Platform\Windows\FileDialogService.h" />
+    <ClInclude Include="..\XpressFormula\Platform\Windows\ShellService.h" />
+    <ClInclude Include="..\XpressFormula\Platform\Windows\Utf.h" />
+    <ClInclude Include="..\XpressFormula\Platform\Windows\WicImageEncoder.h" />
+    <ClInclude Include="..\XpressFormula\Platform\Windows\WinHttpClient.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\XpressFormula.Model\XpressFormula.Model.vcxproj">
+      <Project>{D893AD0C-E0A8-48D5-95AA-AA890435AACD}</Project>
+    </ProjectReference>
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets" />
+</Project>

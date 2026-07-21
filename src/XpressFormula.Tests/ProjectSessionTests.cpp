@@ -1,31 +1,38 @@
 // ProjectSessionTests.cpp - Unit tests for versioned .xfplot persistence.
 #include "CppUnitTest.h"
-#include "../XpressFormula/UI/ProjectSession.h"
+#include "../XpressFormula/Core/InputLimits.h"
+#include "../XpressFormula/Infrastructure/Persistence/ProjectMapper.h"
+#include "../XpressFormula/Infrastructure/Persistence/ProjectSerializer.h"
+#include "../XpressFormula/Infrastructure/Serialization/JsonParser.h"
 
 #include <algorithm>
 #include <cmath>
-#include <cstring>
 #include <limits>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <vector>
 
 using namespace Microsoft::VisualStudio::CppUnitTestFramework;
-using namespace XpressFormula::UI;
+using namespace XpressFormula::Infrastructure::Persistence;
+using namespace XpressFormula::Model;
 namespace XFCore = XpressFormula::Core;
+namespace XFInputLimits = XpressFormula::Core::InputLimits;
+namespace XFJson = XpressFormula::Infrastructure::Serialization;
+namespace XFModel = XpressFormula::Model;
 
 namespace XpressFormulaTests {
 
-static FormulaEntry makeFormula(const char* expression) {
-    FormulaEntry entry;
-    strncpy_s(entry.inputBuffer, sizeof(entry.inputBuffer), expression, _TRUNCATE);
+static XFModel::Formula makeFormula(const char* expression) {
+    XFModel::Formula entry;
+    entry.setExpression(expression ? expression : "");
     entry.color[0] = 0.25f;
     entry.color[1] = 0.50f;
     entry.color[2] = 0.75f;
     entry.color[3] = 1.0f;
     entry.visible = false;
-    entry.zSlice = 1.25f;
-    entry.parse();
+    entry.zSlice = 1.25;
+    entry.compile();
     return entry;
 }
 
@@ -63,12 +70,12 @@ static void assertParseFails(std::string_view json) {
 }
 
 TEST_CASE(ProjectSession_RoundTripPreservesCoreState) {
-    std::vector<FormulaEntry> formulas = { makeFormula("sin(x)") };
+    std::vector<XFModel::Formula> formulas = { makeFormula("sin(x)") };
     XFCore::ViewTransform view;
-    view.centerX = 2.5;
-    view.centerY = -1.25;
-    view.scaleX = 80.0;
-    view.scaleY = 90.0;
+    view.state.centerX = 2.5;
+    view.state.centerY = -1.25;
+    view.state.scaleX = 80.0;
+    view.state.scaleY = 90.0;
 
     PlotSettings plot;
     plot.xyRenderModePreference = XYRenderModePreference::Force3D;
@@ -97,6 +104,73 @@ TEST_CASE(ProjectSession_RoundTripPreservesCoreState) {
     Assert::IsTrue(parsed.session.plot.showAxisTriad);
     Assert::AreEqual(88, parsed.session.plot.surfaceResolution);
     Assert::AreEqual(4, parsed.session.plot.wireStride);
+}
+
+TEST_CASE(ProjectSession_DoesNotPersistRuntimeFormulaState) {
+    std::vector<XFModel::Formula> formulas = { makeFormula("sin(x)") };
+    const XFModel::FormulaId originalId = formulas[0].id;
+    XFCore::ViewTransform view;
+    PlotSettings plot;
+
+    const std::string json = serializeCurrentProjectSession(formulas, view, plot);
+
+    Assert::IsTrue(json.find("\"id\"") == std::string::npos);
+    Assert::IsTrue(json.find("compiled") == std::string::npos);
+    Assert::IsTrue(json.find("diagnostic") == std::string::npos);
+    Assert::IsTrue(json.find("editor") == std::string::npos);
+
+    const ProjectSessionParseResult parsed = parseProjectSession(json);
+    Assert::IsTrue(parsed.success);
+
+    std::vector<XFModel::Formula> restored;
+    std::vector<std::string> warnings;
+    applyProjectSession(parsed.session, restored, view, plot, warnings);
+
+    Assert::AreEqual(1, static_cast<int>(restored.size()));
+    Assert::IsTrue(restored[0].isValid());
+    Assert::IsTrue(restored[0].compiled.ast != nullptr);
+    Assert::IsTrue(restored[0].id != originalId);
+}
+
+TEST_CASE(ProjectSession_PersistsViewStateButLeavesViewportTransient) {
+    std::vector<XFModel::Formula> formulas;
+    XFCore::ViewTransform view;
+    view.state.centerX = -4.0;
+    view.state.centerY = 3.5;
+    view.state.scaleX = 42.0;
+    view.state.scaleY = 84.0;
+    view.viewport.originX = 111.0f;
+    view.viewport.originY = 222.0f;
+    view.viewport.width = 333.0f;
+    view.viewport.height = 444.0f;
+
+    PlotSettings plot;
+    const std::string json = serializeCurrentProjectSession(formulas, view, plot);
+
+    Assert::IsTrue(json.find("originX") == std::string::npos);
+    Assert::IsTrue(json.find("originY") == std::string::npos);
+    Assert::IsTrue(json.find("width") == std::string::npos);
+    Assert::IsTrue(json.find("height") == std::string::npos);
+
+    const ProjectSessionParseResult parsed = parseProjectSession(json);
+    Assert::IsTrue(parsed.success);
+
+    XFCore::ViewTransform restoredView;
+    restoredView.viewport.originX = 11.0f;
+    restoredView.viewport.originY = 22.0f;
+    restoredView.viewport.width = 33.0f;
+    restoredView.viewport.height = 44.0f;
+    std::vector<std::string> warnings;
+    applyProjectSession(parsed.session, formulas, restoredView, plot, warnings);
+
+    Assert::AreEqual(-4.0, restoredView.state.centerX);
+    Assert::AreEqual(3.5, restoredView.state.centerY);
+    Assert::AreEqual(42.0, restoredView.state.scaleX);
+    Assert::AreEqual(84.0, restoredView.state.scaleY);
+    Assert::AreEqual(11.0f, restoredView.viewport.originX);
+    Assert::AreEqual(22.0f, restoredView.viewport.originY);
+    Assert::AreEqual(33.0f, restoredView.viewport.width);
+    Assert::AreEqual(44.0f, restoredView.viewport.height);
 }
 
 TEST_CASE(ProjectSession_HighPrecisionValuesRoundTrip) {
@@ -159,6 +233,28 @@ TEST_CASE(ProjectSession_RepeatedSerializeParseIsStable) {
         Assert::AreEqual(json, nextJson);
         json = nextJson;
     }
+}
+
+TEST_CASE(ProjectSession_SerializedOutputChangesWhenPersistentStateChanges) {
+    ProjectSession session;
+    session.formulas.push_back(ProjectFormulaRecord{});
+    session.formulas[0].expression = "sin(sqrt(x^2+y^2))";
+    session.formulas[0].visible = true;
+    session.formulas[0].color = { 0.18f, 0.78f, 0.32f, 1.0f };
+    session.view.scaleX = 60.0;
+    session.view.scaleY = 60.0;
+
+    const std::string originalJson = serializeProjectSession(session);
+
+    ProjectSession edited = session;
+    edited.formulas[0].expression = "sin(x)";
+    Assert::IsFalse(serializeProjectSession(edited) == originalJson);
+
+    const std::string editedJson = serializeProjectSession(edited);
+    Assert::AreEqual(editedJson, serializeProjectSession(edited));
+
+    edited.view.centerX = 2.0;
+    Assert::IsFalse(serializeProjectSession(edited) == editedJson);
 }
 
 TEST_CASE(ProjectSession_SerializesNonFiniteValuesAsSafeJsonNumbers) {
@@ -303,7 +399,7 @@ TEST_CASE(ProjectSession_EmptyProjectRoundTrips) {
     Assert::IsTrue(parsed.success);
     Assert::AreEqual(0, static_cast<int>(parsed.session.formulas.size()));
 
-    std::vector<FormulaEntry> formulas;
+    std::vector<XFModel::Formula> formulas;
     XFCore::ViewTransform view;
     PlotSettings plot;
     std::vector<std::string> warnings;
@@ -348,47 +444,92 @@ TEST_CASE(ProjectSession_SkipsMalformedFormulaEntriesWithWarnings) {
     Assert::IsTrue(parsed.warnings.size() >= 2);
 }
 
-TEST_CASE(ProjectSession_LongFormulaProducesTruncationWarning) {
-    FormulaEntry probe;
-    const std::size_t bufferSize = sizeof(probe.inputBuffer);
+TEST_CASE(ProjectSession_RejectsTooManyFormulas) {
+    std::ostringstream formulas;
+    formulas << '[';
+    for (std::size_t i = 0; i <= XFInputLimits::kMaxProjectFormulas; ++i) {
+        if (i != 0) {
+            formulas << ',';
+        }
+        formulas << R"({"expression":"x"})";
+    }
+    formulas << ']';
 
+    const ProjectSessionParseResult parsed =
+        parseProjectSession(makeProjectJsonWithFormulas(formulas.str()));
+
+    Assert::IsFalse(parsed.success);
+    Assert::IsTrue(parsed.error.find("too many formulas") != std::string::npos);
+}
+
+TEST_CASE(ProjectSession_WarnsAndPreservesOversizedFormula) {
+    const std::string expression(XFInputLimits::kMaxFormulaLength + 1, 'x');
+    const ProjectSessionParseResult parsed = parseProjectSession(makeProjectJsonWithFormulas(
+        std::string("[{ \"expression\": \"") + expression + "\" }]"));
+
+    Assert::IsTrue(parsed.success);
+    Assert::AreEqual(1, static_cast<int>(parsed.session.formulas.size()));
+    Assert::AreEqual(expression, parsed.session.formulas[0].expression);
+    Assert::IsFalse(parsed.warnings.empty());
+}
+
+TEST_CASE(ProjectSession_WrongArityFormulaWarnsAndPreservesTextOnLoad) {
     ProjectSession session;
-    ProjectFormulaRecord formula;
-    formula.expression.assign(bufferSize + 40, 'x');
-    session.formulas.push_back(std::move(formula));
+    session.formulas.push_back(ProjectFormulaRecord{ "sin()" });
 
-    std::vector<FormulaEntry> formulas;
+    std::vector<XFModel::Formula> formulas;
     XFCore::ViewTransform view;
     PlotSettings plot;
     std::vector<std::string> warnings;
     applyProjectSession(session, formulas, view, plot, warnings);
 
     Assert::AreEqual(1, static_cast<int>(formulas.size()));
-    Assert::AreEqual(static_cast<int>(bufferSize - 1),
-                     static_cast<int>(std::strlen(formulas[0].inputBuffer)));
-    Assert::AreEqual('\0', formulas[0].inputBuffer[bufferSize - 1]);
+    Assert::AreEqual(std::string("sin()"), formulas[0].expressionText());
+    Assert::IsFalse(formulas[0].isValid());
+    Assert::IsFalse(warnings.empty());
+    Assert::IsTrue(warnings[0].find("expects") != std::string::npos);
+}
 
+TEST_CASE(ProjectSession_LongFormulaPreservesStoredExpression) {
+    ProjectSession session;
+    ProjectFormulaRecord formula;
+    formula.expression = "x";
+    for (int i = 0; i < 220; ++i) {
+        formula.expression += "+x";
+    }
+    const std::string expectedExpression = formula.expression;
+    session.formulas.push_back(std::move(formula));
+
+    std::vector<XFModel::Formula> formulas;
+    XFCore::ViewTransform view;
+    PlotSettings plot;
+    std::vector<std::string> warnings;
+    applyProjectSession(session, formulas, view, plot, warnings);
+
+    Assert::AreEqual(1, static_cast<int>(formulas.size()));
+    Assert::AreEqual(expectedExpression, formulas[0].expressionText());
+    Assert::IsTrue(formulas[0].isValid());
     const bool hasTruncationWarning = std::any_of(
         warnings.begin(),
         warnings.end(),
         [](const std::string& warning) {
             return warning.find("truncated") != std::string::npos;
         });
-    Assert::IsTrue(hasTruncationWarning);
+    Assert::IsFalse(hasTruncationWarning);
 }
 
 TEST_CASE(ProjectSession_ApplyValidatesLoadedFormulas) {
     ProjectSession session;
     session.formulas.push_back(ProjectFormulaRecord{ "x = y = 1" });
 
-    std::vector<FormulaEntry> formulas;
+    std::vector<XFModel::Formula> formulas;
     XFCore::ViewTransform view;
     PlotSettings plot;
     std::vector<std::string> warnings;
     applyProjectSession(session, formulas, view, plot, warnings);
 
     Assert::AreEqual(1, static_cast<int>(formulas.size()));
-    Assert::AreEqual(std::string("x = y = 1"), std::string(formulas[0].inputBuffer));
+    Assert::AreEqual(std::string("x = y = 1"), formulas[0].expressionText());
     Assert::IsFalse(formulas[0].isValid());
     Assert::IsFalse(warnings.empty());
 }
@@ -456,16 +597,16 @@ TEST_CASE(ProjectSession_AppliesSafeClampsAndCoordinatePolicy) {
     session.plot.showCoordinates = true;
     session.plot.showAxisTriad = true;
 
-    std::vector<FormulaEntry> formulas;
+    std::vector<XFModel::Formula> formulas;
     XFCore::ViewTransform view;
     PlotSettings plot;
     std::vector<std::string> warnings;
     applyProjectSession(session, formulas, view, plot, warnings);
 
-    Assert::AreEqual(0.0, view.centerX);
-    Assert::AreEqual(0.0, view.centerY);
-    Assert::AreEqual(0.1, view.scaleX);
-    Assert::AreEqual(100000.0, view.scaleY);
+    Assert::AreEqual(0.0, view.state.centerX);
+    Assert::AreEqual(0.0, view.state.centerY);
+    Assert::AreEqual(0.1, view.state.scaleX);
+    Assert::AreEqual(100000.0, view.state.scaleY);
     Assert::AreEqual(256, plot.surfaceResolution);
     Assert::AreEqual(16, plot.implicitSurfaceResolution);
     Assert::AreEqual(1.0f, plot.surfaceOpacity);
@@ -513,11 +654,11 @@ TEST_CASE(ProjectSession_BoundedNumberParserHonorsStringViewLength) {
     std::string backing = "12.34";
     std::string_view bounded(backing.data(), 2);
 
-    ProjectSessionDetail::JsonValue value;
-    ProjectSessionDetail::JsonParser parser(bounded);
+    XFJson::JsonValue value;
+    XFJson::JsonParser parser(bounded);
     std::string error;
     Assert::IsTrue(parser.parse(value, error));
-    Assert::AreEqual(ProjectSessionDetail::JsonValue::Type::Number, value.type);
+    Assert::AreEqual(XFJson::JsonValue::Type::Number, value.type);
     Assert::AreEqual(12.0, value.number);
 }
 

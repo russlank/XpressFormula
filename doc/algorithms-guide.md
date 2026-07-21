@@ -31,8 +31,8 @@ Files involved:
 - Tokenizer: [`src/XpressFormula/Core/Tokenizer.h`](../src/XpressFormula/Core/Tokenizer.h)
 - Parser: [`src/XpressFormula/Core/Parser.h`](../src/XpressFormula/Core/Parser.h)
 - Evaluator: [`src/XpressFormula/Core/Evaluator.h`](../src/XpressFormula/Core/Evaluator.h)
-- Formula classification: [`src/XpressFormula/UI/FormulaEntry.h`](../src/XpressFormula/UI/FormulaEntry.h)
-- Plot rendering: [`src/XpressFormula/Plotting/PlotRenderer.h`](../src/XpressFormula/Plotting/PlotRenderer.h)
+- Formula classification: [`src/XpressFormula/Expression/FormulaCompiler.h`](../src/XpressFormula/Expression/FormulaCompiler.h) and [`src/XpressFormula/Model/Formula.h`](../src/XpressFormula/Model/Formula.h)
+- Plot planning/rendering: [`src/XpressFormula/Plotting/PlotRenderPlan.h`](../src/XpressFormula/Plotting/PlotRenderPlan.h), [`src/XpressFormula/Plotting/PlotRenderer.h`](../src/XpressFormula/Plotting/PlotRenderer.h), and the pure helpers under [`src/XpressFormula/Plotting`](../src/XpressFormula/Plotting)
 
 ## Part 1: Expression Handling
 
@@ -141,13 +141,13 @@ The app later evaluates this tree many times with different variable values.
 
 ### 5. Constants and Built-In Functions
 
-The parser recognizes constants like:
+The parser recognizes constants from the shared constant registry, including:
 
 - `pi`
 - `e`
 - `tau`
 
-It also validates function names against a built-in list (`sin`, `cos`, `pow`, `log`, ...).
+It also validates function names against the shared function registry (`sin`, `cos`, `pow`, `log`, ...).
 
 Why validate during parsing?
 
@@ -203,23 +203,30 @@ Special case:
 
 - If the equation is solved for `z` (for example `z = ...` or `... = z`) and the other side does not contain `z`, it is treated as an explicit `z=f(x,y)` surface.
 
-This classification happens in `FormulaEntry::parse()`.
+This classification happens in the expression compiler and is stored on `Model::Formula` as compiled formula state. UI presentation helpers translate that state into labels.
 
 ## Part 3: AST Evaluation
 
-The evaluator computes a numeric result from the AST for a given set of variables.
+The evaluator computes a numeric result from the AST for a fixed `x`, `y`, `z`
+sample context. Variable nodes resolve their slot during parsing, so sampling
+loops update numeric fields instead of performing string-map lookup for every
+sample.
+
+Built-in functions and constants are resolved through shared registries, so the
+parser, evaluator, and formula-help UI use the same function metadata, arity
+rules, callbacks, and constant values.
 
 Example:
 
 - AST for `sin(x) + y`
-- variables `{ x = 1.0, y = 2.0 }`
+- context `{ x = 1.0, y = 2.0 }`
 - result `sin(1.0) + 2.0`
 
 ### NaN as an Error Signal
 
 The evaluator returns `NaN` for invalid cases, for example:
 
-- missing variables
+- unsupported variable slots and missing values in the compatibility map adapter
 - divide by zero
 - `sqrt(-1)` in real numbers
 - invalid function arguments
@@ -281,6 +288,16 @@ Basic idea:
 4. Interpolate crossing points and draw line segments.
 
 This is the classic marching squares technique.
+
+Edge cases are handled explicitly:
+
+- non-finite samples are ignored for contour edges
+- an edge with both endpoints exactly on the iso value is skipped to avoid drawing an arbitrary full-edge segment
+- an edge with exactly one endpoint on the iso value contributes that endpoint as the crossing
+- duplicate crossings inside a cell are collapsed so zero-length segments are not emitted
+- four-crossing saddle cells are split using the sign of a cell-center estimate from the corner average
+
+Large or invalid contour sampling requests are rejected before allocation. The current scalar-grid policy caps heat-map cells at 1,048,576 and contour lattice points at 1,050,625.
 
 Why it is good here:
 
@@ -369,6 +386,16 @@ High-level steps:
 5. Split each quad into two triangles.
 6. Cache the resulting world-space mesh.
 7. On later frames (camera changes), reuse the cached mesh and only re-project + redraw.
+
+Exact-zero and degenerate fields follow the same defensive policy as contour extraction:
+
+- non-finite samples do not produce crossings
+- an edge with one exact-zero endpoint can contribute that endpoint
+- an edge with both endpoints exactly zero is ignored
+- repeated exact-zero edge hits inside one cell are deduplicated before counting or averaging
+- a cell must have at least three unique useful edge crossings before it can create a surface-net vertex
+- constant-zero fields produce no mesh instead of a meaningless filled volume
+- duplicate and degenerate triangles are rejected before they enter the mesh
 
 Why this is better than the earlier point cloud:
 
@@ -459,6 +486,13 @@ Wire density is separate from mesh resolution:
 - explicit `z=f(x,y)` surfaces draw wire rows/columns using `Wire Stride`
 - implicit meshes draw a stride-filtered subset of mesh edges
 - changing stride affects readability and draw cost, but does not resample the surface
+
+Camera policy:
+
+- the saved plot settings store the base azimuth/elevation/z-scale
+- auto-rotation advances a transient runtime azimuth offset
+- render planning can use the effective runtime azimuth for interactive frames
+- export rendering omits the runtime offset by default, so repeated exports are deterministic unless a caller intentionally supplies a runtime camera value
 
 Important alignment detail (recent fix):
 

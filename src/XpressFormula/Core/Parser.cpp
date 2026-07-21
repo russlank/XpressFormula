@@ -1,16 +1,146 @@
 // Parser.cpp - Recursive-descent expression parser implementation.
 #include "Parser.h"
+#include "InputLimits.h"
 #include "Tokenizer.h"
-#include "MathConstants.h"
+#include "ConstantRegistry.h"
 #include "FunctionRegistry.h"
+#include "../Expression/AstQueries.h"
+
+#include <charconv>
+#include <cmath>
+#include <string_view>
+#include <system_error>
 
 namespace XpressFormula::Core {
 
-// ---- built-in names ---------------------------------------------------------
-const std::set<std::string> Parser::s_constants = { "pi", "e", "tau" };
+namespace {
+
+struct NumberLiteralParseResult {
+    double value = 0.0;
+    std::string error;
+
+    [[nodiscard]] bool success() const {
+        return error.empty();
+    }
+};
+
+bool containsDecimalDigit(std::string_view text) noexcept {
+    for (char ch : text) {
+        if (ch >= '0' && ch <= '9') {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool significandContainsNonZeroDigit(std::string_view text) noexcept {
+    if (!text.empty() && (text.front() == '+' || text.front() == '-')) {
+        text.remove_prefix(1);
+    }
+
+    for (char ch : text) {
+        if (ch == 'e' || ch == 'E') {
+            break;
+        }
+        if (ch == '.') {
+            continue;
+        }
+        if (ch >= '1' && ch <= '9') {
+            return true;
+        }
+    }
+    return false;
+}
+
+NumberLiteralParseResult parseNumberLiteral(std::string_view text) {
+    NumberLiteralParseResult result;
+
+    if (!containsDecimalDigit(text)) {
+        result.error = "Invalid numeric literal";
+        return result;
+    }
+
+    const char* const begin = text.data();
+    const char* const end = begin + text.size();
+    const std::from_chars_result parsed =
+        std::from_chars(begin, end, result.value, std::chars_format::general);
+    const bool nonZeroSignificand = significandContainsNonZeroDigit(text);
+
+    if (parsed.ec == std::errc::invalid_argument || parsed.ptr != end) {
+        result.error = "Invalid numeric literal";
+        return result;
+    }
+
+    if ((parsed.ec == std::errc::result_out_of_range &&
+         (result.value != 0.0 || nonZeroSignificand)) ||
+        !std::isfinite(result.value) ||
+        (result.value == 0.0 && nonZeroSignificand)) {
+        result.error = "Numeric literal is outside the supported range";
+        return result;
+    }
+
+    return result;
+}
+
+std::string arityText(int minArity, int maxArity) {
+    if (minArity == maxArity) {
+        std::string text = std::to_string(minArity);
+        text += (minArity == 1) ? " argument" : " arguments";
+        return text;
+    }
+
+    return std::to_string(minArity) + " to " + std::to_string(maxArity) + " arguments";
+}
+
+std::string functionArityError(const FunctionInfo& function,
+                               std::size_t actualArity,
+                               std::size_t position) {
+    std::string message = "Function '";
+    message += function.name;
+    message += "' expects ";
+    message += arityText(function.minArity, function.maxArity);
+    message += ", but ";
+    message += std::to_string(actualArity);
+    message += (actualArity == 1) ? " was provided" : " were provided";
+    message += " at position ";
+    message += std::to_string(position);
+    return message;
+}
+
+} // namespace
 
 // ---- construction -----------------------------------------------------------
 Parser::Parser(const std::vector<Token>& tokens) : m_tokens(tokens) {}
+
+struct Parser::RecursionScope {
+    explicit RecursionScope(Parser& parser)
+        : parser(parser) {
+        if (parser.m_recursionDepth >= InputLimits::kMaxExpressionNesting) {
+            if (parser.m_error.empty()) {
+                parser.m_error = "Expression nesting is too deep to parse safely";
+            }
+            return;
+        }
+        ++parser.m_recursionDepth;
+        entered = true;
+    }
+
+    RecursionScope(const RecursionScope&) = delete;
+    RecursionScope& operator=(const RecursionScope&) = delete;
+
+    ~RecursionScope() {
+        if (entered && parser.m_recursionDepth > 0) {
+            --parser.m_recursionDepth;
+        }
+    }
+
+    [[nodiscard]] bool ok() const noexcept {
+        return entered;
+    }
+
+    Parser& parser;
+    bool entered = false;
+};
 
 // ---- public entry point -----------------------------------------------------
 Parser::Result Parser::parse(const std::string& expression) {
@@ -45,13 +175,16 @@ Parser::Result Parser::parse(const std::string& expression) {
         return result;
     }
 
-    collectVariables(result.ast, result.variables);
+    result.variables = Expression::collectVariables(result.ast);
     return result;
 }
 
 // ---- grammar rules ----------------------------------------------------------
 // expression := term (('+' | '-') term)*
 ASTNodePtr Parser::parseExpression() {
+    RecursionScope scope(*this);
+    if (!scope.ok()) return nullptr;
+
     auto left = parseTerm();
     if (!left) return nullptr;
 
@@ -69,6 +202,9 @@ ASTNodePtr Parser::parseExpression() {
 
 // term := power (('*' | '/') power)*
 ASTNodePtr Parser::parseTerm() {
+    RecursionScope scope(*this);
+    if (!scope.ok()) return nullptr;
+
     auto left = parsePower();
     if (!left) return nullptr;
 
@@ -86,6 +222,9 @@ ASTNodePtr Parser::parseTerm() {
 
 // power := unary ('^' power)?          -- right-associative
 ASTNodePtr Parser::parsePower() {
+    RecursionScope scope(*this);
+    if (!scope.ok()) return nullptr;
+
     auto base = parseUnary();
     if (!base) return nullptr;
 
@@ -101,6 +240,9 @@ ASTNodePtr Parser::parsePower() {
 
 // unary := ('-' | '+')? primary
 ASTNodePtr Parser::parseUnary() {
+    RecursionScope scope(*this);
+    if (!scope.ok()) return nullptr;
+
     if (current().type == TokenType::Minus) {
         advance();
         auto operand = parseUnary();
@@ -119,13 +261,21 @@ ASTNodePtr Parser::parseUnary() {
 //          | IDENTIFIER                   -- constant or variable
 //          | '(' expression ')'
 ASTNodePtr Parser::parsePrimary() {
+    RecursionScope scope(*this);
+    if (!scope.ok()) return nullptr;
+
     const Token& tok = current();
 
     // Numeric literal
     if (tok.type == TokenType::Number) {
-        double value = std::stod(tok.value);
+        const NumberLiteralParseResult parsed = parseNumberLiteral(tok.value);
+        if (!parsed.success()) {
+            m_error = parsed.error + " '" + tok.value +
+                      "' at position " + std::to_string(tok.position);
+            return nullptr;
+        }
         advance();
-        return std::make_shared<NumberNode>(value);
+        return std::make_shared<NumberNode>(parsed.value);
     }
 
     // Identifier: function call, constant, or variable
@@ -136,7 +286,8 @@ ASTNodePtr Parser::parsePrimary() {
 
         // Function call?
         if (current().type == TokenType::LeftParen) {
-            if (!isBuiltinFunction(name)) {
+            const FunctionInfo* function = findFunctionInfo(name);
+            if (!function) {
                 m_error = "Unknown function '" + name +
                           "' at position " + std::to_string(pos);
                 return nullptr;
@@ -145,16 +296,17 @@ ASTNodePtr Parser::parsePrimary() {
             auto args = parseArgList();
             if (!m_error.empty()) return nullptr;
             if (!expect(TokenType::RightParen, "function call")) return nullptr;
-            return std::make_shared<FunctionCallNode>(std::move(name), std::move(args));
+            if (!functionAcceptsArity(*function, args.size())) {
+                m_error = functionArityError(*function, args.size(), pos);
+                return nullptr;
+            }
+            return std::make_shared<FunctionCallNode>(
+                std::move(name), std::move(args), function);
         }
 
         // Known constant?
-        if (s_constants.find(name) != s_constants.end()) {
-            double value = 0.0;
-            if (name == "pi")  value = PI;
-            else if (name == "e")   value = E;
-            else if (name == "tau") value = TAU;
-            return std::make_shared<NumberNode>(value);
+        if (const ConstantInfo* constant = findConstantInfo(name)) {
+            return std::make_shared<NumberNode>(constant->value);
         }
 
         // Variable
@@ -177,7 +329,10 @@ ASTNodePtr Parser::parsePrimary() {
 
 // arglist := expression (',' expression)*
 std::vector<ASTNodePtr> Parser::parseArgList() {
+    RecursionScope scope(*this);
     std::vector<ASTNodePtr> args;
+    if (!scope.ok()) return args;
+
     if (current().type == TokenType::RightParen)
         return args; // empty list
 
@@ -215,32 +370,6 @@ bool Parser::expect(TokenType type, const std::string& context) {
               " at position " + std::to_string(current().position) +
               ", got '" + current().value + "'";
     return false;
-}
-
-// ---- variable collection ----------------------------------------------------
-void Parser::collectVariables(const ASTNodePtr& node, std::set<std::string>& vars) {
-    if (!node) return;
-    switch (node->type()) {
-        case NodeType::Variable:
-            vars.insert(static_cast<VariableNode*>(node.get())->name);
-            break;
-        case NodeType::BinaryOp: {
-            auto* bin = static_cast<BinaryOpNode*>(node.get());
-            collectVariables(bin->left, vars);
-            collectVariables(bin->right, vars);
-            break;
-        }
-        case NodeType::UnaryOp:
-            collectVariables(static_cast<UnaryOpNode*>(node.get())->operand, vars);
-            break;
-        case NodeType::FunctionCall: {
-            auto* fn = static_cast<FunctionCallNode*>(node.get());
-            for (auto& arg : fn->arguments)
-                collectVariables(arg, vars);
-            break;
-        }
-        default: break;
-    }
 }
 
 } // namespace XpressFormula::Core

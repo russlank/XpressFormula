@@ -1,7 +1,10 @@
 // ParserTests.cpp - Unit tests for the expression parser.
 #include "CppUnitTest.h"
 #include "../XpressFormula/Core/Parser.h"
+#include "../XpressFormula/Core/ConstantRegistry.h"
 #include "../XpressFormula/Core/FunctionRegistry.h"
+#include "../XpressFormula/Core/InputLimits.h"
+#include <cmath>
 #include <cstring>
 #include <set>
 #include <string>
@@ -18,10 +21,10 @@ static std::wstring widenParserText(const char* text) {
     return std::wstring(text, text + std::strlen(text));
 }
 
-static std::string sampleCallFor(const FunctionInfo& info) {
+static std::string sampleCallForArity(const FunctionInfo& info, int arity) {
     std::string expression(info.name);
     expression += "(";
-    for (int i = 0; i < info.minArity; ++i) {
+    for (int i = 0; i < arity; ++i) {
         if (i > 0) {
             expression += ",";
         }
@@ -29,6 +32,10 @@ static std::string sampleCallFor(const FunctionInfo& info) {
     }
     expression += ")";
     return expression;
+}
+
+static std::string sampleCallFor(const FunctionInfo& info) {
+    return sampleCallForArity(info, info.minArity);
 }
 
 TEST_CASE(Parse_Number) {
@@ -72,6 +79,17 @@ TEST_CASE(Parse_Number) {
         auto* outer = static_cast<BinaryOpNode*>(r.ast.get());
         Assert::IsTrue(outer->op == BinaryOperator::Power);
         Assert::IsTrue(outer->right->type() == NodeType::BinaryOp);
+    }
+
+    TEST_CASE(Parse_ExcessiveRightAssociativePowerDepthRejected) {
+        std::string expression = "x";
+        for (std::size_t i = 0; i < InputLimits::kMaxExpressionNesting + 8; ++i) {
+            expression += "^x";
+        }
+
+        auto r = Parser::parse(expression);
+        Assert::IsFalse(r.success());
+        Assert::IsTrue(r.error.find("too deep") != std::string::npos);
     }
 
     TEST_CASE(Parse_UnaryNegation) {
@@ -170,6 +188,109 @@ TEST_CASE(Parse_OperatorPrecedence) {
 
 // ----- Edge-case tests -----
 
+TEST_CASE(Parse_LoneDotNumberIsRejectedWithoutThrowing) {
+    auto r = Parser::parse(".");
+    Assert::IsFalse(r.success());
+    Assert::IsTrue(r.error.find("Invalid numeric literal") != std::string::npos);
+}
+
+TEST_CASE(Parse_LeadingDotNumberIsAccepted) {
+    auto r = Parser::parse(".5");
+    Assert::IsTrue(r.success(), widenParserText(r.error.c_str()).c_str());
+    Assert::IsTrue(r.ast->type() == NodeType::Number);
+    auto* number = static_cast<NumberNode*>(r.ast.get());
+    Assert::IsTrue(std::abs(number->value - 0.5) < 1e-12);
+}
+
+TEST_CASE(Parse_TrailingDotNumberIsAccepted) {
+    auto r = Parser::parse("5.");
+    Assert::IsTrue(r.success(), widenParserText(r.error.c_str()).c_str());
+    Assert::IsTrue(r.ast->type() == NodeType::Number);
+    auto* number = static_cast<NumberNode*>(r.ast.get());
+    Assert::IsTrue(std::abs(number->value - 5.0) < 1e-12);
+}
+
+TEST_CASE(Parse_MultipleDotsAreRejectedWithoutThrowing) {
+    auto r = Parser::parse("1.2.3");
+    Assert::IsFalse(r.success());
+}
+
+TEST_CASE(Parse_ScientificNotationAcceptsUpperAndLowerCase) {
+    auto lower = Parser::parse("1.5e-3");
+    auto upper = Parser::parse("2E3");
+
+    Assert::IsTrue(lower.success(), widenParserText(lower.error.c_str()).c_str());
+    Assert::IsTrue(upper.success(), widenParserText(upper.error.c_str()).c_str());
+    Assert::IsTrue(std::abs(static_cast<NumberNode*>(lower.ast.get())->value - 0.0015) < 1e-12);
+    Assert::IsTrue(std::abs(static_cast<NumberNode*>(upper.ast.get())->value - 2000.0) < 1e-12);
+}
+
+TEST_CASE(Parse_MissingExponentDigitsAreRejectedWithoutThrowing) {
+    auto missing = Parser::parse("1e");
+    auto missingAfterSign = Parser::parse("1e-");
+
+    Assert::IsFalse(missing.success());
+    Assert::IsFalse(missingAfterSign.success());
+}
+
+TEST_CASE(Parse_OutOfRangeNumbersAreRejectedWithoutThrowing) {
+    auto tooLarge = Parser::parse("1e309");
+    auto tooSmall = Parser::parse("1e-9999");
+
+    Assert::IsFalse(tooLarge.success());
+    Assert::IsFalse(tooSmall.success());
+    Assert::IsTrue(tooLarge.error.find("outside the supported range") != std::string::npos);
+    Assert::IsTrue(tooSmall.error.find("outside the supported range") != std::string::npos);
+}
+
+TEST_CASE(Parse_ZeroScientificLiteralsAreAcceptedWithoutUnderflowFalsePositive) {
+    const char* validZeros[] = {
+        "0",
+        "-0",
+        "0.",
+        ".0",
+        "0e999",
+        "0e-9999",
+        "-0e999",
+        "0.000e123",
+        "0.0000E-99999"
+    };
+
+    for (const char* expression : validZeros) {
+        auto r = Parser::parse(expression);
+        Assert::IsTrue(r.success(), widenParserText(r.error.c_str()).c_str());
+    }
+}
+
+TEST_CASE(Parse_NonZeroScientificUnderflowAndOverflowRemainRejected) {
+    const char* invalidNumbers[] = {
+        "1e-9999",
+        "0.1e-999999",
+        "1e309"
+    };
+
+    for (const char* expression : invalidNumbers) {
+        auto r = Parser::parse(expression);
+        Assert::IsFalse(r.success());
+        Assert::IsTrue(r.error.find("outside the supported range") != std::string::npos);
+    }
+}
+
+TEST_CASE(Parse_VeryLongNumberIsRejectedWithoutThrowing) {
+    std::string literal(4096, '9');
+    auto r = Parser::parse(literal);
+
+    Assert::IsFalse(r.success());
+    Assert::IsTrue(r.error.find("outside the supported range") != std::string::npos);
+}
+
+TEST_CASE(Parse_CompleteTokenConsumptionRejectsTrailingIdentifier) {
+    auto r = Parser::parse("1x");
+
+    Assert::IsFalse(r.success());
+    Assert::IsTrue(r.error.find("Unexpected token") != std::string::npos);
+}
+
 TEST_CASE(Parse_UnaryPlus) {
     auto r = Parser::parse("+x");
     Assert::IsTrue(r.success());
@@ -195,20 +316,15 @@ TEST_CASE(Parse_MixedUnary_PlusNegar) {
 }
 
 TEST_CASE(Parse_EmptyFunctionArgs) {
-    // "sin()" — the parser accepts empty arg lists
     auto r = Parser::parse("sin()");
-    Assert::IsTrue(r.success());
-    auto* fn = static_cast<FunctionCallNode*>(r.ast.get());
-    Assert::AreEqual(std::string("sin"), fn->name);
-    Assert::AreEqual(size_t(0), fn->arguments.size());
+    Assert::IsFalse(r.success());
+    Assert::IsTrue(r.error.find("expects 1 argument") != std::string::npos);
 }
 
 TEST_CASE(Parse_FunctionThreeArgs) {
-    // Parser allows any number of args; evaluator decides validity
     auto r = Parser::parse("min(x, y, z)");
-    Assert::IsTrue(r.success());
-    auto* fn = static_cast<FunctionCallNode*>(r.ast.get());
-    Assert::AreEqual(size_t(3), fn->arguments.size());
+    Assert::IsFalse(r.success());
+    Assert::IsTrue(r.error.find("expects 2 arguments") != std::string::npos);
 }
 
 TEST_CASE(Parse_DeeplyNestedParens) {
@@ -308,12 +424,103 @@ TEST_CASE(Parse_FunctionRegistryMetadataIsValid) {
         Assert::IsTrue(info.example != nullptr && info.example[0] != '\0');
         Assert::IsTrue(info.minArity >= 0);
         Assert::IsTrue(info.maxArity >= info.minArity);
+        Assert::IsTrue(info.evaluate != nullptr);
+        Assert::IsTrue(functionAcceptsArity(info, static_cast<std::size_t>(info.minArity)));
+        Assert::IsFalse(functionAcceptsArity(
+            info, static_cast<std::size_t>(info.maxArity + 1)));
         Assert::IsTrue(names.insert(info.name).second,
             (std::wstring(L"Duplicate function name: ") + widenParserText(info.name)).c_str());
 
         auto parsed = Parser::parse(info.example);
         Assert::IsTrue(parsed.success(),
             (std::wstring(L"Function example failed to parse: ") + widenParserText(info.name)).c_str());
+    }
+}
+
+TEST_CASE(Parse_FunctionArityRejectsTooFewAndTooManyArguments) {
+    const char* invalidExpressions[] = {
+        "sin()",
+        "sin(x,y)",
+        "min(x)",
+        "min(x,y,z)",
+        "log()",
+        "log(2,x,y)",
+        "sin(cos())"
+    };
+
+    for (const char* expression : invalidExpressions) {
+        auto parsed = Parser::parse(expression);
+        Assert::IsFalse(parsed.success(),
+            (std::wstring(L"Expected invalid arity: ") + widenParserText(expression)).c_str());
+        Assert::IsTrue(parsed.error.find("expects") != std::string::npos,
+            (std::wstring(L"Missing arity diagnostic: ") + widenParserText(parsed.error.c_str())).c_str());
+    }
+}
+
+TEST_CASE(Parse_LogAcceptsOneOrTwoArguments) {
+    Assert::IsTrue(Parser::parse("log(x)").success());
+    Assert::IsTrue(Parser::parse("log(2,x)").success());
+}
+
+TEST_CASE(Parse_AllRegistryEntriesAcceptMinimumAndMaximumArity) {
+    for (const FunctionInfo& info : functionRegistry()) {
+        const std::string minCall = sampleCallForArity(info, info.minArity);
+        const std::string maxCall = sampleCallForArity(info, info.maxArity);
+
+        auto minParsed = Parser::parse(minCall);
+        auto maxParsed = Parser::parse(maxCall);
+
+        Assert::IsTrue(minParsed.success(),
+            (std::wstring(L"Minimum arity failed: ") + widenParserText(minCall.c_str())).c_str());
+        Assert::IsTrue(maxParsed.success(),
+            (std::wstring(L"Maximum arity failed: ") + widenParserText(maxCall.c_str())).c_str());
+    }
+}
+
+TEST_CASE(Parse_FixedArityRegistryEntriesRejectBelowAndAbove) {
+    for (const FunctionInfo& info : functionRegistry()) {
+        if (info.minArity != info.maxArity) {
+            continue;
+        }
+
+        if (info.minArity > 0) {
+            const std::string belowCall = sampleCallForArity(info, info.minArity - 1);
+            auto belowParsed = Parser::parse(belowCall);
+            Assert::IsFalse(belowParsed.success(),
+                (std::wstring(L"Expected below-min arity to fail: ") +
+                 widenParserText(belowCall.c_str())).c_str());
+        }
+
+        const std::string aboveCall = sampleCallForArity(info, info.maxArity + 1);
+        auto aboveParsed = Parser::parse(aboveCall);
+        Assert::IsFalse(aboveParsed.success(),
+            (std::wstring(L"Expected above-max arity to fail: ") +
+             widenParserText(aboveCall.c_str())).c_str());
+    }
+}
+
+TEST_CASE(Parse_FunctionCallReferencesRegistryDefinition) {
+    auto parsed = Parser::parse("sin(x)");
+    Assert::IsTrue(parsed.success());
+
+    auto* call = static_cast<FunctionCallNode*>(parsed.ast.get());
+    Assert::IsTrue(call->definition == findFunctionInfo("sin"));
+}
+
+TEST_CASE(Parse_ConstantsComeFromRegistry) {
+    std::set<std::string> names;
+
+    for (const ConstantInfo& constant : constantRegistry()) {
+        Assert::IsTrue(constant.name != nullptr && constant.name[0] != '\0');
+        Assert::IsTrue(constant.description != nullptr && constant.description[0] != '\0');
+        Assert::IsTrue(names.insert(constant.name).second,
+            (std::wstring(L"Duplicate constant name: ") + widenParserText(constant.name)).c_str());
+
+        auto parsed = Parser::parse(constant.name);
+        Assert::IsTrue(parsed.success());
+        Assert::IsTrue(parsed.ast->type() == NodeType::Number);
+        Assert::IsTrue(parsed.variables.empty());
+        Assert::IsTrue(findConstantInfo(constant.name) == &constant);
     }
 }
 

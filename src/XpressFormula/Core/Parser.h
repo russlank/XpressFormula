@@ -24,6 +24,8 @@ public:
     static Result parse(const std::string& expression);
 
 private:
+    struct RecursionScope;
+
     explicit Parser(const std::vector<Token>& tokens);
 
     // Grammar rules (in order of increasing precedence)
@@ -40,14 +42,10 @@ private:
     bool         match(TokenType type);
     bool         expect(TokenType type, const std::string& context);
 
-    // Utility: walk the AST and collect variable names
-    static void collectVariables(const ASTNodePtr& node, std::set<std::string>& vars);
-
     std::vector<Token> m_tokens;
     size_t             m_pos = 0;
+    size_t             m_recursionDepth = 0;
     std::string        m_error;
-
-    static const std::set<std::string> s_constants;
 };
 
 } // namespace XpressFormula::Core

@@ -1,10 +1,12 @@
 // PlotPanel.cpp - Interactive plot panel implementation.
 #include "PlotPanel.h"
+#include "../Plotting/PlotRenderPlan.h"
 #include "../Plotting/PlotRenderer.h"
 #include "imgui.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -55,20 +57,25 @@ void drawCornerHud(ImDrawList* dl,
 
 } // namespace
 
-void PlotPanel::render(std::vector<FormulaEntry>& formulas,
+void PlotPanel::render(const std::vector<Model::Formula>& formulas,
                        Core::ViewTransform& vt,
                        PlotSettings& settings,
-                       const PlotRenderOverrides* overrides) {
+                       const Model::SceneSummary& scene,
+                       const PlotRenderOverrides* overrides,
+                       const PlotQualityDecision* qualityDecision,
+                       std::optional<float> runtimeAzimuthDeg) {
+    normalizePlotSettings(settings);
+
     // Update the viewport transform from the ImGui window
     ImVec2 pos  = ImGui::GetCursorScreenPos();
     ImVec2 size = ImGui::GetContentRegionAvail();
     if (size.x < 1.0f) size.x = 1.0f;
     if (size.y < 1.0f) size.y = 1.0f;
 
-    vt.screenOriginX = pos.x;
-    vt.screenOriginY = pos.y;
-    vt.screenWidth   = size.x;
-    vt.screenHeight  = size.y;
+    vt.viewport.originX = pos.x;
+    vt.viewport.originY = pos.y;
+    vt.viewport.width   = size.x;
+    vt.viewport.height  = size.y;
 
     // Reserve the plot area as an invisible button so we capture mouse events
     ImGui::InvisibleButton("##plot_area", size,
@@ -77,183 +84,113 @@ void PlotPanel::render(std::vector<FormulaEntry>& formulas,
     bool isHovered = ImGui::IsItemHovered();
     bool isActive  = ImGui::IsItemActive();
 
+    const bool isDraggingLeft = isActive && ImGui::IsMouseDragging(ImGuiMouseButton_Left);
+    const bool isZoomingView = isHovered && (ImGui::GetIO().MouseWheel != 0.0f);
+    std::vector<Model::FormulaId> formulaIds;
+    formulaIds.reserve(formulas.size());
+    for (const Model::Formula& formula : formulas) {
+        formulaIds.push_back(formula.id);
+    }
+    m_implicitMeshCache.retainFormulaIds(
+        std::span<const Model::FormulaId>(formulaIds.data(), formulaIds.size()));
+
+    const Plotting::PlotRenderPlan plan = Plotting::buildPlotRenderPlan(
+        Plotting::PlotRenderPlanInput{
+            std::span<const Model::Formula>(formulas.data(), formulas.size()),
+            settings,
+            scene,
+            Plotting::PlotInteractionState{ isDraggingLeft, isZoomingView },
+            overrides,
+            qualityDecision,
+            Plotting::PlotQualityPurpose::Interactive,
+            runtimeAzimuthDeg
+        });
+    const EffectivePlotSettings& effective = plan.effective;
+
     // Draw background
     ImDrawList* dl = ImGui::GetWindowDrawList();
-    const bool useOverrides = (overrides && overrides->active);
-    const bool showGrid = useOverrides ? overrides->showGrid : settings.showGrid;
-    const bool showCoordinates = useOverrides ? overrides->showCoordinates : settings.showCoordinates;
-    const bool showWires = useOverrides ? overrides->showWires : settings.showWires;
-    const bool showEnvelope = useOverrides ? overrides->showEnvelope : settings.showSurfaceEnvelope;
-    const bool showAxisTriadPreference =
-        useOverrides ? overrides->showAxisTriad : settings.showAxisTriad;
-    const bool showAxisTriad =
-        isAxisTriadVisible(showCoordinates, showAxisTriadPreference);
-    const bool showHud = useOverrides ? overrides->showHud : true;
-    const bool showCanvasBorder = useOverrides ? overrides->showCanvasBorder : true;
-    const float effectiveWireThickness =
-        (showWires && settings.wireThickness > 0.01f) ? settings.wireThickness : 0.0f;
-    const float effectiveWireOpacity =
-        (showWires && settings.wireOpacity > 0.0f) ? clampWireOpacity(settings.wireOpacity) : 0.0f;
-    const int effectiveWireStride = clampWireStride(settings.wireStride);
-    const std::array<float, 4> bg = useOverrides ? overrides->backgroundColor
-                                                  : std::array<float, 4>{0.098f, 0.098f, 0.118f, 1.0f};
+    const std::array<float, 4>& bg = effective.backgroundColor;
     dl->AddRectFilled(pos, ImVec2(pos.x + size.x, pos.y + size.y),
                       ImGui::ColorConvertFloat4ToU32(ImVec4(bg[0], bg[1], bg[2], bg[3])));
 
-    bool hasSurface = false;
-    bool has2DFormula = false;
-    for (const auto& formula : formulas) {
-        if (!formula.visible || !formula.isValid()) {
-            continue;
-        }
-
-        if (formula.renderKind == FormulaRenderKind::Surface3D ||
-            (formula.renderKind == FormulaRenderKind::ScalarField3D && formula.isEquation)) {
-            hasSurface = true;
-        }
-
-        switch (formula.renderKind) {
-            case FormulaRenderKind::Curve2D:
-            case FormulaRenderKind::Implicit2D:
-                has2DFormula = true;
-                break;
-            case FormulaRenderKind::ScalarField3D:
-                if (!formula.isEquation) {
-                    has2DFormula = true;
-                }
-                break;
-            default:
-                break;
-        }
-
-        if (hasSurface && has2DFormula) {
-            break;
-        }
-    }
-
-    const XYRenderMode effectiveRenderMode =
-        settings.resolveXYRenderMode(has2DFormula, hasSurface);
-    const bool is3DMode = (effectiveRenderMode == XYRenderMode::Surface3D);
-    const bool use3DGridPlaneInterleave = is3DMode && showGrid;
-
-    // Apply auto-rotation BEFORE any 3D drawing so the grid, axes, and surfaces
-    // all use the same azimuth for this frame (avoids a 1-frame visual tear).
-    if (hasSurface && is3DMode && settings.autoRotate) {
-        settings.azimuthDeg += ImGui::GetIO().DeltaTime * settings.autoRotateSpeedDegPerSec;
-        if (settings.azimuthDeg > 180.0f) {
-            settings.azimuthDeg -= 360.0f;
-        }
-    }
+    const XYRenderMode effectiveRenderMode = effective.renderMode;
+    const bool is3DMode = plan.is3DMode;
+    const bool use3DGridPlaneInterleave = plan.gridPlaneInterleave;
 
     // 2D grid/axes/labels are drawn up-front. In 3D mode the projected grid can be interleaved
     // between below-plane and above-plane geometry later to preserve XY-plane depth ordering.
     if (!is3DMode) {
-        if (showGrid) {
+        if (effective.showGrid) {
             Plotting::PlotRenderer::drawGrid(dl, vt);
         }
-        if (showCoordinates) {
+        if (effective.showCoordinates) {
             Plotting::PlotRenderer::drawAxes(dl, vt);
             Plotting::PlotRenderer::drawAxisLabels(dl, vt);
         }
     }
 
-    const bool isDraggingLeft = isActive && ImGui::IsMouseDragging(ImGuiMouseButton_Left);
-    const bool isZoomingView = isHovered && (ImGui::GetIO().MouseWheel != 0.0f);
-    const bool useInteractive3DThrottle =
-        settings.optimizeRendering && hasSurface && is3DMode && (isDraggingLeft || isZoomingView);
-
-    // Panning/zooming implicit F(x,y,z)=0 changes the sampled domain, which invalidates the mesh cache
-    // and can force a full O(N^3) remesh every mouse move. Temporarily lowering mesh density (and
-    // suppressing wireframe lines) keeps interaction responsive, then full quality returns on release.
-    int interactiveSurfaceResolution = settings.surfaceResolution;
-    if (useInteractive3DThrottle) {
-        if (interactiveSurfaceResolution > 24) {
-            interactiveSurfaceResolution = (interactiveSurfaceResolution * 2) / 3;
-        }
-        if (interactiveSurfaceResolution < 24) {
-            interactiveSurfaceResolution = 24;
-        }
-    }
-
-    int interactiveImplicitResolution = settings.implicitSurfaceResolution;
-    if (useInteractive3DThrottle) {
-        if (interactiveImplicitResolution > 20) {
-            interactiveImplicitResolution /= 2;
-        }
-        if (interactiveImplicitResolution > 40) {
-            interactiveImplicitResolution = 40;
-        }
-        if (interactiveImplicitResolution < 20) {
-            interactiveImplicitResolution = 20;
-        }
-    }
-
-    const float interactionWireThickness = useInteractive3DThrottle ? 0.0f : effectiveWireThickness;
-
-    // Helper to build Surface3DOptions from the current settings (avoids duplicating
-    // the same field list for Surface3D and ScalarField3D render kinds).
-    auto make3DOptions = [&]() {
-        Plotting::PlotRenderer::Surface3DOptions options;
-        options.azimuthDeg = settings.azimuthDeg;
-        options.elevationDeg = settings.elevationDeg;
-        options.zScale = settings.zScale;
-        options.resolution = interactiveSurfaceResolution;
-        options.implicitResolution = interactiveImplicitResolution;
-        options.opacity = settings.surfaceOpacity;
-        options.wireOpacity = effectiveWireOpacity;
-        options.wireThickness = interactionWireThickness;
-        options.wireStride = effectiveWireStride;
-        options.showEnvelope = showEnvelope;
-        options.envelopeThickness = settings.envelopeThickness;
-        // Axis triad is an alternative to coordinate overlays in 3D mode, so keep them
-        // mutually exclusive to avoid redundant on-screen guidance.
-        options.showAxisTriad = showAxisTriad;
-        return options;
-    };
-
     auto drawFormulas = [&](Plotting::PlotRenderer::SurfacePlanePass3D planePass,
                             bool enable3DOverlays) {
-        for (auto& f : formulas) {
-            if (!f.visible || !f.isValid()) continue;
-            switch (f.renderKind) {
-                case FormulaRenderKind::Curve2D:
-                    if (!is3DMode) {
-                        Plotting::PlotRenderer::drawCurve2D(dl, vt, f.ast, f.color);
-                    }
+        for (const Plotting::PlotFormulaDispatch& dispatch : plan.formulas) {
+            if (dispatch.kind == Plotting::PlotFormulaDispatchKind::None ||
+                dispatch.formulaIndex >= formulas.size()) {
+                continue;
+            }
+            const Model::Formula& f = formulas[dispatch.formulaIndex];
+            switch (dispatch.kind) {
+                case Plotting::PlotFormulaDispatchKind::Curve2D:
+                    Plotting::PlotRenderer::drawCurve2D(dl, vt, f.compiled.ast, f.color.data());
                     break;
-                case FormulaRenderKind::Surface3D:
-                    if (is3DMode) {
-                        auto options = make3DOptions();
-                        options.planePass = planePass;
-                        if (!enable3DOverlays) {
-                            options.showEnvelope = false;
-                            options.showAxisTriad = false;
-                        }
-                        Plotting::PlotRenderer::drawSurface3D(dl, vt, f.ast, f.color, options);
-                    } else {
-                        Plotting::PlotRenderer::drawHeatmap(
-                            dl, vt, f.ast, f.color, settings.heatmapOpacity);
-                    }
+                case Plotting::PlotFormulaDispatchKind::Heatmap2D:
+                    Plotting::PlotRenderer::drawHeatmap(
+                        dl, vt, f.compiled.ast, f.color.data(), effective.heatmapOpacity);
                     break;
-                case FormulaRenderKind::Implicit2D:
-                    if (!is3DMode) {
-                        Plotting::PlotRenderer::drawImplicitContour2D(dl, vt, f.ast, f.color, 2.0f);
-                    }
+                case Plotting::PlotFormulaDispatchKind::ImplicitContour2D:
+                    Plotting::PlotRenderer::drawImplicitContour2D(
+                        dl, vt, f.compiled.ast, f.color.data(), 2.0f);
                     break;
-                case FormulaRenderKind::ScalarField3D:
-                    if (f.isEquation && is3DMode) {
-                        auto options = make3DOptions();
-                        options.implicitZCenter = f.zSlice;
-                        options.planePass = planePass;
-                        if (!enable3DOverlays) {
-                            options.showEnvelope = false;
-                            options.showAxisTriad = false;
-                        }
-                        Plotting::PlotRenderer::drawImplicitSurface3D(dl, vt, f.ast, f.color, options);
-                    } else if (!is3DMode) {
-                        Plotting::PlotRenderer::drawCrossSection(
-                            dl, vt, f.ast, f.zSlice, f.color, settings.heatmapOpacity);
+                case Plotting::PlotFormulaDispatchKind::ExplicitSurface3D: {
+                    auto options = Plotting::PlotRenderer::makeSurface3DOptions(
+                        effective,
+                        plan.camera,
+                        planePass);
+                    if (!enable3DOverlays) {
+                        options.showEnvelope = false;
+                        options.showAxisTriad = false;
                     }
+                    Plotting::PlotRenderer::drawSurface3D(
+                        dl, vt, f.compiled.ast, f.color.data(), options);
+                    break;
+                }
+                case Plotting::PlotFormulaDispatchKind::ImplicitSurface3D: {
+                    auto options = Plotting::PlotRenderer::makeSurface3DOptions(
+                        effective,
+                        plan.camera,
+                        planePass,
+                        static_cast<float>(f.zSlice));
+                    if (!enable3DOverlays) {
+                        options.showEnvelope = false;
+                        options.showAxisTriad = false;
+                    }
+                    Plotting::PlotRenderer::drawImplicitSurface3D(
+                        dl,
+                        vt,
+                        f.compiled.ast,
+                        f.color.data(),
+                        options,
+                        m_implicitMeshCache,
+                        f.id,
+                        f.compilationRevision);
+                    break;
+                }
+                case Plotting::PlotFormulaDispatchKind::CrossSection2D:
+                    Plotting::PlotRenderer::drawCrossSection(
+                        dl,
+                        vt,
+                        f.compiled.ast,
+                        static_cast<float>(f.zSlice),
+                        f.color.data(),
+                        effective.heatmapOpacity);
                     break;
                 default:
                     break;
@@ -262,10 +199,8 @@ void PlotPanel::render(std::vector<FormulaEntry>& formulas,
     };
 
     if (is3DMode) {
-        Plotting::PlotRenderer::Surface3DOptions reference3D;
-        reference3D.azimuthDeg = settings.azimuthDeg;
-        reference3D.elevationDeg = settings.elevationDeg;
-        reference3D.zScale = settings.zScale;
+        const Plotting::PlotRenderer::Surface3DOptions reference3D =
+            Plotting::PlotRenderer::makeSurface3DOptions(effective, plan.camera);
 
         if (use3DGridPlaneInterleave) {
             drawFormulas(Plotting::PlotRenderer::SurfacePlanePass3D::BelowGridPlane, false);
@@ -273,19 +208,19 @@ void PlotPanel::render(std::vector<FormulaEntry>& formulas,
             drawFormulas(Plotting::PlotRenderer::SurfacePlanePass3D::AboveGridPlane, true);
         } else {
             drawFormulas(Plotting::PlotRenderer::SurfacePlanePass3D::All, true);
-            if (showGrid) {
+            if (effective.showGrid) {
                 Plotting::PlotRenderer::drawGrid3D(dl, vt, reference3D);
             }
         }
 
-        if (showCoordinates) {
+        if (effective.showCoordinates) {
             Plotting::PlotRenderer::drawAxes3D(dl, vt, reference3D);
         }
     } else {
         drawFormulas(Plotting::PlotRenderer::SurfacePlanePass3D::All, true);
     }
 
-    if (showCanvasBorder) {
+    if (effective.showCanvasBorder) {
         dl->AddRect(pos, ImVec2(pos.x + size.x, pos.y + size.y),
                     IM_COL32(100, 100, 100, 255));
     }
@@ -324,8 +259,8 @@ void PlotPanel::render(std::vector<FormulaEntry>& formulas,
             // Adjust center so cursor stays over the same world point
             double wxAfter, wyAfter;
             vt.screenToWorld(mousePos.x, mousePos.y, wxAfter, wyAfter);
-            vt.centerX += (wxBefore - wxAfter);
-            vt.centerY += (wyBefore - wyAfter);
+            vt.state.centerX += (wxBefore - wxAfter);
+            vt.state.centerY += (wyBefore - wyAfter);
         }
     }
 
@@ -341,7 +276,7 @@ void PlotPanel::render(std::vector<FormulaEntry>& formulas,
 
     float hudAlpha = 0.0f;
     PlotHudMode hudMode = settings.hudMode;
-    if (showHud && hudMode != PlotHudMode::Off) {
+    if (effective.showHud && hudMode != PlotHudMode::Off) {
         if (hudMode == PlotHudMode::OnlyWhileInteracting) {
             const double elapsed = now - m_lastHudInteractionTime;
             if (elapsed <= 0.90) {
@@ -376,26 +311,27 @@ void PlotPanel::render(std::vector<FormulaEntry>& formulas,
             hudLines.emplace_back(line);
             std::snprintf(line, sizeof(line), "Y [%.4g, %.4g]", vt.worldYMin(), vt.worldYMax());
             hudLines.emplace_back(line);
-            std::snprintf(line, sizeof(line), "Scale %.1f x %.1f px/unit", vt.scaleX, vt.scaleY);
+            std::snprintf(line, sizeof(line), "Scale %.1f x %.1f px/unit", vt.state.scaleX, vt.state.scaleY);
             hudLines.emplace_back(line);
             if (is3DMode) {
                 std::snprintf(line, sizeof(line), "Camera az %.1f  el %.1f  z %.2f",
-                              settings.azimuthDeg, settings.elevationDeg, settings.zScale);
+                              effective.azimuthDeg, effective.elevationDeg, effective.zScale);
                 hudLines.emplace_back(line);
                 std::snprintf(line, sizeof(line), "Wires %.2f opacity  stride %d",
-                              effectiveWireOpacity, effectiveWireStride);
+                              effective.wireOpacity, effective.wireStride);
                 hudLines.emplace_back(line);
             }
         } else if (is3DMode) {
             std::snprintf(line, sizeof(line), "%s x %.4g  y %.4g", sampleLabel, wx, wy);
             hudLines.emplace_back(line);
-            std::snprintf(line, sizeof(line), "Camera az %.1f  el %.1f", settings.azimuthDeg, settings.elevationDeg);
+            std::snprintf(line, sizeof(line), "Camera az %.1f  el %.1f",
+                          effective.azimuthDeg, effective.elevationDeg);
             hudLines.emplace_back(line);
         } else {
             std::snprintf(line, sizeof(line), "%s x %.4g  y %.4g", sampleLabel, wx, wy);
             hudLines.emplace_back(line);
             std::snprintf(line, sizeof(line), "Scale %.1f px/unit",
-                          std::sqrt(std::max(1e-6, vt.scaleX * vt.scaleY)));
+                          std::sqrt(std::max(1e-6, vt.state.scaleX * vt.state.scaleY)));
             hudLines.emplace_back(line);
         }
 

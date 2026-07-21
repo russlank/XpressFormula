@@ -74,12 +74,13 @@
   <PropertyGroup Label="UserMacros" />
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
-      <WarningLevel>Level3</WarningLevel>
+      <WarningLevel>Level4</WarningLevel>
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>WIN32;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>$(SolutionDir)XpressFormula;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalOptions>/Zc:__cplusplus %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalIncludeDirectories>$(MSBuildProjectDirectory)\..\XpressFormula;$(MSBuildProjectDirectory)\..\vendor\imgui;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -88,14 +89,15 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
-      <WarningLevel>Level3</WarningLevel>
+      <WarningLevel>Level4</WarningLevel>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>WIN32;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>$(SolutionDir)XpressFormula;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalOptions>/Zc:__cplusplus %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalIncludeDirectories>$(MSBuildProjectDirectory)\..\XpressFormula;$(MSBuildProjectDirectory)\..\vendor\imgui;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -106,12 +108,13 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
-      <WarningLevel>Level3</WarningLevel>
+      <WarningLevel>Level4</WarningLevel>
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>$(SolutionDir)XpressFormula;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalOptions>/Zc:__cplusplus %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalIncludeDirectories>$(MSBuildProjectDirectory)\..\XpressFormula;$(MSBuildProjectDirectory)\..\vendor\imgui;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -120,14 +123,15 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
-      <WarningLevel>Level3</WarningLevel>
+      <WarningLevel>Level4</WarningLevel>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>$(SolutionDir)XpressFormula;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalOptions>/Zc:__cplusplus %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalIncludeDirectories>$(MSBuildProjectDirectory)\..\XpressFormula;$(MSBuildProjectDirectory)\..\vendor\imgui;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -138,25 +142,64 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />
-    <ClCompile Include="..\XpressFormula\Core\Tokenizer.cpp" />
-    <ClCompile Include="..\XpressFormula\Core\Parser.cpp" />
-    <ClCompile Include="..\XpressFormula\Core\Evaluator.cpp" />
-    <ClCompile Include="..\XpressFormula\Core\FunctionRegistry.cpp" />
-    <ClCompile Include="..\XpressFormula\Core\ExampleFormulaCatalog.cpp" />
-    <ClCompile Include="..\XpressFormula\Core\ViewTransform.cpp" />
-    <ClCompile Include="..\XpressFormula\UI\UiKit\ResponsiveLayout.cpp" />
-    <ClCompile Include="..\XpressFormula\UI\UiKit\UiMetrics.cpp" />
     <ClCompile Include="TokenizerTests.cpp" />
     <ClCompile Include="ParserTests.cpp" />
+    <ClCompile Include="AstQueriesTests.cpp" />
     <ClCompile Include="EvaluatorTests.cpp" />
     <ClCompile Include="ViewTransformTests.cpp" />
+    <ClCompile Include="FormulaCompilerTests.cpp" />
+    <ClCompile Include="SceneSummaryTests.cpp" />
+    <ClCompile Include="DocumentTests.cpp" />
+    <ClCompile Include="ApplicationStateTests.cpp" />
     <ClCompile Include="FormulaEntryTests.cpp" />
+    <ClCompile Include="FormulaEditorStateTests.cpp" />
     <ClCompile Include="UpdateVersionUtilsTests.cpp" />
+    <ClCompile Include="ExportSubsystemTests.cpp" />
     <ClCompile Include="ExportSettingsTests.cpp" />
     <ClCompile Include="ProjectSessionTests.cpp" />
+    <ClCompile Include="InfrastructureSerializationTests.cpp" />
+    <ClCompile Include="ProjectPersistenceSubsystemTests.cpp" />
+    <ClCompile Include="ProjectControllerTests.cpp" />
+    <ClCompile Include="UpdateControllerTests.cpp" />
+    <ClCompile Include="PlatformWindowsServicesTests.cpp" />
     <ClCompile Include="PlotSettingsTests.cpp" />
+    <ClCompile Include="PlottingFoundationTests.cpp" />
+    <ClCompile Include="PlottingGeometryGenerationTests.cpp" />
+    <ClCompile Include="ExpressionRuntimeBenchmarkTests.cpp" />
     <ClCompile Include="FormulaListActionsTests.cpp" />
     <ClCompile Include="UiKitLayoutTests.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\XpressFormula.Expression\XpressFormula.Expression.vcxproj">
+      <Project>{8DAFDF53-6738-4BAE-A25D-D1E5CF325BFE}</Project>
+      <LinkLibraryDependencies>true</LinkLibraryDependencies>
+      <GlobalPropertiesToRemove>IntDir;OutDir</GlobalPropertiesToRemove>
+    </ProjectReference>
+    <ProjectReference Include="..\XpressFormula.Model\XpressFormula.Model.vcxproj">
+      <Project>{D893AD0C-E0A8-48D5-95AA-AA890435AACD}</Project>
+      <LinkLibraryDependencies>true</LinkLibraryDependencies>
+      <GlobalPropertiesToRemove>IntDir;OutDir</GlobalPropertiesToRemove>
+    </ProjectReference>
+    <ProjectReference Include="..\XpressFormula.Plotting\XpressFormula.Plotting.vcxproj">
+      <Project>{CB9C35CB-1C18-4751-A96A-462C3F4E818D}</Project>
+      <LinkLibraryDependencies>true</LinkLibraryDependencies>
+      <GlobalPropertiesToRemove>IntDir;OutDir</GlobalPropertiesToRemove>
+    </ProjectReference>
+    <ProjectReference Include="..\XpressFormula.Infrastructure\XpressFormula.Infrastructure.vcxproj">
+      <Project>{E310CE87-5D86-4E95-97EC-E6C994B7F140}</Project>
+      <LinkLibraryDependencies>true</LinkLibraryDependencies>
+      <GlobalPropertiesToRemove>IntDir;OutDir</GlobalPropertiesToRemove>
+    </ProjectReference>
+    <ProjectReference Include="..\XpressFormula.App\XpressFormula.App.vcxproj">
+      <Project>{D03E5ED4-E68D-4D38-9BA5-18023639B88E}</Project>
+      <LinkLibraryDependencies>true</LinkLibraryDependencies>
+      <GlobalPropertiesToRemove>IntDir;OutDir</GlobalPropertiesToRemove>
+    </ProjectReference>
+    <ProjectReference Include="..\XpressFormula.UI\XpressFormula.UI.vcxproj">
+      <Project>{957C7594-0184-44A4-86BD-683DD22E3AF1}</Project>
+      <LinkLibraryDependencies>true</LinkLibraryDependencies>
+      <GlobalPropertiesToRemove>IntDir;OutDir</GlobalPropertiesToRemove>
+    </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />

@@ -1,72 +1,29 @@
 // SPDX-License-Identifier: MIT
-// ExportMetadata.h - Small reusable helpers for export metadata sidecars.
+// ExportMetadata.h - Compatibility shim for infrastructure-owned export metadata helpers.
 #pragma once
 
-#include <filesystem>
-#include <string>
-#include <string_view>
+#include "../Infrastructure/Export/ExportMetadataSerializer.h"
 
 namespace XpressFormula::UI {
 
-inline constexpr int kExportMetadataSchemaVersion = 1;
-
-inline std::string jsonEscape(std::string_view text) {
-    std::string escaped;
-    escaped.reserve(text.size() + 8);
-    static constexpr char hex[] = "0123456789ABCDEF";
-
-    for (unsigned char ch : text) {
-        switch (ch) {
-            case '"':
-                escaped += "\\\"";
-                break;
-            case '\\':
-                escaped += "\\\\";
-                break;
-            case '\b':
-                escaped += "\\b";
-                break;
-            case '\f':
-                escaped += "\\f";
-                break;
-            case '\n':
-                escaped += "\\n";
-                break;
-            case '\r':
-                escaped += "\\r";
-                break;
-            case '\t':
-                escaped += "\\t";
-                break;
-            default:
-                if (ch < 0x20) {
-                    escaped += "\\u00";
-                    escaped += hex[(ch >> 4) & 0x0F];
-                    escaped += hex[ch & 0x0F];
-                } else {
-                    escaped += static_cast<char>(ch);
-                }
-                break;
-        }
-    }
-
-    return escaped;
-}
-
-inline const char* jsonBool(bool value) {
-    return value ? "true" : "false";
-}
-
-inline std::filesystem::path exportMetadataSidecarPath(const std::filesystem::path& imagePath) {
-    std::filesystem::path sidecar = imagePath;
-    sidecar += L".json";
-    return sidecar;
-}
-
-inline std::filesystem::path exportMetadataTempPath(const std::filesystem::path& sidecarPath) {
-    std::filesystem::path temporary = sidecarPath;
-    temporary += L".tmp";
-    return temporary;
-}
+using Infrastructure::Export::ExportAppMetadata;
+using Infrastructure::Export::ExportCameraMetadata;
+using Infrastructure::Export::ExportDisplayMetadata;
+using Infrastructure::Export::ExportFormulaMetadata;
+using Infrastructure::Export::ExportImageMetadata;
+using Infrastructure::Export::ExportMetadataModel;
+using Infrastructure::Export::ExportViewMetadata;
+using Infrastructure::Export::exportActualFormatLabel;
+using Infrastructure::Export::exportMetadataSidecarPath;
+using Infrastructure::Export::exportMetadataTempPath;
+using Infrastructure::Export::jsonBool;
+using Infrastructure::Export::jsonEscape;
+using Infrastructure::Export::kExportMetadataSchemaVersion;
+using Infrastructure::Export::makeExportCameraMetadata;
+using Infrastructure::Export::makeExportDisplayMetadata;
+using Infrastructure::Export::makeExportFormulaMetadata;
+using Infrastructure::Export::makeExportMetadataModel;
+using Infrastructure::Export::makeExportViewMetadata;
+using Infrastructure::Export::serializeExportMetadata;
 
 } // namespace XpressFormula::UI
