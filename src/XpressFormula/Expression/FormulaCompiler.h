@@ -16,6 +16,8 @@ enum class DiagnosticCode {
     MultipleEquals,
     MissingEquationSide,
     ParseError,
+    ExpressionTooLong,
+    ExpressionTooComplex,
     UnsupportedVariable,
     UnsupportedEquation
 };

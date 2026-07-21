@@ -6,7 +6,11 @@
 #include "../Version.h"
 
 #include <exception>
+#include <condition_variable>
+#include <mutex>
+#include <optional>
 #include <sstream>
+#include <thread>
 #include <utility>
 
 namespace XpressFormula::Application {
@@ -32,6 +36,14 @@ UpdateCheckResult makeWorkerFailure(bool manualRequest, std::string message) {
 
 } // namespace
 
+struct UpdateController::WorkerState {
+    std::mutex mutex;
+    std::condition_variable doneChanged;
+    std::optional<UpdateCheckResult> result;
+    bool done = false;
+    bool cancelled = false;
+};
+
 UpdateController::UpdateController(ReleaseFetcher releaseFetcher)
     : m_releaseFetcher(std::move(releaseFetcher)),
       m_releaseUrl(kGitHubReleasesUrlUtf8) {
@@ -41,7 +53,7 @@ UpdateController::UpdateController(ReleaseFetcher releaseFetcher)
 }
 
 UpdateController::~UpdateController() {
-    (void)waitForPendingCheck();
+    (void)cancelPendingCheckForShutdown();
 }
 
 void UpdateController::resetStartupDelay(Clock::time_point now) noexcept {
@@ -66,26 +78,77 @@ bool UpdateController::requestManualCheck() {
 }
 
 bool UpdateController::poll() {
-    if (!m_checkInProgress || !m_future.valid()) {
+    std::shared_ptr<WorkerState> worker = m_worker;
+    if (!m_checkInProgress || !worker) {
         return false;
     }
 
-    if (m_future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
-        return false;
+    std::optional<UpdateCheckResult> result;
+    bool cancelled = false;
+    {
+        std::lock_guard lock(worker->mutex);
+        if (!worker->done) {
+            return false;
+        }
+        cancelled = worker->cancelled;
+        result = std::move(worker->result);
     }
 
-    applyResult(m_future.get());
-    return true;
-}
-
-bool UpdateController::waitForPendingCheck() {
-    if (!m_future.valid()) {
+    if (worker == m_worker) {
+        m_worker.reset();
+    }
+    if (cancelled || !result.has_value()) {
         m_checkInProgress = false;
         return false;
     }
 
-    m_future.wait();
-    applyResult(m_future.get());
+    applyResult(std::move(*result));
+    return true;
+}
+
+bool UpdateController::waitForPendingCheck() {
+    std::shared_ptr<WorkerState> worker = m_worker;
+    if (!worker) {
+        m_checkInProgress = false;
+        return false;
+    }
+
+    std::optional<UpdateCheckResult> result;
+    bool cancelled = false;
+    {
+        std::unique_lock lock(worker->mutex);
+        worker->doneChanged.wait(lock, [&]() {
+            return worker->done;
+        });
+        cancelled = worker->cancelled;
+        result = std::move(worker->result);
+    }
+
+    if (worker == m_worker) {
+        m_worker.reset();
+    }
+    if (cancelled || !result.has_value()) {
+        m_checkInProgress = false;
+        return false;
+    }
+
+    applyResult(std::move(*result));
+    return true;
+}
+
+bool UpdateController::cancelPendingCheckForShutdown() {
+    std::shared_ptr<WorkerState> worker = m_worker;
+    if (!worker || !m_checkInProgress) {
+        return false;
+    }
+
+    {
+        std::lock_guard lock(worker->mutex);
+        worker->cancelled = true;
+    }
+    m_worker.reset();
+    m_checkInProgress = false;
+    m_status = "Update check cancelled.";
     return true;
 }
 
@@ -168,16 +231,12 @@ bool UpdateController::startCheck(bool manualRequest) {
         return false;
     }
 
-    if (m_future.valid()) {
-        if (m_future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready) {
-            applyResult(m_future.get());
-        } else if (manualRequest) {
-            if (m_status != "Previous update check is still running.") {
+    if (m_worker) {
+        if (!poll()) {
+            if (manualRequest && m_status != "Previous update check is still running.") {
                 m_status = "Previous update check is still running.";
                 return true;
             }
-            return false;
-        } else {
             return false;
         }
     }
@@ -190,17 +249,30 @@ bool UpdateController::startCheck(bool manualRequest) {
 
     try {
         ReleaseFetcher fetcher = m_releaseFetcher;
-        m_future = std::async(std::launch::async, [fetcher = std::move(fetcher), manualRequest]() {
+        auto worker = std::make_shared<WorkerState>();
+        std::thread thread([worker, fetcher = std::move(fetcher), manualRequest]() mutable {
+            UpdateCheckResult result;
             try {
-                return fetcher(manualRequest);
+                result = fetcher(manualRequest);
             } catch (const std::exception& ex) {
-                return makeWorkerFailure(
+                result = makeWorkerFailure(
                     manualRequest,
                     std::string("Could not complete update check worker: ") + ex.what());
             } catch (...) {
-                return makeWorkerFailure(manualRequest, "Could not complete update check worker.");
+                result = makeWorkerFailure(manualRequest, "Could not complete update check worker.");
             }
+
+            {
+                std::lock_guard lock(worker->mutex);
+                if (!worker->cancelled) {
+                    worker->result = std::move(result);
+                }
+                worker->done = true;
+            }
+            worker->doneChanged.notify_all();
         });
+        thread.detach();
+        m_worker = std::move(worker);
     } catch (const std::exception& ex) {
         m_checkInProgress = false;
         m_status = std::string("Could not start update check worker: ") + ex.what();

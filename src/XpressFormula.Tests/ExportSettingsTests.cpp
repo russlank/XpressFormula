@@ -5,6 +5,7 @@
 
 #include <cmath>
 #include <filesystem>
+#include <limits>
 #include <string>
 
 using namespace Microsoft::VisualStudio::CppUnitTestFramework;
@@ -56,6 +57,20 @@ TEST_CASE(ExportSize_MemoryEstimateIncludesSupersampling) {
 
     Assert::AreEqual(1920ull * 1080ull * 4ull, oneX);
     Assert::AreEqual(oneX * 4ull, twoX);
+}
+
+TEST_CASE(ExportSize_CheckedRgbaByteCountRejectsInvalidAndExcessiveDimensions) {
+    std::size_t bytes = 0;
+
+    Assert::IsFalse(checkedRgbaByteCount(0, 16, bytes));
+    Assert::AreEqual(static_cast<std::size_t>(0), bytes);
+    Assert::IsFalse(checkedRgbaByteCount(-1, 16, bytes));
+    Assert::IsTrue(checkedRgbaByteCount(kMaxExportDimension, kMaxExportDimension, bytes));
+    Assert::AreEqual(static_cast<std::size_t>(kMaxExportDimension) *
+                         static_cast<std::size_t>(kMaxExportDimension) * 4u,
+                     bytes);
+    Assert::IsFalse(checkedRgbaByteCount(kMaxExportDimension + 1, kMaxExportDimension, bytes));
+    Assert::AreEqual(static_cast<std::size_t>(0), bytes);
 }
 
 TEST_CASE(ExportSize_EffectiveSupersamplingPreservesMaxDimension) {
@@ -334,6 +349,52 @@ TEST_CASE(ExportAspect_NormalizesDegenerateBounds) {
     assertClose(resolved.scaleX, resolved.scaleY);
     Assert::IsTrue(worldBoundsWidth(resolved.visibleBounds) > 0.0);
     Assert::IsTrue(worldBoundsHeight(resolved.visibleBounds) > 0.0);
+}
+
+TEST_CASE(ExportAspect_NormalizesNonFiniteAndHugeBoundsToFiniteView) {
+    const ExportWorldBounds cases[] = {
+        { std::numeric_limits<double>::quiet_NaN(),
+          std::numeric_limits<double>::quiet_NaN(),
+          -2.0,
+          2.0 },
+        { -1.0,
+          std::numeric_limits<double>::infinity(),
+          -2.0,
+          2.0 },
+        { -std::numeric_limits<double>::infinity(),
+          1.0,
+          -2.0,
+          2.0 },
+        { 4.0,
+          -4.0,
+          5.0,
+          -5.0 },
+        { 1.0e308,
+          1.0e308,
+          -1.0e308,
+          1.0e308 }
+    };
+
+    for (const ExportWorldBounds& source : cases) {
+        const auto resolved = resolveExportView(
+            640,
+            480,
+            source,
+            ExportAspectMode::PreserveMathematicalScale);
+
+        Assert::IsTrue(std::isfinite(resolved.scaleX));
+        Assert::IsTrue(std::isfinite(resolved.scaleY));
+        Assert::IsTrue(resolved.scaleX > 0.0);
+        Assert::IsTrue(resolved.scaleY > 0.0);
+        Assert::IsTrue(std::isfinite(resolved.visibleBounds.xMin));
+        Assert::IsTrue(std::isfinite(resolved.visibleBounds.xMax));
+        Assert::IsTrue(std::isfinite(resolved.visibleBounds.yMin));
+        Assert::IsTrue(std::isfinite(resolved.visibleBounds.yMax));
+        Assert::IsTrue(worldBoundsWidth(resolved.visibleBounds) > 0.0);
+        Assert::IsTrue(worldBoundsHeight(resolved.visibleBounds) > 0.0);
+        Assert::IsTrue(std::isfinite(resolved.contentWidthPx));
+        Assert::IsTrue(std::isfinite(resolved.contentHeightPx));
+    }
 }
 
 TEST_CASE(ExportAspect_SupersamplingDoesNotAlterWorldBounds) {

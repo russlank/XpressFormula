@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // JsonParser.cpp - Strict internal JSON parser implementation.
 #include "JsonParser.h"
+#include "../../Core/InputLimits.h"
 
 #include <cerrno>
 #include <cctype>
@@ -14,6 +15,13 @@ JsonParser::JsonParser(std::string_view input)
 }
 
 bool JsonParser::parse(JsonValue& value, std::string& error) {
+    m_pos = 0;
+    m_depth = 0;
+    m_valueCount = 0;
+    m_error.clear();
+    error.clear();
+    value = JsonValue{};
+
     skipWhitespace();
     if (!parseValue(value)) {
         error = m_error.empty() ? "Invalid JSON." : m_error;
@@ -47,6 +55,9 @@ bool JsonParser::parseValue(JsonValue& value) {
     skipWhitespace();
     if (m_pos >= m_input.size()) {
         m_error = "Unexpected end of JSON.";
+        return false;
+    }
+    if (!trackValue()) {
         return false;
     }
 
@@ -85,8 +96,12 @@ bool JsonParser::parseValue(JsonValue& value) {
 }
 
 bool JsonParser::parseObject(JsonValue& value) {
+    if (!enterContainer()) {
+        return false;
+    }
     if (!consume('{')) {
         m_error = "Expected object.";
+        leaveContainer();
         return false;
     }
     value.type = JsonValue::Type::Object;
@@ -94,6 +109,7 @@ bool JsonParser::parseObject(JsonValue& value) {
     skipWhitespace();
     if (m_pos < m_input.size() && m_input[m_pos] == '}') {
         ++m_pos;
+        leaveContainer();
         return true;
     }
 
@@ -101,14 +117,22 @@ bool JsonParser::parseObject(JsonValue& value) {
         std::string key;
         if (!parseString(key)) {
             m_error = "Expected object key.";
+            leaveContainer();
             return false;
         }
         if (!consume(':')) {
             m_error = "Expected ':' after object key.";
+            leaveContainer();
+            return false;
+        }
+        if (value.object.find(key) != value.object.end()) {
+            m_error = "Duplicate JSON object key.";
+            leaveContainer();
             return false;
         }
         JsonValue member;
         if (!parseValue(member)) {
+            leaveContainer();
             return false;
         }
         value.object[std::move(key)] = std::move(member);
@@ -116,18 +140,24 @@ bool JsonParser::parseObject(JsonValue& value) {
         skipWhitespace();
         if (m_pos < m_input.size() && m_input[m_pos] == '}') {
             ++m_pos;
+            leaveContainer();
             return true;
         }
         if (!consume(',')) {
             m_error = "Expected ',' or '}' in object.";
+            leaveContainer();
             return false;
         }
     }
 }
 
 bool JsonParser::parseArray(JsonValue& value) {
+    if (!enterContainer()) {
+        return false;
+    }
     if (!consume('[')) {
         m_error = "Expected array.";
+        leaveContainer();
         return false;
     }
     value.type = JsonValue::Type::Array;
@@ -135,12 +165,14 @@ bool JsonParser::parseArray(JsonValue& value) {
     skipWhitespace();
     if (m_pos < m_input.size() && m_input[m_pos] == ']') {
         ++m_pos;
+        leaveContainer();
         return true;
     }
 
     for (;;) {
         JsonValue item;
         if (!parseValue(item)) {
+            leaveContainer();
             return false;
         }
         value.array.push_back(std::move(item));
@@ -148,13 +180,39 @@ bool JsonParser::parseArray(JsonValue& value) {
         skipWhitespace();
         if (m_pos < m_input.size() && m_input[m_pos] == ']') {
             ++m_pos;
+            leaveContainer();
             return true;
         }
         if (!consume(',')) {
             m_error = "Expected ',' or ']' in array.";
+            leaveContainer();
             return false;
         }
     }
+}
+
+bool JsonParser::enterContainer() {
+    if (m_depth >= Core::InputLimits::kMaxJsonDepth) {
+        m_error = "JSON nesting depth exceeds the supported limit.";
+        return false;
+    }
+    ++m_depth;
+    return true;
+}
+
+void JsonParser::leaveContainer() noexcept {
+    if (m_depth > 0) {
+        --m_depth;
+    }
+}
+
+bool JsonParser::trackValue() {
+    if (m_valueCount >= Core::InputLimits::kMaxJsonValues) {
+        m_error = "JSON value count exceeds the supported limit.";
+        return false;
+    }
+    ++m_valueCount;
+    return true;
 }
 
 int JsonParser::hexValue(char ch) {
@@ -203,6 +261,85 @@ bool JsonParser::appendUtf8(std::string& text, std::uint32_t codePoint) {
         text.push_back(static_cast<char>(0x80 | ((codePoint >> 12) & 0x3F)));
         text.push_back(static_cast<char>(0x80 | ((codePoint >> 6) & 0x3F)));
         text.push_back(static_cast<char>(0x80 | (codePoint & 0x3F)));
+    }
+    return true;
+}
+
+bool JsonParser::appendRawUtf8(std::string& text, unsigned char lead) {
+    auto fail = [&]() {
+        m_error = "Invalid raw UTF-8 in JSON string.";
+        return false;
+    };
+
+    auto readContinuation = [&]() -> int {
+        if (m_pos >= m_input.size()) {
+            return -1;
+        }
+        const unsigned char value = static_cast<unsigned char>(m_input[m_pos]);
+        if ((value & 0xC0u) != 0x80u) {
+            return -1;
+        }
+        ++m_pos;
+        text.push_back(static_cast<char>(value));
+        return static_cast<int>(value);
+    };
+
+    text.push_back(static_cast<char>(lead));
+    if (lead >= 0xC2u && lead <= 0xDFu) {
+        return readContinuation() >= 0 || fail();
+    }
+
+    int continuationCount = 0;
+    if (lead == 0xE0u) {
+        if (m_pos >= m_input.size()) {
+            return fail();
+        }
+        const unsigned char second = static_cast<unsigned char>(m_input[m_pos]);
+        if (second < 0xA0u || second > 0xBFu) {
+            return fail();
+        }
+        continuationCount = 2;
+    } else if (lead >= 0xE1u && lead <= 0xECu) {
+        continuationCount = 2;
+    } else if (lead == 0xEDu) {
+        if (m_pos >= m_input.size()) {
+            return fail();
+        }
+        const unsigned char second = static_cast<unsigned char>(m_input[m_pos]);
+        if (second < 0x80u || second > 0x9Fu) {
+            return fail();
+        }
+        continuationCount = 2;
+    } else if (lead >= 0xEEu && lead <= 0xEFu) {
+        continuationCount = 2;
+    } else if (lead == 0xF0u) {
+        if (m_pos >= m_input.size()) {
+            return fail();
+        }
+        const unsigned char second = static_cast<unsigned char>(m_input[m_pos]);
+        if (second < 0x90u || second > 0xBFu) {
+            return fail();
+        }
+        continuationCount = 3;
+    } else if (lead >= 0xF1u && lead <= 0xF3u) {
+        continuationCount = 3;
+    } else if (lead == 0xF4u) {
+        if (m_pos >= m_input.size()) {
+            return fail();
+        }
+        const unsigned char second = static_cast<unsigned char>(m_input[m_pos]);
+        if (second < 0x80u || second > 0x8Fu) {
+            return fail();
+        }
+        continuationCount = 3;
+    } else {
+        return fail();
+    }
+
+    for (int i = 0; i < continuationCount; ++i) {
+        if (readContinuation() < 0) {
+            return fail();
+        }
     }
     return true;
 }
@@ -258,9 +395,16 @@ bool JsonParser::parseString(std::string& text) {
             return true;
         }
         if (ch != '\\') {
-            if (static_cast<unsigned char>(ch) < 0x20) {
+            const unsigned char byte = static_cast<unsigned char>(ch);
+            if (byte < 0x20) {
                 m_error = "Invalid unescaped control character in JSON string.";
                 return false;
+            }
+            if (byte >= 0x80u) {
+                if (!appendRawUtf8(text, byte)) {
+                    return false;
+                }
+                continue;
             }
             text.push_back(ch);
             continue;

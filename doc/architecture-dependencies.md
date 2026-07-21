@@ -69,7 +69,7 @@ Some file paths still live under `Core` or `UI` even when their project ownershi
 
 This makes tests consume the same production object code used by the executable. Header-only helpers are still compiled in test translation units until later modernization phases give them `.cpp` ownership.
 
-Run `tools\check-architecture-boundaries.ps1` from the repository root before architecture-boundary PRs. It enforces the most important source and project-file rules locally and runs in PR/release workflows.
+Run `tools\check-architecture-boundaries.ps1` from the repository root before architecture-boundary PRs. It enforces the most important source rules, project-reference direction, source ownership, toolset/warning policy, test-linkage policy, public/private documentation separation, and function-reference coverage locally and in PR/release workflows.
 
 ## Migration Rules
 

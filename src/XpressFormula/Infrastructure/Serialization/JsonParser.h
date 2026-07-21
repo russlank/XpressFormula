@@ -23,9 +23,13 @@ private:
     bool parseValue(JsonValue& value);
     bool parseObject(JsonValue& value);
     bool parseArray(JsonValue& value);
+    bool enterContainer();
+    void leaveContainer() noexcept;
+    bool trackValue();
     static int hexValue(char ch);
     bool parseHexQuad(std::uint32_t& codeUnit);
     bool appendUtf8(std::string& text, std::uint32_t codePoint);
+    bool appendRawUtf8(std::string& text, unsigned char lead);
     bool parseUnicodeEscape(std::string& text);
     bool parseString(std::string& text);
     bool parseNumber(double& number);
@@ -33,6 +37,8 @@ private:
 
     std::string_view m_input;
     std::size_t m_pos = 0;
+    std::size_t m_depth = 0;
+    std::size_t m_valueCount = 0;
     std::string m_error;
 };
 

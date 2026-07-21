@@ -73,29 +73,46 @@ WinHttpResponse failure(std::string message, unsigned int statusCode = 0) {
     return response;
 }
 
-std::string readResponseBody(HINTERNET requestHandle) {
-    std::string response;
+bool readResponseBody(HINTERNET requestHandle,
+                      std::size_t maxResponseBytes,
+                      std::string& response,
+                      std::string& error) {
+    response.clear();
     if (!requestHandle) {
-        return response;
+        error = "HTTP request handle is not valid.";
+        return false;
     }
 
     for (;;) {
         DWORD bytesAvailable = 0;
         if (!::WinHttpQueryDataAvailable(requestHandle, &bytesAvailable)) {
-            return {};
+            error = "could not query HTTP response data.";
+            return false;
         }
         if (bytesAvailable == 0) {
             break;
         }
 
+        const std::size_t available = static_cast<std::size_t>(bytesAvailable);
+        if (response.size() > maxResponseBytes ||
+            available > maxResponseBytes - response.size()) {
+            error = "HTTP response body exceeds the supported limit.";
+            return false;
+        }
+        if (available > response.max_size() - response.size()) {
+            error = "HTTP response body is too large to store.";
+            return false;
+        }
+
         const std::size_t oldSize = response.size();
-        response.resize(oldSize + static_cast<std::size_t>(bytesAvailable));
+        response.resize(oldSize + available);
         DWORD bytesRead = 0;
         if (!::WinHttpReadData(requestHandle,
                                response.data() + oldSize,
                                bytesAvailable,
                                &bytesRead)) {
-            return {};
+            error = "could not read HTTP response data.";
+            return false;
         }
         response.resize(oldSize + static_cast<std::size_t>(bytesRead));
         if (bytesRead == 0) {
@@ -103,7 +120,7 @@ std::string readResponseBody(HINTERNET requestHandle) {
         }
     }
 
-    return response;
+    return true;
 }
 
 } // namespace
@@ -170,7 +187,10 @@ WinHttpResponse WinHttpClient::get(const WinHttpGetRequest& request) const {
 
     WinHttpResponse response;
     response.statusCode = static_cast<unsigned int>(statusCode);
-    response.body = readResponseBody(httpRequest.get());
+    std::string readError;
+    if (!readResponseBody(httpRequest.get(), request.maxResponseBytes, response.body, readError)) {
+        return failure(std::move(readError), response.statusCode);
+    }
     response.success = true;
     return response;
 }

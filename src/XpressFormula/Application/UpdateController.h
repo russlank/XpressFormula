@@ -2,8 +2,8 @@
 #pragma once
 
 #include <chrono>
-#include <future>
 #include <functional>
+#include <memory>
 #include <string>
 #include <string_view>
 
@@ -46,6 +46,7 @@ public:
     [[nodiscard]] bool requestManualCheck();
     [[nodiscard]] bool poll();
     [[nodiscard]] bool waitForPendingCheck();
+    [[nodiscard]] bool cancelPendingCheckForShutdown();
 
     [[nodiscard]] UpdateNotificationState notificationState() const;
     [[nodiscard]] bool checkInProgress() const noexcept { return m_checkInProgress; }
@@ -66,11 +67,13 @@ public:
     [[nodiscard]] static std::string_view supportUrlUtf8() noexcept;
 
 private:
+    struct WorkerState;
+
     [[nodiscard]] bool startCheck(bool manualRequest);
     void applyResult(UpdateCheckResult result);
 
     ReleaseFetcher m_releaseFetcher;
-    std::future<UpdateCheckResult> m_future;
+    std::shared_ptr<WorkerState> m_worker;
     bool m_checkInProgress = false;
     bool m_startupCheckDone = false;
     Clock::time_point m_startupTime = Clock::now();

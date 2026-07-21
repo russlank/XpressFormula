@@ -2,6 +2,7 @@
 // ProjectMapper.cpp - Mapping between live model state and project persistence DTOs.
 #include "ProjectMapper.h"
 #include "ProjectSerializer.h"
+#include "../../Core/InputLimits.h"
 #include "../../Model/PlotPolicy.h"
 
 #include <algorithm>
@@ -99,8 +100,14 @@ ProjectSession makeProjectSession(const std::vector<Model::Formula>& formulas,
 ProjectMapResult mapProjectSessionToDocument(const ProjectSession& session) {
     ProjectMapResult result;
     result.document.formulas.clear();
-    result.document.formulas.reserve(session.formulas.size());
+    result.document.formulas.reserve(
+        (std::min)(session.formulas.size(), Core::InputLimits::kMaxProjectFormulas));
     for (std::size_t i = 0; i < session.formulas.size(); ++i) {
+        if (i >= Core::InputLimits::kMaxProjectFormulas) {
+            result.warnings.emplace_back("Skipped remaining formulas: project formula limit reached.");
+            break;
+        }
+
         const ProjectFormulaRecord& record = session.formulas[i];
         Model::Formula entry;
         entry.setExpression(record.expression);

@@ -954,8 +954,13 @@ bool Application::capturePlotPixels(std::vector<std::uint8_t>& pixels, int& widt
         return false;
     }
 
+    std::size_t pixelBytes = 0;
+    if (!XFExport::checkedRgbaByteCount(width, height, pixelBytes)) {
+        m_deviceContext->Unmap(stagingTexture.get(), 0);
+        return false;
+    }
     const size_t rowBytes = static_cast<size_t>(width) * 4;
-    pixels.resize(static_cast<size_t>(height) * rowBytes);
+    pixels.resize(pixelBytes);
     for (int y = 0; y < height; ++y) {
         const auto* src = static_cast<const std::uint8_t*>(mapped.pData) +
             static_cast<size_t>(y) * mapped.RowPitch;
@@ -1007,8 +1012,13 @@ bool Application::readTexturePixelsRgba(ID3D11Texture2D* sourceTexture,
         return false;
     }
 
+    std::size_t pixelBytes = 0;
+    if (!XFExport::checkedRgbaByteCount(width, height, pixelBytes)) {
+        m_deviceContext->Unmap(stagingTexture.get(), 0);
+        return false;
+    }
     const size_t rowBytes = static_cast<size_t>(width) * 4u;
-    pixels.resize(static_cast<size_t>(height) * rowBytes);
+    pixels.resize(pixelBytes);
     for (int y = 0; y < height; ++y) {
         const auto* src = static_cast<const std::uint8_t*>(mapped.pData) +
             static_cast<size_t>(y) * mapped.RowPitch;

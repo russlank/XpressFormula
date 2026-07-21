@@ -135,6 +135,50 @@ TEST_CASE(ImageProcessor_PreparesFinalBgraAndResizes) {
     Assert::AreEqual(255, static_cast<int>(image.pixels[3]));
 }
 
+TEST_CASE(ImageProcessor_RejectsInvalidOversizedAndTooSmallBuffers) {
+    std::vector<std::uint8_t> resized;
+    XFExport::resizePixelsBilinear({}, 0, 1, 1, 1, resized);
+    Assert::IsTrue(resized.empty());
+
+    const std::vector<std::uint8_t> onePixel = { 255, 0, 0, 255 };
+    XFExport::resizePixelsBilinear(
+        onePixel,
+        XFExport::kMaxExportDimension + 1,
+        XFExport::kMaxExportDimension,
+        1,
+        1,
+        resized);
+    Assert::IsTrue(resized.empty());
+
+    XFExport::ExportSettings settings = XFExport::defaultExportSettings();
+    settings.size.width = 16;
+    settings.size.height = 16;
+    const XFExport::ProcessedImage tooSmall =
+        XFExport::prepareFinalBgraImage(onePixel, 2, 2, settings);
+    Assert::IsTrue(tooSmall.pixels.empty());
+    Assert::AreEqual(0, tooSmall.width);
+    Assert::AreEqual(0, tooSmall.height);
+}
+
+TEST_CASE(ImageProcessor_AcceptsLargerThanRequiredSourceBuffer) {
+    XFExport::ExportSettings settings = XFExport::defaultExportSettings();
+    settings.size.width = 16;
+    settings.size.height = 16;
+
+    const std::vector<std::uint8_t> rgba = {
+        1, 2, 3, 255,
+        99, 99, 99, 99
+    };
+    const XFExport::ProcessedImage image =
+        XFExport::prepareFinalBgraImage(rgba, 1, 1, settings);
+
+    Assert::AreEqual(16, image.width);
+    Assert::AreEqual(16, image.height);
+    Assert::AreEqual(3, static_cast<int>(image.pixels[0]));
+    Assert::AreEqual(2, static_cast<int>(image.pixels[1]));
+    Assert::AreEqual(1, static_cast<int>(image.pixels[2]));
+}
+
 TEST_CASE(ExportMetadataSerializer_BuildsPlainModelAndJson) {
     XFExport::ExportSettings settings = XFExport::defaultExportSettings();
     settings.size.width = 640;

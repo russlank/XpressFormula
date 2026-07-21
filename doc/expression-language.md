@@ -5,7 +5,7 @@
 
 Inputs support:
 
-- Numbers: `42`, `3.14`, `1.5e-3`
+- Numbers: `42`, `3.14`, `.5`, `5.`, `1.5e-3`
 - Variables: `x`, `y`, `z`
 - Constants: `pi`, `e`, `tau`
 - Operators: `+`, `-`, `*`, `/`, `^`
@@ -28,6 +28,10 @@ Equation parsing is handled as:
 - `formula := expression | expression '=' expression`
 - Equations are internally converted to `left - right` for implicit plotting/evaluation.
 
+## Numeric Literals
+
+Numeric literals use decimal syntax with optional fractional and scientific-notation parts. At least one decimal digit is required, so `.5` and `5.` are valid but `.` is not. The parser rejects malformed, incomplete, out-of-range, underflowing, and non-finite numbers with normal formula diagnostics instead of throwing exceptions from the editor/compiler path.
+
 ## Operator Behavior
 
 - `^` is right-associative: `2 ^ 3 ^ 2` is parsed as `2 ^ (3 ^ 2)`
@@ -38,10 +42,11 @@ Equation parsing is handled as:
 ## Built-in Functions
 
 Function names are case-sensitive. Unknown functions fail during parsing. Known
-functions may parse with any number of comma-separated arguments, but evaluation
-uses strict arity: too few or too many arguments return `NaN`. The one
-intentional variable-arity function is `log`, which supports `log(a)` and
-`log(base, value)`.
+functions are validated against the function registry during parsing/compilation,
+so too few or too many arguments make the formula invalid before it can be shown
+as valid. The one intentional variable-arity function is `log`, which supports
+`log(a)` and `log(base, value)`. The evaluator keeps defensive arity checks for
+malformed ASTs or direct low-level calls and returns `NaN` in those cases.
 
 The Formula Editor includes a richer Reference area with separate Functions and
 Examples tabs. Function rows have detailed help with the signature, category,
@@ -141,13 +146,25 @@ The evaluator returns `NaN` for invalid operations, including:
 - division by zero
 - `sqrt` of negative
 - logarithm with invalid domain/base
-- wrong number of function arguments
+- defensive evaluation of a malformed function call with the wrong number of arguments
 - `repeat(x, 0)`
 - equal endpoints for `inverseLerp`, `smoothstep`, `smootherstep`, or `remap`
 - negative signed-distance radii or box half-extents
 - unknown variable value
 
 `NaN` values are ignored/skipped in plotting where possible.
+
+## Input Limits
+
+User formulas are bounded before compilation and evaluation:
+
+- maximum formula text length: 256 KiB
+- maximum expression tokens: 100,000
+- maximum parser nesting: 512
+- maximum AST nodes: 100,000
+- maximum AST depth: 512
+
+Project loading preserves oversized or invalid formula text where possible and reports warnings so the formula can still be edited.
 
 ## Examples
 

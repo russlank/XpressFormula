@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // ProjectSerializer.cpp - DTO/JSON conversion for .xfplot schema v1.
 #include "ProjectSerializer.h"
+#include "../../Core/InputLimits.h"
 #include "../Serialization/JsonParser.h"
 #include "../Serialization/JsonWriter.h"
 
@@ -293,6 +294,10 @@ ProjectSessionParseResult parseProjectSession(std::string_view json) {
         result.error = "Project file is missing formulas array.";
         return result;
     }
+    if (formulas->array.size() > Core::InputLimits::kMaxProjectFormulas) {
+        result.error = "Project file contains too many formulas.";
+        return result;
+    }
 
     result.session.schemaVersion = kProjectSessionSchemaVersion;
     result.session.formulas.clear();
@@ -310,6 +315,11 @@ ProjectSessionParseResult parseProjectSession(std::string_view json) {
         if (!readString(item, "expression", record.expression)) {
             result.warnings.emplace_back("Skipped formula " + std::to_string(i + 1) + ": missing expression.");
             continue;
+        }
+        if (record.expression.size() > Core::InputLimits::kMaxFormulaLength) {
+            result.warnings.emplace_back(
+                "Formula " + std::to_string(i + 1) +
+                " exceeds the supported expression length and will load as invalid.");
         }
         readOptionalBool(item, "visible", record.visible);
         readOptionalFloat(item, "zSlice", record.zSlice);

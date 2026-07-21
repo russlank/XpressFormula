@@ -1,5 +1,6 @@
 // ProjectSessionTests.cpp - Unit tests for versioned .xfplot persistence.
 #include "CppUnitTest.h"
+#include "../XpressFormula/Core/InputLimits.h"
 #include "../XpressFormula/Infrastructure/Persistence/ProjectMapper.h"
 #include "../XpressFormula/Infrastructure/Persistence/ProjectSerializer.h"
 #include "../XpressFormula/Infrastructure/Serialization/JsonParser.h"
@@ -7,6 +8,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -15,6 +17,7 @@ using namespace Microsoft::VisualStudio::CppUnitTestFramework;
 using namespace XpressFormula::Infrastructure::Persistence;
 using namespace XpressFormula::Model;
 namespace XFCore = XpressFormula::Core;
+namespace XFInputLimits = XpressFormula::Core::InputLimits;
 namespace XFJson = XpressFormula::Infrastructure::Serialization;
 namespace XFModel = XpressFormula::Model;
 
@@ -439,6 +442,52 @@ TEST_CASE(ProjectSession_SkipsMalformedFormulaEntriesWithWarnings) {
     Assert::IsTrue(parsed.success);
     Assert::AreEqual(1, static_cast<int>(parsed.session.formulas.size()));
     Assert::IsTrue(parsed.warnings.size() >= 2);
+}
+
+TEST_CASE(ProjectSession_RejectsTooManyFormulas) {
+    std::ostringstream formulas;
+    formulas << '[';
+    for (std::size_t i = 0; i <= XFInputLimits::kMaxProjectFormulas; ++i) {
+        if (i != 0) {
+            formulas << ',';
+        }
+        formulas << R"({"expression":"x"})";
+    }
+    formulas << ']';
+
+    const ProjectSessionParseResult parsed =
+        parseProjectSession(makeProjectJsonWithFormulas(formulas.str()));
+
+    Assert::IsFalse(parsed.success);
+    Assert::IsTrue(parsed.error.find("too many formulas") != std::string::npos);
+}
+
+TEST_CASE(ProjectSession_WarnsAndPreservesOversizedFormula) {
+    const std::string expression(XFInputLimits::kMaxFormulaLength + 1, 'x');
+    const ProjectSessionParseResult parsed = parseProjectSession(makeProjectJsonWithFormulas(
+        std::string("[{ \"expression\": \"") + expression + "\" }]"));
+
+    Assert::IsTrue(parsed.success);
+    Assert::AreEqual(1, static_cast<int>(parsed.session.formulas.size()));
+    Assert::AreEqual(expression, parsed.session.formulas[0].expression);
+    Assert::IsFalse(parsed.warnings.empty());
+}
+
+TEST_CASE(ProjectSession_WrongArityFormulaWarnsAndPreservesTextOnLoad) {
+    ProjectSession session;
+    session.formulas.push_back(ProjectFormulaRecord{ "sin()" });
+
+    std::vector<XFModel::Formula> formulas;
+    XFCore::ViewTransform view;
+    PlotSettings plot;
+    std::vector<std::string> warnings;
+    applyProjectSession(session, formulas, view, plot, warnings);
+
+    Assert::AreEqual(1, static_cast<int>(formulas.size()));
+    Assert::AreEqual(std::string("sin()"), formulas[0].expressionText());
+    Assert::IsFalse(formulas[0].isValid());
+    Assert::IsFalse(warnings.empty());
+    Assert::IsTrue(warnings[0].find("expects") != std::string::npos);
 }
 
 TEST_CASE(ProjectSession_LongFormulaPreservesStoredExpression) {

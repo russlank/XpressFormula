@@ -109,6 +109,12 @@ const std::string& constantNamesText() {
 
 } // namespace
 
+void FormulaPanel::openAddEditor(Model::Formula formula) {
+    m_editorState.openAdd(std::move(formula));
+    m_openEditorPopupNextFrame = true;
+    m_focusEditorInput = true;
+}
+
 void FormulaPanel::openEditor(const Model::Formula& formula) {
     m_editorState.open(formula);
     m_openEditorPopupNextFrame = true;
@@ -169,7 +175,7 @@ void FormulaPanel::renderDeleteConfirmationDialog(std::span<const Model::Formula
             if (ImGui::Button("Delete", ImVec2(120.0f, 0.0f))) {
                 actions.commands.emplace_back(RemoveFormulaCommand{ *m_pendingDeleteFormulaId });
                 if (m_editorState.targetId == m_pendingDeleteFormulaId) {
-                    m_editorState.targetId.reset();
+                    m_editorState.close();
                 }
                 m_pendingDeleteFormulaId.reset();
                 ImGui::CloseCurrentPopup();
@@ -326,11 +332,18 @@ void FormulaPanel::renderEditorDialog(std::span<const Model::Formula> formulas,
         ImVec2(modalSize.maximumSize.x, modalSize.maximumSize.y));
     if (ImGui::BeginPopupModal(kFormulaEditorPopupId, nullptr,
                                ImGuiWindowFlags_NoSavedSettings)) {
+        if (!m_editorState.active()) {
+            ImGui::CloseCurrentPopup();
+            ImGui::EndPopup();
+            return;
+        }
+
+        const bool addMode = m_editorState.adding();
         const std::optional<std::size_t> formulaIndex =
-            m_editorState.targetId
+            (!addMode && m_editorState.targetId)
                 ? FormulaListActions::findFormulaIndex(formulas, *m_editorState.targetId)
                 : std::nullopt;
-        if (!formulaIndex.has_value()) {
+        if (!addMode && !formulaIndex.has_value()) {
             ImGui::TextWrapped("The selected formula is no longer available.");
             if (ImGui::Button("Close")) {
                 m_editorState.close();
@@ -340,7 +353,7 @@ void FormulaPanel::renderEditorDialog(std::span<const Model::Formula> formulas,
             return;
         }
 
-        const Model::Formula& formula = formulas[*formulaIndex];
+        const Model::Formula* formula = addMode ? nullptr : &formulas[*formulaIndex];
 
         {
         UiKit::StyleVarScope itemSpacing(
@@ -348,9 +361,19 @@ void FormulaPanel::renderEditorDialog(std::span<const Model::Formula> formulas,
         UiKit::StyleVarScope framePadding(
             ImGuiStyleVar_FramePadding, ImVec2(8.0f, 6.0f));
 
-        ImGui::Text("Formula %d", static_cast<int>(*formulaIndex + 1));
+        if (addMode) {
+            ImGui::TextUnformatted("Add Formula");
+        } else {
+            ImGui::Text("Formula %d", static_cast<int>(*formulaIndex + 1));
+        }
         ImGui::SameLine();
-        ImGui::TextDisabled("(%s)", formulaTypeLabel(formula));
+        if (m_editorState.previewAvailable && m_editorState.preview.isValid()) {
+            ImGui::TextDisabled("(%s)", formulaTypeLabel(m_editorState.preview));
+        } else if (formula) {
+            ImGui::TextDisabled("(%s)", formulaTypeLabel(*formula));
+        } else {
+            ImGui::TextDisabled("(new)");
+        }
         ImGui::Separator();
         ImGui::Dummy(ImVec2(0.0f, 2.0f));
 
@@ -398,12 +421,30 @@ void FormulaPanel::renderEditorDialog(std::span<const Model::Formula> formulas,
         ImGui::Dummy(ImVec2(0.0f, 4.0f));
         ImGui::Separator();
         ImGui::Dummy(ImVec2(0.0f, 4.0f));
-        if (ImGui::Button("Apply", ImVec2(120.0f, 0.0f))) {
-            Model::Formula updated = formula;
-            m_editorState.applyTo(updated);
-            actions.commands.emplace_back(UpdateFormulaCommand{ formula.id, std::move(updated) });
-            m_editorState.close();
-            ImGui::CloseCurrentPopup();
+        const bool canApply =
+            m_editorState.previewAvailable && m_editorState.preview.isValid();
+        {
+            UiKit::DisabledScope disabled(!canApply);
+            if (ImGui::Button("Apply", ImVec2(120.0f, 0.0f))) {
+                Model::Formula updated = addMode
+                    ? m_editorState.buildAppliedFormula()
+                    : *formula;
+                if (!addMode) {
+                    m_editorState.applyTo(updated);
+                }
+
+                if (updated.isValid()) {
+                    if (addMode) {
+                        actions.commands.emplace_back(AddFormulaCommand{ std::move(updated) });
+                        ++m_nextColorIndex;
+                    } else {
+                        actions.commands.emplace_back(
+                            UpdateFormulaCommand{ formula->id, std::move(updated) });
+                    }
+                    m_editorState.close();
+                    ImGui::CloseCurrentPopup();
+                }
+            }
         }
         ImGui::SameLine();
         if (ImGui::Button("Cancel", ImVec2(120.0f, 0.0f))) {
@@ -532,7 +573,7 @@ void FormulaPanel::renderEditorDialog(std::span<const Model::Formula> formulas,
     }
 
     if (!ImGui::IsPopupOpen(kFormulaEditorPopupId)) {
-        if (m_editorState.editing()) {
+        if (m_editorState.active()) {
             m_editorState.close();
         }
         m_focusEditorInput = false;
@@ -551,9 +592,7 @@ FormulaPanelActions FormulaPanel::render(std::span<const Model::Formula> formula
         Model::Formula entry;
         int idx = m_nextColorIndex % kPaletteSize;
         applyPaletteColor(entry, idx);
-        m_nextColorIndex++;
-        openEditor(entry);
-        actions.commands.emplace_back(AddFormulaCommand{ std::move(entry) });
+        openAddEditor(std::move(entry));
     }
 
     ImGui::Spacing();

@@ -3,15 +3,17 @@
 
 #include "FunctionRegistry.h"
 
+#include <array>
 #include <cmath>
 #include <limits>
-#include <vector>
+#include <span>
 
 namespace XpressFormula::Core {
 
 namespace {
 
 constexpr double NaN = std::numeric_limits<double>::quiet_NaN();
+constexpr std::size_t kMaxEvaluatedFunctionArguments = 8;
 
 EvaluationContext contextFromVariables(const Evaluator::Variables& vars) {
     EvaluationContext context{ NaN, NaN, NaN };
@@ -71,16 +73,22 @@ double Evaluator::evaluate(const ASTNodePtr& node, const EvaluationContext& cont
 
         case NodeType::FunctionCall: {
             auto* fn = static_cast<FunctionCallNode*>(node.get());
-            std::vector<double> args;
-            args.reserve(fn->arguments.size());
-            for (const ASTNodePtr& argument : fn->arguments) {
-                args.push_back(evaluate(argument, context));
+            if (fn->arguments.size() > kMaxEvaluatedFunctionArguments) {
+                return NaN;
             }
 
-            if (fn->definition) {
-                return evaluateFunction(*fn->definition, args);
+            std::array<double, kMaxEvaluatedFunctionArguments> args{};
+            std::size_t argCount = 0;
+            for (const ASTNodePtr& argument : fn->arguments) {
+                args[argCount++] = evaluate(argument, context);
             }
-            return evaluateFunction(fn->name, args);
+
+            const std::span<const double> argSpan(args.data(), argCount);
+
+            if (fn->definition) {
+                return evaluateFunction(*fn->definition, argSpan);
+            }
+            return evaluateFunction(fn->name, argSpan);
         }
     }
 

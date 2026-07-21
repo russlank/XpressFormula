@@ -2,6 +2,9 @@
 // WinHttpClient.h - Narrow WinHTTP GET client and release JSON parsing.
 #pragma once
 
+#include "../../Core/InputLimits.h"
+
+#include <cstddef>
 #include <string>
 #include <string_view>
 
@@ -18,6 +21,7 @@ struct WinHttpGetRequest {
     int connectTimeoutMs = 3000;
     int sendTimeoutMs = 5000;
     int receiveTimeoutMs = 5000;
+    std::size_t maxResponseBytes = Core::InputLimits::kMaxHttpResponseBytes;
 };
 
 struct WinHttpResponse {
@@ -54,4 +58,3 @@ public:
 [[nodiscard]] GitHubReleaseParseResult parseGitHubLatestReleaseResponse(std::string_view body);
 
 } // namespace XpressFormula::Platform::Windows
-

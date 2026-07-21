@@ -2,6 +2,7 @@
 #include "ScalarGridSampler.h"
 
 #include "../../Core/Evaluator.h"
+#include "../../Core/InputLimits.h"
 
 #include <algorithm>
 #include <cmath>
@@ -15,7 +16,26 @@ namespace {
                                     const Geometry::Bounds2D& bounds,
                                     int columns,
                                     int rows) noexcept {
-    return ast && bounds.valid() && columns > 0 && rows > 0;
+    if (!ast || !bounds.valid() || columns <= 0 || rows <= 0) {
+        return false;
+    }
+
+    const auto columnCount = static_cast<std::size_t>(columns);
+    const auto rowCount = static_cast<std::size_t>(rows);
+    return columnCount <= Core::InputLimits::kMaxScalarGridCells / rowCount;
+}
+
+[[nodiscard]] bool validLatticeRequest(const Core::ASTNodePtr& ast,
+                                       const Geometry::Bounds2D& bounds,
+                                       int columns,
+                                       int rows) noexcept {
+    if (!validGridRequest(ast, bounds, columns, rows)) {
+        return false;
+    }
+
+    const auto pointsX = static_cast<std::size_t>(columns) + 1u;
+    const auto pointsY = static_cast<std::size_t>(rows) + 1u;
+    return pointsX <= Core::InputLimits::kMaxScalarLatticePoints / pointsY;
 }
 
 void applyRangeFallback(ScalarCellGrid& grid, double lo, double hi) noexcept {
@@ -44,7 +64,7 @@ ScalarCellGrid sampleScalarCellGrid(const Core::ASTNodePtr& ast,
         return grid;
     }
 
-    grid.values.assign(static_cast<size_t>(grid.columns * grid.rows),
+    grid.values.assign(static_cast<size_t>(grid.columns) * static_cast<size_t>(grid.rows),
                        std::numeric_limits<double>::quiet_NaN());
     const double dx = grid.cellWidth();
     const double dy = grid.cellHeight();
@@ -82,7 +102,7 @@ ScalarLattice sampleScalarLattice(const Core::ASTNodePtr& ast,
     lattice.cellsX = options.columns;
     lattice.cellsY = options.rows;
 
-    if (!validGridRequest(ast, options.bounds, options.columns, options.rows)) {
+    if (!validLatticeRequest(ast, options.bounds, options.columns, options.rows)) {
         lattice.cellsX = 0;
         lattice.cellsY = 0;
         return lattice;

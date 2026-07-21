@@ -1,5 +1,6 @@
 // PlatformWindowsServicesTests.cpp - Pure tests for Windows platform service planning helpers.
 #include "CppUnitTest.h"
+#include "../XpressFormula/Core/InputLimits.h"
 #include "../XpressFormula/Platform/Windows/ClipboardService.h"
 #include "../XpressFormula/Platform/Windows/FileDialogService.h"
 #include "../XpressFormula/Platform/Windows/ShellService.h"
@@ -16,6 +17,7 @@
 
 using namespace Microsoft::VisualStudio::CppUnitTestFramework;
 namespace XFW = XpressFormula::Platform::Windows;
+namespace XFInputLimits = XpressFormula::Core::InputLimits;
 
 namespace XpressFormulaTests {
 
@@ -89,6 +91,19 @@ TEST_CASE(ClipboardService_DibLayoutIsBottomUpBgra) {
     }
 }
 
+TEST_CASE(ClipboardService_RejectsInvalidImagePayloads) {
+    const std::vector<std::uint8_t> onePixel = { 0, 0, 0, 255 };
+
+    Assert::IsFalse(XFW::buildBottomUpDibFromBgra(onePixel, 0, 1).success);
+    Assert::IsFalse(XFW::buildBottomUpDibFromBgra(onePixel, 2, 2).success);
+}
+
+TEST_CASE(WinHttpClient_DefaultRequestUsesCentralResponseLimit) {
+    XFW::WinHttpGetRequest request;
+
+    Assert::AreEqual(XFInputLimits::kMaxHttpResponseBytes, request.maxResponseBytes);
+}
+
 TEST_CASE(WinHttpClient_ParsesGitHubReleaseJsonThroughSharedParser) {
     const XFW::GitHubReleaseParseResult parsed =
         XFW::parseGitHubLatestReleaseResponse(
@@ -104,4 +119,3 @@ TEST_CASE(WinHttpClient_ParsesGitHubReleaseJsonThroughSharedParser) {
 }
 
 } // namespace XpressFormulaTests
-

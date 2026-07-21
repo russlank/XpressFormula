@@ -1,5 +1,6 @@
 // ProjectPersistenceSubsystemTests.cpp - Integration tests for project persistence boundaries.
 #include "CppUnitTest.h"
+#include "../XpressFormula/Core/InputLimits.h"
 #include "../XpressFormula/Infrastructure/Persistence/ProjectMapper.h"
 #include "../XpressFormula/Infrastructure/Persistence/ProjectRepository.h"
 #include "../XpressFormula/Infrastructure/Persistence/ProjectSerializer.h"
@@ -14,6 +15,7 @@
 
 using namespace Microsoft::VisualStudio::CppUnitTestFramework;
 namespace XFPersist = XpressFormula::Infrastructure::Persistence;
+namespace XFInputLimits = XpressFormula::Core::InputLimits;
 namespace XFWUtf = XpressFormula::Platform::Windows;
 
 namespace XpressFormulaTests {
@@ -103,6 +105,25 @@ TEST_CASE(ProjectRepository_ReportsMalformedAndUnsupportedFiles) {
     const XFPersist::ProjectLoadResult unsupportedResult = repository.load(unsupported);
     Assert::IsFalse(unsupportedResult.success);
     Assert::IsTrue(unsupportedResult.error.find("Unsupported") != std::string::npos);
+
+    std::error_code ignored;
+    std::filesystem::remove_all(dir, ignored);
+}
+
+TEST_CASE(ProjectRepository_RejectsOversizedFileBeforeParsing) {
+    const std::filesystem::path dir = uniquePersistenceTestDirectory();
+    const std::filesystem::path projectPath = dir / L"huge.xfplot";
+    {
+        std::ofstream out(projectPath, std::ios::binary | std::ios::trunc);
+        out.seekp(static_cast<std::streamoff>(XFInputLimits::kMaxProjectFileBytes));
+        out.put('\0');
+    }
+
+    XFPersist::ProjectRepository repository;
+    const XFPersist::ProjectLoadResult result = repository.load(projectPath);
+
+    Assert::IsFalse(result.success);
+    Assert::IsTrue(result.error.find("larger than the supported limit") != std::string::npos);
 
     std::error_code ignored;
     std::filesystem::remove_all(dir, ignored);

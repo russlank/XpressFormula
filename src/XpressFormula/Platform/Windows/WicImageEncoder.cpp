@@ -2,6 +2,7 @@
 // WicImageEncoder.cpp - Windows image encoding service.
 #include "WicImageEncoder.h"
 #include "ComPtr.h"
+#include "../../Core/InputLimits.h"
 
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -55,6 +56,15 @@ bool validImageInput(std::span<const std::uint8_t> pixels,
         return false;
     }
     pixelBytes = rowBytes * heightValue;
+    if (pixelBytes > Core::InputLimits::kMaxImageBufferBytes) {
+        result.error = "Image pixel buffer exceeds the supported limit.";
+        return false;
+    }
+    if (rowBytes > (std::numeric_limits<UINT>::max)() ||
+        pixelBytes > (std::numeric_limits<UINT>::max)()) {
+        result.error = "Image dimensions exceed the Windows encoder limit.";
+        return false;
+    }
     if (pixels.size() < pixelBytes) {
         result.error = "Image pixel buffer is too small.";
         return false;

@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <limits>
+#include <string>
 #include <utility>
 
 namespace XpressFormula::Infrastructure::FileSystem {
@@ -28,6 +29,18 @@ AtomicWriteResult failure(std::string message, unsigned long win32Error = 0) {
 void cleanupTempFile(const std::filesystem::path& tempPath) {
     std::error_code ignored;
     std::filesystem::remove(tempPath, ignored);
+}
+
+std::filesystem::path uniqueAtomicTempPathFor(const std::filesystem::path& targetPath,
+                                              unsigned int attempt) {
+    std::filesystem::path tempPath = targetPath;
+    tempPath += L".tmp.";
+    tempPath += std::to_wstring(::GetCurrentProcessId());
+    tempPath += L".";
+    tempPath += std::to_wstring(::GetTickCount64());
+    tempPath += L".";
+    tempPath += std::to_wstring(attempt);
+    return tempPath;
 }
 
 bool writeAll(HANDLE fileHandle, std::span<const std::uint8_t> bytes, AtomicWriteResult& result) {
@@ -72,16 +85,27 @@ AtomicWriteResult writeBytesAtomically(const std::filesystem::path& targetPath,
         return failure("Target path is empty");
     }
 
-    const std::filesystem::path tempPath = atomicTempPathFor(targetPath);
-    HANDLE fileHandle = ::CreateFileW(tempPath.wstring().c_str(),
-                                      GENERIC_WRITE,
-                                      0,
-                                      nullptr,
-                                      CREATE_ALWAYS,
-                                      FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN,
-                                      nullptr);
+    std::filesystem::path tempPath;
+    HANDLE fileHandle = INVALID_HANDLE_VALUE;
+    for (unsigned int attempt = 0; attempt < 64; ++attempt) {
+        tempPath = uniqueAtomicTempPathFor(targetPath, attempt);
+        fileHandle = ::CreateFileW(tempPath.wstring().c_str(),
+                                   GENERIC_WRITE,
+                                   0,
+                                   nullptr,
+                                   CREATE_NEW,
+                                   FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN,
+                                   nullptr);
+        if (fileHandle != INVALID_HANDLE_VALUE) {
+            break;
+        }
+        const DWORD error = ::GetLastError();
+        if (error != ERROR_FILE_EXISTS) {
+            return failure("Could not create temp file", error);
+        }
+    }
     if (fileHandle == INVALID_HANDLE_VALUE) {
-        return failure("Could not open temp file", ::GetLastError());
+        return failure("Could not create unique temp file", ::GetLastError());
     }
 
     AtomicWriteResult result;

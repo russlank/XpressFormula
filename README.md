@@ -44,8 +44,10 @@ The app supports:
 ## Requirements
 
 - Windows 10/11
-- Visual Studio 2022/2026 with C++ workload
+- Visual Studio 2026 or Build Tools 2026 with the C++ workload (MSBuild 18.x, MSVC platform toolset `v145`)
 - Windows SDK (10.0+)
+
+The repository, CI, and release scripts default to `v145`. Visual Studio 2022 users need to retarget locally to an installed toolset such as `v143`.
 
 ## Quick Start
 

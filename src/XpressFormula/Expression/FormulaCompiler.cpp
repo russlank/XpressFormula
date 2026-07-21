@@ -1,6 +1,7 @@
 // FormulaCompiler.cpp - Formula parsing, equation normalization, and classification.
 #include "FormulaCompiler.h"
 
+#include "../Core/InputLimits.h"
 #include "../Core/Parser.h"
 
 #include <algorithm>
@@ -43,6 +44,87 @@ std::string unsupportedVariablesError(const VariableSet& variables) {
 
 void appendVariables(VariableSet& destination, const VariableSet& source) {
     destination.insert(source.begin(), source.end());
+}
+
+std::size_t maxParenthesisNesting(std::string_view text) noexcept {
+    std::size_t current = 0;
+    std::size_t maximum = 0;
+    for (char ch : text) {
+        if (ch == '(') {
+            ++current;
+            maximum = std::max(maximum, current);
+        } else if (ch == ')' && current > 0) {
+            --current;
+        }
+    }
+    return maximum;
+}
+
+struct AstLimitState {
+    std::size_t nodes = 0;
+    std::size_t maxDepth = 0;
+    bool exceeded = false;
+};
+
+void accumulateAstLimits(const Core::ASTNodePtr& node,
+                         std::size_t depth,
+                         AstLimitState& state) {
+    if (!node || state.exceeded) {
+        return;
+    }
+
+    ++state.nodes;
+    state.maxDepth = std::max(state.maxDepth, depth);
+    if (state.nodes > Core::InputLimits::kMaxAstNodes ||
+        depth > Core::InputLimits::kMaxAstDepth) {
+        state.exceeded = true;
+        return;
+    }
+
+    switch (node->type()) {
+        case Core::NodeType::BinaryOp: {
+            const auto* binary = static_cast<Core::BinaryOpNode*>(node.get());
+            accumulateAstLimits(binary->left, depth + 1, state);
+            accumulateAstLimits(binary->right, depth + 1, state);
+            break;
+        }
+        case Core::NodeType::UnaryOp: {
+            const auto* unary = static_cast<Core::UnaryOpNode*>(node.get());
+            accumulateAstLimits(unary->operand, depth + 1, state);
+            break;
+        }
+        case Core::NodeType::FunctionCall: {
+            const auto* call = static_cast<Core::FunctionCallNode*>(node.get());
+            for (const Core::ASTNodePtr& argument : call->arguments) {
+                accumulateAstLimits(argument, depth + 1, state);
+                if (state.exceeded) {
+                    return;
+                }
+            }
+            break;
+        }
+        case Core::NodeType::Number:
+        case Core::NodeType::Variable:
+        default:
+            break;
+    }
+}
+
+bool appendAstLimitDiagnostic(const Core::ASTNodePtr& ast,
+                              CompiledFormula& formula) {
+    AstLimitState state;
+    accumulateAstLimits(ast, 1, state);
+    if (!state.exceeded) {
+        return false;
+    }
+
+    formula.ast = nullptr;
+    formula.leftAst = nullptr;
+    formula.rightAst = nullptr;
+    formula.diagnostics.push_back(diagnostic(
+        DiagnosticCode::ExpressionTooComplex,
+        "Expression is too complex to compile safely."));
+    return true;
 }
 
 FormulaKind classifyExpression(const VariableSet& variables) {
@@ -108,6 +190,18 @@ CompiledFormula compileFormula(std::string_view expression) {
             DiagnosticCode::EmptyExpression, "Empty expression"));
         return formula;
     }
+    if (text.size() > Core::InputLimits::kMaxFormulaLength) {
+        formula.diagnostics.push_back(diagnostic(
+            DiagnosticCode::ExpressionTooLong,
+            "Expression is too long to compile safely."));
+        return formula;
+    }
+    if (maxParenthesisNesting(text) > Core::InputLimits::kMaxExpressionNesting) {
+        formula.diagnostics.push_back(diagnostic(
+            DiagnosticCode::ExpressionTooComplex,
+            "Expression nesting is too deep to compile safely."));
+        return formula;
+    }
 
     const std::size_t equalPos = text.find('=');
     if (equalPos != std::string::npos) {
@@ -148,6 +242,9 @@ CompiledFormula compileFormula(std::string_view expression) {
         formula.rightAst = rightResult.ast;
         formula.ast = std::make_shared<Core::BinaryOpNode>(
             Core::BinaryOperator::Subtract, formula.leftAst, formula.rightAst);
+        if (appendAstLimitDiagnostic(formula.ast, formula)) {
+            return formula;
+        }
         formula.variables = leftResult.variables;
         appendVariables(formula.variables, rightResult.variables);
 
@@ -179,6 +276,9 @@ CompiledFormula compileFormula(std::string_view expression) {
     if (!result.success()) {
         formula.ast = nullptr;
         formula.diagnostics.push_back(diagnostic(DiagnosticCode::ParseError, result.error));
+        return formula;
+    }
+    if (appendAstLimitDiagnostic(formula.ast, formula)) {
         return formula;
     }
 

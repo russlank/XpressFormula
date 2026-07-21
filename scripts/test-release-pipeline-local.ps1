@@ -2,7 +2,7 @@
 param(
     [string]$Configuration = "Release",
     [string]$Platform = "x64",
-    [string]$PlatformToolset = "v143",
+    [string]$PlatformToolset = "v145",
     [string]$WixVersion = "6.0.2",
     [string]$OutputDir = "artifacts\release",
     [switch]$SkipPackaging

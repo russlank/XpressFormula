@@ -7,7 +7,10 @@
 #include "../XpressFormula/Core/MathConstants.h"
 #include <array>
 #include <cmath>
+#include <initializer_list>
+#include <memory>
 #include <span>
+#include <string>
 #include <vector>
 
 using namespace Microsoft::VisualStudio::CppUnitTestFramework;
@@ -35,6 +38,17 @@ static void assertNaN(double actual) {
 static void assertInNoiseRange(double actual) {
     Assert::IsTrue(std::isfinite(actual));
     Assert::IsTrue(actual >= -1.000001 && actual <= 1.000001);
+}
+
+static ASTNodePtr numberNode(double value) {
+    return std::make_shared<NumberNode>(value);
+}
+
+static ASTNodePtr malformedFunctionCall(const char* name,
+                                        std::initializer_list<ASTNodePtr> args) {
+    std::vector<ASTNodePtr> arguments(args);
+    return std::make_shared<FunctionCallNode>(
+        std::string(name), std::move(arguments), findFunctionInfo(name));
 }
 
 static std::vector<double> sampleArgsForArity(int arity) {
@@ -399,32 +413,36 @@ TEST_CASE(Eval_ScientificNotation) {
 
 // --- Arity edge cases ---
 TEST_CASE(Eval_SingleArgFuncWithTwoArgs) {
-    auto r = Parser::parse("sin(x, y)");
-    Assert::IsTrue(r.success());
-    Evaluator::Variables vars = { {"x", 0.0}, {"y", 999.0} };
-    double result = Evaluator::evaluate(r.ast, vars);
+    const ASTNodePtr ast = malformedFunctionCall(
+        "sin", { numberNode(0.0), numberNode(999.0) });
+    double result = Evaluator::evaluate(ast, EvaluationContext{});
     assertNaN(result);
 }
 
 TEST_CASE(Eval_SingleArgFuncWithThreeArgs) {
-    auto r = Parser::parse("abs(x, y, z)");
-    Assert::IsTrue(r.success());
-    Evaluator::Variables vars = { {"x", -5.0}, {"y", 1.0}, {"z", 2.0} };
-    double result = Evaluator::evaluate(r.ast, vars);
+    const ASTNodePtr ast = malformedFunctionCall(
+        "abs", { numberNode(-5.0), numberNode(1.0), numberNode(2.0) });
+    double result = Evaluator::evaluate(ast, EvaluationContext{});
     assertNaN(result);
 }
 
 TEST_CASE(Eval_TwoArgFuncWithExtraArgs) {
-    auto r = Parser::parse("log(10, 100, 999)");
-    Assert::IsTrue(r.success());
-    double result = Evaluator::evaluate(r.ast, EvaluationContext{});
+    const ASTNodePtr ast = malformedFunctionCall(
+        "log", { numberNode(10.0), numberNode(100.0), numberNode(999.0) });
+    double result = Evaluator::evaluate(ast, EvaluationContext{});
     assertNaN(result);
 }
 
 TEST_CASE(Eval_StrictArityForNewFunctions) {
-    assertNaN(eval("clamp(1, 2)"));
-    assertNaN(eval("pow(2, 3, 4)"));
-    assertNaN(eval("length3(1, 2)"));
+    assertNaN(Evaluator::evaluate(
+        malformedFunctionCall("clamp", { numberNode(1.0), numberNode(2.0) }),
+        EvaluationContext{}));
+    assertNaN(Evaluator::evaluate(
+        malformedFunctionCall("pow", { numberNode(2.0), numberNode(3.0), numberNode(4.0) }),
+        EvaluationContext{}));
+    assertNaN(Evaluator::evaluate(
+        malformedFunctionCall("length3", { numberNode(1.0), numberNode(2.0) }),
+        EvaluationContext{}));
 }
 
 TEST_CASE(Eval_FunctionRegistryCallbacksValidateArityAndEvaluate) {
@@ -457,9 +475,8 @@ TEST_CASE(Eval_EveryFunctionRegistryCallbackAcceptsValidSampleArgs) {
 }
 
 TEST_CASE(Eval_EmptyArgFunction) {
-    auto r = Parser::parse("sin()");
-    Assert::IsTrue(r.success());
-    double result = Evaluator::evaluate(r.ast, EvaluationContext{});
+    const ASTNodePtr ast = malformedFunctionCall("sin", {});
+    double result = Evaluator::evaluate(ast, EvaluationContext{});
     assertNaN(result);
 }
 

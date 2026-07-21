@@ -97,6 +97,7 @@ public:
     void resetColorCycle(int nextIndex = 0) { m_nextColorIndex = nextIndex; }
 
 private:
+    void openAddEditor(Model::Formula formula);
     void openEditor(const Model::Formula& formula);
     void loadEditorFormula(const char* expression);
     void renderEditorDialog(std::span<const Model::Formula> formulas,

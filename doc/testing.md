@@ -12,7 +12,7 @@ The project uses a lightweight in-repo test harness ([`src/XpressFormula.Tests/C
 
 The test project links the production static libraries (`XpressFormula.Expression`, `XpressFormula.Model`, `XpressFormula.Plotting`, `XpressFormula.Infrastructure`, `XpressFormula.UI`, and `XpressFormula.App`) instead of compiling production `.cpp` files directly. When adding a new production `.cpp`, add it to the owning production library and reference that library from tests as needed.
 
-Current local closure count: `469` test cases.
+Current local closure count: `514` test cases.
 
 ## What Is Covered
 
@@ -81,7 +81,9 @@ $env:XF_RUN_EXPRESSION_BENCHMARK = '1'
 
 CI PR validation runs the architecture boundary check, builds Debug application and test targets, runs Debug tests, builds Release application and test targets, and runs Release tests. The workflow uses explicit, non-colliding `IntDir` and `OutDir` values under `build\obj\...` and `build\bin\...`, then runs tests from those configured output directories.
 
-Release packaging also runs the architecture boundary check and the Release test suite before package creation. Production projects build at `/W4` with conformance mode and `/Zc:__cplusplus`; first-party warnings should be fixed rather than broadly suppressed.
+Release packaging also runs the architecture boundary check and the Release test suite before package creation. First-party app, library, and test projects build at `/W4` with conformance mode and `/Zc:__cplusplus`; warnings should be fixed rather than broadly suppressed.
+
+Win32 configurations remain available as a best-effort local compatibility path. PR validation and release gates exercise x64 Debug and Release builds.
 
 ## Interpreting Results
 

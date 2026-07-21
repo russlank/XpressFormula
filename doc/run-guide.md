@@ -4,7 +4,8 @@
 ## Prerequisites
 
 - Windows 10/11
-- Visual Studio 2022/2026 with **Desktop development with C++**
+- Visual Studio 2026 or Build Tools 2026 with **Desktop development with C++**
+- MSBuild 18.x with the MSVC platform toolset `v145`
 - Windows 10/11 SDK
 - VS Code (optional, if using the VS Code workflow)
 - VS Code extensions (recommended for VS Code workflow):
@@ -16,6 +17,8 @@ See also:
 - [`../README.md`](../README.md)
 - [`index.md`](index.md)
 - [`project-vendors.md`](project-vendors.md)
+
+The checked-in projects, CI workflow, and release packaging default to `v145`. Visual Studio 2022 users can retarget local builds to an installed toolset such as `v143`, but that is a compatibility path rather than the repository default.
 
 ## Run from Visual Studio
 
@@ -64,7 +67,7 @@ Steps:
 3. Press `F5` and choose:
    - `Debug XpressFormula (x64)`
 
-Win32 alternative in VS Code (optional):
+Win32 alternative in VS Code (optional best-effort compatibility path):
 
 1. `Terminal -> Run Task...`
 2. Select `Build XpressFormula (Win32 Debug)` (or `Run XpressFormula (Win32 Debug)`).
@@ -101,7 +104,7 @@ From repository root:
 
 The VS Code build tasks call the same helper script so CLI and VS Code use the same MSBuild discovery logic.
 
-Win32 build example:
+Win32 build example (best-effort compatibility path; automated PR and release validation cover x64):
 
 ```powershell
 .\scripts\invoke-msbuild.ps1 -ProjectPath "src\XpressFormula.slnx" -Configuration Debug -Platform Win32 -Targets Build

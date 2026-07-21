@@ -1,8 +1,12 @@
 // Document.cpp - Revision-tracked project document aggregate.
 #include "Document.h"
+#include "PlotPolicy.h"
+#include "../Core/InputLimits.h"
 
 #include <algorithm>
 #include <cstddef>
+#include <cmath>
+#include <limits>
 #include <utility>
 
 namespace XpressFormula::Model {
@@ -43,9 +47,73 @@ bool samePlotSettings(const PlotSettings& lhs, const PlotSettings& rhs) noexcept
            lhs.heatmapOpacity == rhs.heatmapOpacity;
 }
 
+float normalizeColorChannel(float value) noexcept {
+    return std::isfinite(value) ? std::clamp(value, 0.0f, 1.0f) : 1.0f;
+}
+
+ColorRgba normalizeColor(ColorRgba color) noexcept {
+    for (float& channel : color.channels) {
+        channel = normalizeColorChannel(channel);
+    }
+    return color;
+}
+
+double normalizeZSlice(double zSlice) noexcept {
+    if (!std::isfinite(zSlice)) {
+        return 0.0;
+    }
+    constexpr double limit = static_cast<double>((std::numeric_limits<float>::max)());
+    return std::clamp(zSlice, -limit, limit);
+}
+
+ViewState normalizeViewState(ViewState state) noexcept {
+    if (!std::isfinite(state.centerX)) {
+        state.centerX = 0.0;
+    }
+    if (!std::isfinite(state.centerY)) {
+        state.centerY = 0.0;
+    }
+    state.scaleX = std::clamp(
+        std::isfinite(state.scaleX) ? state.scaleX : 60.0,
+        Core::InputLimits::kMinViewScale,
+        Core::InputLimits::kMaxViewScale);
+    state.scaleY = std::clamp(
+        std::isfinite(state.scaleY) ? state.scaleY : 60.0,
+        Core::InputLimits::kMinViewScale,
+        Core::InputLimits::kMaxViewScale);
+    return state;
+}
+
+bool containsFormulaId(const std::vector<Formula>& formulas,
+                       FormulaId id,
+                       std::size_t count) noexcept {
+    for (std::size_t i = 0; i < count && i < formulas.size(); ++i) {
+        if (formulas[i].id == id) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void normalizeFormula(Formula& formula,
+                      const std::vector<Formula>& existing,
+                      std::size_t existingCount) {
+    while (formula.id == 0 || containsFormulaId(existing, formula.id, existingCount)) {
+        formula.assignNewId();
+    }
+    formula.color = normalizeColor(formula.color);
+    formula.zSlice = normalizeZSlice(formula.zSlice);
+}
+
+PlotSettings normalizedPlotSettings(PlotSettings settings) {
+    normalizePlotSettings(settings);
+    return settings;
+}
+
 } // namespace
 
 struct Document::FormulaEdit::FormulaState {
+    FormulaId id = 0;
     std::string expression;
     ColorRgba color;
     bool visible = true;
@@ -56,6 +124,7 @@ namespace {
 
 Document::FormulaEdit::FormulaState captureFormulaState(const Formula& formula) {
     Document::FormulaEdit::FormulaState state;
+    state.id = formula.id;
     state.expression = formula.expression;
     state.color = formula.color;
     state.visible = formula.visible;
@@ -75,7 +144,8 @@ std::vector<Document::FormulaEdit::FormulaState> captureFormulaStates(
 
 bool sameFormulaState(const Document::FormulaEdit::FormulaState& lhs,
                       const Formula& rhs) {
-    return lhs.expression == rhs.expression &&
+    return lhs.id == rhs.id &&
+           lhs.expression == rhs.expression &&
            sameColor(lhs.color, rhs.color) &&
            lhs.visible == rhs.visible &&
            lhs.zSlice == rhs.zSlice;
@@ -96,7 +166,8 @@ bool sameFormulaStates(const std::vector<Document::FormulaEdit::FormulaState>& l
 }
 
 bool sameFormulaPersistentState(const Formula& lhs, const Formula& rhs) {
-    return lhs.expression == rhs.expression &&
+    return lhs.id == rhs.id &&
+           lhs.expression == rhs.expression &&
            sameColor(lhs.color, rhs.color) &&
            lhs.visible == rhs.visible &&
            lhs.zSlice == rhs.zSlice;
@@ -116,8 +187,13 @@ Document::FormulaEdit::FormulaEdit(FormulaEdit&& other) noexcept
 }
 
 Document::FormulaEdit::~FormulaEdit() {
-    if (m_document && !sameFormulaStates(m_before, m_document->m_formulas)) {
-        m_document->incrementRevision();
+    if (m_document) {
+        for (std::size_t i = 0; i < m_document->m_formulas.size(); ++i) {
+            normalizeFormula(m_document->m_formulas[i], m_document->m_formulas, i);
+        }
+        if (!sameFormulaStates(m_before, m_document->m_formulas)) {
+            m_document->incrementRevision();
+        }
     }
 }
 
@@ -137,8 +213,11 @@ Document::ViewEdit::ViewEdit(ViewEdit&& other) noexcept
 }
 
 Document::ViewEdit::~ViewEdit() {
-    if (m_document && !sameViewState(m_before, m_document->m_viewTransform.state)) {
-        m_document->incrementRevision();
+    if (m_document) {
+        m_document->m_viewTransform.state = normalizeViewState(m_document->m_viewTransform.state);
+        if (!sameViewState(m_before, m_document->m_viewTransform.state)) {
+            m_document->incrementRevision();
+        }
     }
 }
 
@@ -158,8 +237,11 @@ Document::PlotSettingsEdit::PlotSettingsEdit(PlotSettingsEdit&& other) noexcept
 }
 
 Document::PlotSettingsEdit::~PlotSettingsEdit() {
-    if (m_document && !samePlotSettings(m_before, m_document->m_plotSettings)) {
-        m_document->incrementRevision();
+    if (m_document) {
+        m_document->m_plotSettings = normalizedPlotSettings(m_document->m_plotSettings);
+        if (!samePlotSettings(m_before, m_document->m_plotSettings)) {
+            m_document->incrementRevision();
+        }
     }
 }
 
@@ -196,6 +278,7 @@ bool Document::dirty() const noexcept {
 }
 
 FormulaId Document::addFormula(Formula formula) {
+    normalizeFormula(formula, m_formulas, m_formulas.size());
     const FormulaId id = formula.id;
     m_formulas.push_back(std::move(formula));
     incrementRevision();
@@ -209,6 +292,8 @@ bool Document::updateFormula(FormulaId id, Formula formula) {
     }
 
     formula.id = id;
+    formula.color = normalizeColor(formula.color);
+    formula.zSlice = normalizeZSlice(formula.zSlice);
     if (sameFormulaPersistentState(m_formulas[*index], formula)) {
         return false;
     }
@@ -226,6 +311,8 @@ bool Document::duplicateFormula(FormulaId id) {
 
     Formula duplicate = m_formulas[*index];
     duplicate.assignNewId();
+    duplicate.color = normalizeColor(duplicate.color);
+    duplicate.zSlice = normalizeZSlice(duplicate.zSlice);
     duplicate.hasCompiledExpression = false;
     duplicate.lastCompiledExpression.clear();
     duplicate.compile(true);
@@ -276,22 +363,24 @@ bool Document::setFormulaVisibility(FormulaId id, bool visible) {
 
 bool Document::setFormulaColor(FormulaId id, const ColorRgba& color) {
     const std::optional<std::size_t> index = findFormulaIndex(id);
-    if (!index.has_value() || sameColor(m_formulas[*index].color, color)) {
+    const ColorRgba normalized = normalizeColor(color);
+    if (!index.has_value() || sameColor(m_formulas[*index].color, normalized)) {
         return false;
     }
 
-    m_formulas[*index].color = color;
+    m_formulas[*index].color = normalized;
     incrementRevision();
     return true;
 }
 
 bool Document::setFormulaZSlice(FormulaId id, double zSlice) {
     const std::optional<std::size_t> index = findFormulaIndex(id);
-    if (!index.has_value() || m_formulas[*index].zSlice == zSlice) {
+    const double normalized = normalizeZSlice(zSlice);
+    if (!index.has_value() || m_formulas[*index].zSlice == normalized) {
         return false;
     }
 
-    m_formulas[*index].zSlice = zSlice;
+    m_formulas[*index].zSlice = normalized;
     incrementRevision();
     return true;
 }
@@ -317,18 +406,21 @@ bool Document::hideOtherFormulas(FormulaId id) {
 }
 
 bool Document::setViewState(const ViewState& state) {
-    if (sameViewState(m_viewTransform.state, state)) {
+    const ViewState normalized = normalizeViewState(state);
+    if (sameViewState(m_viewTransform.state, normalized)) {
         return false;
     }
 
-    m_viewTransform.state = state;
+    m_viewTransform.state = normalized;
     incrementRevision();
     return true;
 }
 
 bool Document::setViewTransform(const Core::ViewTransform& view) {
-    const bool persistentChanged = !sameViewState(m_viewTransform.state, view.state);
-    m_viewTransform = view;
+    Core::ViewTransform normalized = view;
+    normalized.state = normalizeViewState(normalized.state);
+    const bool persistentChanged = !sameViewState(m_viewTransform.state, normalized.state);
+    m_viewTransform = normalized;
     if (persistentChanged) {
         incrementRevision();
     }
@@ -336,11 +428,12 @@ bool Document::setViewTransform(const Core::ViewTransform& view) {
 }
 
 bool Document::setPlotSettings(const PlotSettings& settings) {
-    if (samePlotSettings(m_plotSettings, settings)) {
+    const PlotSettings normalized = normalizedPlotSettings(settings);
+    if (samePlotSettings(m_plotSettings, normalized)) {
         return false;
     }
 
-    m_plotSettings = settings;
+    m_plotSettings = normalized;
     incrementRevision();
     return true;
 }
@@ -349,9 +442,16 @@ void Document::replaceState(std::vector<Formula> formulas,
                             const Core::ViewTransform& view,
                             const PlotSettings& plotSettings,
                             bool markClean) {
+    for (std::size_t i = 0; i < formulas.size(); ++i) {
+        normalizeFormula(formulas[i], formulas, i);
+    }
+    Core::ViewTransform normalizedView = view;
+    normalizedView.state = normalizeViewState(normalizedView.state);
+    PlotSettings normalizedPlot = normalizedPlotSettings(plotSettings);
+
     m_formulas = std::move(formulas);
-    m_viewTransform = view;
-    m_plotSettings = plotSettings;
+    m_viewTransform = normalizedView;
+    m_plotSettings = normalizedPlot;
     incrementRevision();
     if (markClean) {
         markSaved();

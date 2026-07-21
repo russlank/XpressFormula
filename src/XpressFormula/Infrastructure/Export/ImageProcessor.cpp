@@ -19,8 +19,12 @@ void resizePixelsBilinear(std::span<const std::uint8_t> srcPixels,
         return;
     }
 
-    const size_t expectedBytes = static_cast<size_t>(srcWidth) *
-        static_cast<size_t>(srcHeight) * 4u;
+    std::size_t expectedBytes = 0;
+    std::size_t dstBytes = 0;
+    if (!checkedRgbaByteCount(srcWidth, srcHeight, expectedBytes) ||
+        !checkedRgbaByteCount(dstWidth, dstHeight, dstBytes)) {
+        return;
+    }
     if (srcPixels.size() < expectedBytes) {
         return;
     }
@@ -30,7 +34,7 @@ void resizePixelsBilinear(std::span<const std::uint8_t> srcPixels,
         return;
     }
 
-    dstPixels.resize(static_cast<size_t>(dstWidth) * static_cast<size_t>(dstHeight) * 4u);
+    dstPixels.resize(dstBytes);
 
     const auto sampleIndex = [srcWidth](int x, int y) {
         return (static_cast<size_t>(y) * static_cast<size_t>(srcWidth) +
@@ -140,10 +144,9 @@ ProcessedImage preparePreviewRgbaImage(std::span<const std::uint8_t> renderedRgb
     image.width = renderedWidth;
     image.height = renderedHeight;
 
-    const size_t expectedBytes = renderedWidth > 0 && renderedHeight > 0
-        ? static_cast<size_t>(renderedWidth) * static_cast<size_t>(renderedHeight) * 4u
-        : 0u;
-    if (expectedBytes == 0 || renderedRgbaPixels.size() < expectedBytes) {
+    std::size_t expectedBytes = 0;
+    if (!checkedRgbaByteCount(renderedWidth, renderedHeight, expectedBytes) ||
+        renderedRgbaPixels.size() < expectedBytes) {
         image.width = 0;
         image.height = 0;
         return image;
@@ -175,10 +178,9 @@ ProcessedImage prepareFinalBgraImage(std::span<const std::uint8_t> renderedRgbaP
     image.width = renderedWidth;
     image.height = renderedHeight;
 
-    const size_t expectedBytes = renderedWidth > 0 && renderedHeight > 0
-        ? static_cast<size_t>(renderedWidth) * static_cast<size_t>(renderedHeight) * 4u
-        : 0u;
-    if (expectedBytes == 0 || renderedRgbaPixels.size() < expectedBytes) {
+    std::size_t expectedBytes = 0;
+    if (!checkedRgbaByteCount(renderedWidth, renderedHeight, expectedBytes) ||
+        renderedRgbaPixels.size() < expectedBytes) {
         image.width = 0;
         image.height = 0;
         return image;

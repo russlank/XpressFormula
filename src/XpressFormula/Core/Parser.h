@@ -24,6 +24,8 @@ public:
     static Result parse(const std::string& expression);
 
 private:
+    struct RecursionScope;
+
     explicit Parser(const std::vector<Token>& tokens);
 
     // Grammar rules (in order of increasing precedence)
@@ -42,6 +44,7 @@ private:
 
     std::vector<Token> m_tokens;
     size_t             m_pos = 0;
+    size_t             m_recursionDepth = 0;
     std::string        m_error;
 };
 

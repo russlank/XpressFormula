@@ -2,9 +2,11 @@
 
 #include "../XpressFormula/Application/UpdateController.h"
 
+#include <atomic>
 #include <chrono>
 #include <future>
 #include <memory>
+#include <stdexcept>
 #include <string>
 
 using Microsoft::VisualStudio::CppUnitTestFramework::Assert;
@@ -95,6 +97,18 @@ TEST_CASE(UpdateController_FailureKeepsNotificationNonAvailable) {
     Assert::AreEqual(std::string("https://example.test/releases"), controller.releaseUrl());
 }
 
+TEST_CASE(UpdateController_ExceptionFromFetcherReportsFailure) {
+    XFApp::UpdateController controller([](bool) -> XFApp::UpdateCheckResult {
+        throw std::runtime_error("boom");
+    });
+
+    Assert::IsTrue(controller.requestManualCheck());
+    Assert::IsTrue(controller.waitForPendingCheck());
+
+    Assert::IsFalse(controller.updateAvailable());
+    Assert::IsTrue(controller.status().find("boom") != std::string::npos);
+}
+
 TEST_CASE(UpdateController_InProgressManualRequestDoesNotLaunchSecondWorker) {
     int calls = 0;
     auto gate = std::make_shared<std::promise<void>>();
@@ -114,6 +128,40 @@ TEST_CASE(UpdateController_InProgressManualRequestDoesNotLaunchSecondWorker) {
     Assert::IsTrue(controller.waitForPendingCheck());
     Assert::AreEqual(1, calls);
     Assert::IsFalse(controller.updateAvailable());
+}
+
+TEST_CASE(UpdateController_CancelPendingCheckDoesNotApplyStaleResult) {
+    auto calls = std::make_shared<std::atomic<int>>(0);
+    auto firstGate = std::make_shared<std::promise<void>>();
+    auto secondGate = std::make_shared<std::promise<void>>();
+    std::shared_future<void> firstRelease = firstGate->get_future().share();
+    std::shared_future<void> secondRelease = secondGate->get_future().share();
+
+    XFApp::UpdateController controller(
+        [calls, firstRelease, secondRelease](bool manualRequest) {
+            const int call = calls->fetch_add(1) + 1;
+            if (call == 1) {
+                firstRelease.wait();
+                return successfulUpdate(manualRequest, "old", true);
+            }
+            secondRelease.wait();
+            return successfulUpdate(manualRequest, "new", true);
+        });
+
+    Assert::IsTrue(controller.requestManualCheck());
+    Assert::IsTrue(controller.checkInProgress());
+    Assert::IsTrue(controller.cancelPendingCheckForShutdown());
+    Assert::IsFalse(controller.checkInProgress());
+    Assert::AreEqual(std::string("Update check cancelled."), controller.status());
+
+    Assert::IsTrue(controller.requestManualCheck());
+    secondGate->set_value();
+    Assert::IsTrue(controller.waitForPendingCheck());
+    Assert::AreEqual(std::string("new"), controller.latestTag());
+
+    firstGate->set_value();
+    Assert::IsFalse(controller.poll());
+    Assert::AreEqual(std::string("new"), controller.latestTag());
 }
 
 TEST_CASE(UpdateController_OpenReleasePageResultUpdatesNoticeAndStatus) {

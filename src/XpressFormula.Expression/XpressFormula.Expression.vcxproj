@@ -112,6 +112,7 @@
     <ClInclude Include="..\XpressFormula\Expression\FormulaCompiler.h" />
     <ClInclude Include="..\XpressFormula\Expression\FormulaKind.h" />
     <ClInclude Include="..\XpressFormula\Core\Token.h" />
+    <ClInclude Include="..\XpressFormula\Core\InputLimits.h" />
     <ClInclude Include="..\XpressFormula\Core\MathConstants.h" />
     <ClInclude Include="..\XpressFormula\Core\Tokenizer.h" />
     <ClInclude Include="..\XpressFormula\Core\ASTNode.h" />

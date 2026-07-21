@@ -289,6 +289,16 @@ Basic idea:
 
 This is the classic marching squares technique.
 
+Edge cases are handled explicitly:
+
+- non-finite samples are ignored for contour edges
+- an edge with both endpoints exactly on the iso value is skipped to avoid drawing an arbitrary full-edge segment
+- an edge with exactly one endpoint on the iso value contributes that endpoint as the crossing
+- duplicate crossings inside a cell are collapsed so zero-length segments are not emitted
+- four-crossing saddle cells are split using the sign of a cell-center estimate from the corner average
+
+Large or invalid contour sampling requests are rejected before allocation. The current scalar-grid policy caps heat-map cells at 1,048,576 and contour lattice points at 1,050,625.
+
 Why it is good here:
 
 - Works for circles, ellipses, many implicit curves
@@ -376,6 +386,14 @@ High-level steps:
 5. Split each quad into two triangles.
 6. Cache the resulting world-space mesh.
 7. On later frames (camera changes), reuse the cached mesh and only re-project + redraw.
+
+Exact-zero and degenerate fields follow the same defensive policy as contour extraction:
+
+- non-finite samples do not produce crossings
+- an edge with one exact-zero endpoint can contribute that endpoint
+- an edge with both endpoints exactly zero is ignored
+- a cell must have at least three useful edge crossings before it can create a surface-net vertex
+- constant-zero fields produce no mesh instead of a meaningless filled volume
 
 Why this is better than the earlier point cloud:
 

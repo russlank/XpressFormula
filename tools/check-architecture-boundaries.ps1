@@ -23,6 +23,27 @@ function Get-SourceFiles([string[]]$Roots) {
     return $files
 }
 
+function Get-FirstPartyProjectFiles {
+    Get-ChildItem -LiteralPath (Join-Path $repoRoot 'src') -Recurse -File -Filter *.vcxproj |
+        Where-Object { $_.FullName -notmatch '[\\/]vendor[\\/]' }
+}
+
+function Get-ProjectKey([System.IO.FileInfo]$ProjectFile) {
+    Split-Path -Leaf (Split-Path -Parent $ProjectFile.FullName)
+}
+
+function Get-ProjectXml([System.IO.FileInfo]$ProjectFile) {
+    $document = New-Object System.Xml.XmlDocument
+    $document.Load($ProjectFile.FullName)
+    return ,$document
+}
+
+function Get-MsBuildNamespaceManager([xml]$Xml) {
+    $namespaceManager = New-Object System.Xml.XmlNamespaceManager($Xml.NameTable)
+    $namespaceManager.AddNamespace('msb', 'http://schemas.microsoft.com/developer/msbuild/2003')
+    return ,$namespaceManager
+}
+
 function Test-RuleSet(
     [string]$RuleName,
     [string[]]$Roots,
@@ -113,6 +134,137 @@ if (Test-Path -LiteralPath $testsProject) {
         if ($line -match '<ClCompile\s+Include="..\\XpressFormula\\.*\.cpp"') {
             $relative = Get-RelativePath $testsProject
             $failures.Add(("{0}:{1}: Tests must not compile production .cpp files directly: {2}" -f $relative, $lineNumber, $line.Trim()))
+        }
+    }
+}
+
+$firstPartyProjects = @(Get-FirstPartyProjectFiles)
+$expectedToolset = 'v145'
+$allowedProjectReferences = @{
+    'XpressFormula.Expression' = @()
+    'XpressFormula.Model' = @('XpressFormula.Expression')
+    'XpressFormula.Plotting' = @('XpressFormula.Expression', 'XpressFormula.Model')
+    'XpressFormula.Infrastructure' = @('XpressFormula.Model')
+    'XpressFormula.UI' = @('XpressFormula.Expression', 'XpressFormula.Model', 'XpressFormula.Plotting')
+    'XpressFormula.App' = @('XpressFormula.Expression', 'XpressFormula.Model', 'XpressFormula.Plotting', 'XpressFormula.Infrastructure', 'XpressFormula.UI')
+    'XpressFormula.Tests' = @('XpressFormula.Expression', 'XpressFormula.Model', 'XpressFormula.Plotting', 'XpressFormula.Infrastructure', 'XpressFormula.App', 'XpressFormula.UI')
+    'XpressFormula' = @('XpressFormula.Expression', 'XpressFormula.Model', 'XpressFormula.Plotting', 'XpressFormula.Infrastructure', 'XpressFormula.App', 'XpressFormula.UI')
+}
+$cppOwners = @{}
+
+foreach ($projectFile in $firstPartyProjects) {
+    $projectKey = Get-ProjectKey $projectFile
+    $relativeProject = Get-RelativePath $projectFile.FullName
+    $xml = Get-ProjectXml $projectFile
+    $ns = Get-MsBuildNamespaceManager $xml
+
+    foreach ($toolset in $xml.DocumentElement.SelectNodes('//msb:PlatformToolset', $ns)) {
+        if ($toolset.InnerText -ne $expectedToolset) {
+            $failures.Add(("{0}: PlatformToolset drift: expected {1}, found {2}" -f $relativeProject, $expectedToolset, $toolset.InnerText))
+        }
+    }
+
+    foreach ($warningLevel in $xml.DocumentElement.SelectNodes('//msb:ClCompile/msb:WarningLevel', $ns)) {
+        if ($warningLevel.InnerText -ne 'Level4') {
+            $failures.Add(("{0}: first-party projects must build at /W4; found {1}" -f $relativeProject, $warningLevel.InnerText))
+        }
+    }
+
+    foreach ($compileSettings in $xml.DocumentElement.SelectNodes('//msb:ItemDefinitionGroup/msb:ClCompile', $ns)) {
+        if (-not $compileSettings.SelectSingleNode('msb:WarningLevel', $ns)) {
+            continue
+        }
+        $additionalOptions = $compileSettings.SelectSingleNode('msb:AdditionalOptions', $ns)
+        if (-not $additionalOptions -or $additionalOptions.InnerText -notmatch '/Zc:__cplusplus') {
+            $failures.Add(("{0}: ClCompile settings must include /Zc:__cplusplus" -f $relativeProject))
+        }
+    }
+
+    foreach ($reference in $xml.DocumentElement.SelectNodes('//msb:ProjectReference', $ns)) {
+        $include = $reference.Include
+        $referencePath = Join-Path (Split-Path -Parent $projectFile.FullName) $include
+        $resolvedReference = Resolve-Path -LiteralPath $referencePath -ErrorAction SilentlyContinue
+        if (-not $resolvedReference) {
+            $failures.Add(("{0}: ProjectReference target not found: {1}" -f $relativeProject, $include))
+            continue
+        }
+
+        $referenceKey = Split-Path -Leaf (Split-Path -Parent $resolvedReference.Path)
+        if (-not $allowedProjectReferences.ContainsKey($projectKey) -or
+            $allowedProjectReferences[$projectKey] -notcontains $referenceKey) {
+            $failures.Add(("{0}: forbidden ProjectReference from {1} to {2}" -f $relativeProject, $projectKey, $referenceKey))
+        }
+    }
+
+    foreach ($compile in $xml.DocumentElement.SelectNodes('//msb:ClCompile', $ns)) {
+        $include = $compile.Include
+        if ([string]::IsNullOrWhiteSpace($include)) {
+            continue
+        }
+        if ($include -match '[\\/]vendor[\\/]') {
+            continue
+        }
+
+        $sourcePath = Join-Path (Split-Path -Parent $projectFile.FullName) $include
+        $resolvedSource = Resolve-Path -LiteralPath $sourcePath -ErrorAction SilentlyContinue
+        if (-not $resolvedSource) {
+            continue
+        }
+        if ([System.IO.Path]::GetExtension($resolvedSource.Path) -ne '.cpp') {
+            continue
+        }
+
+        $normalizedSource = $resolvedSource.Path.ToLowerInvariant()
+        if ($projectKey -eq 'XpressFormula.Tests' -and
+            $normalizedSource.StartsWith((Join-Path $repoRoot 'src\XpressFormula\').ToLowerInvariant())) {
+            $failures.Add(("{0}: tests must not compile production .cpp files directly: {1}" -f $relativeProject, $include))
+        }
+
+        if ($projectKey -ne 'XpressFormula.Tests') {
+            if ($cppOwners.ContainsKey($normalizedSource) -and $cppOwners[$normalizedSource] -ne $projectKey) {
+                $failures.Add(("{0}: production .cpp is also owned by {1}: {2}" -f $relativeProject, $cppOwners[$normalizedSource], (Get-RelativePath $resolvedSource.Path)))
+            } else {
+                $cppOwners[$normalizedSource] = $projectKey
+            }
+        }
+    }
+}
+
+$publicDocFiles = @()
+foreach ($path in @('README.md', 'CONTRIBUTING.md')) {
+    $absolute = Join-Path $repoRoot $path
+    if (Test-Path -LiteralPath $absolute) {
+        $publicDocFiles += Get-Item -LiteralPath $absolute
+    }
+}
+$docRoot = Join-Path $repoRoot 'doc'
+if (Test-Path -LiteralPath $docRoot) {
+    $publicDocFiles += Get-ChildItem -LiteralPath $docRoot -Recurse -File -Filter *.md
+}
+foreach ($file in $publicDocFiles) {
+    $lineNumber = 0
+    foreach ($line in Get-Content -LiteralPath $file.FullName) {
+        ++$lineNumber
+        if ($line -match '\.ai([\\/]|$|\b)') {
+            $failures.Add(("{0}:{1}: public documentation must not reference private .ai planning files" -f (Get-RelativePath $file.FullName), $lineNumber))
+        }
+    }
+}
+
+$functionRegistryPath = Join-Path $repoRoot 'src\XpressFormula\Core\FunctionRegistry.cpp'
+$expressionReferencePath = Join-Path $repoRoot 'doc\expression-language.md'
+if ((Test-Path -LiteralPath $functionRegistryPath) -and
+    (Test-Path -LiteralPath $expressionReferencePath)) {
+    $registryText = Get-Content -LiteralPath $functionRegistryPath -Raw
+    $referenceText = Get-Content -LiteralPath $expressionReferencePath -Raw
+    $matches = [System.Text.RegularExpressions.Regex]::Matches(
+        $registryText,
+        'FunctionId::\w+,\s*"([^"]+)"')
+    foreach ($match in $matches) {
+        $functionName = $match.Groups[1].Value
+        $needle = '`' + $functionName + '('
+        if (-not $referenceText.Contains($needle)) {
+            $failures.Add(("doc\expression-language.md: built-in function '{0}' is missing from the public expression reference" -f $functionName))
         }
     }
 }

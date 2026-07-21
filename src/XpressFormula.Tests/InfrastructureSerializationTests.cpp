@@ -1,5 +1,6 @@
 // InfrastructureSerializationTests.cpp - Tests for shared JSON, UTF, and atomic file helpers.
 #include "CppUnitTest.h"
+#include "../XpressFormula/Core/InputLimits.h"
 #include "../XpressFormula/Infrastructure/FileSystem/AtomicFileWriter.h"
 #include "../XpressFormula/Infrastructure/Serialization/JsonParser.h"
 #include "../XpressFormula/Infrastructure/Serialization/JsonWriter.h"
@@ -9,10 +10,12 @@
 #include <filesystem>
 #include <fstream>
 #include <limits>
+#include <sstream>
 #include <string>
 
 using namespace Microsoft::VisualStudio::CppUnitTestFramework;
 namespace XFAtomic = XpressFormula::Infrastructure::FileSystem;
+namespace XFInputLimits = XpressFormula::Core::InputLimits;
 namespace XFJson = XpressFormula::Infrastructure::Serialization;
 namespace XFWUtf = XpressFormula::Platform::Windows;
 
@@ -44,6 +47,12 @@ std::string readWholeFile(const std::filesystem::path& path) {
     in.seekg(0, std::ios::beg);
     in.read(text.data(), static_cast<std::streamsize>(text.size()));
     return text;
+}
+
+bool parseJsonFails(std::string_view json, std::string& error) {
+    XFJson::JsonValue value;
+    XFJson::JsonParser parser(json);
+    return !parser.parse(value, error);
 }
 
 } // namespace
@@ -84,6 +93,43 @@ TEST_CASE(JsonParser_RejectsMalformedStringsAndNumbers) {
         std::string error;
         Assert::IsFalse(parser.parse(value, error));
     }
+}
+
+TEST_CASE(JsonParser_RejectsDuplicateKeysMalformedUtf8AndLimitOverruns) {
+    std::string error;
+    Assert::IsTrue(parseJsonFails(R"({"a":1,"a":2})", error));
+    Assert::IsTrue(error.find("Duplicate") != std::string::npos);
+
+    error.clear();
+    const std::string malformedUtf8 = std::string("{\"text\":\"") + "\xC3""(\"}";
+    Assert::IsTrue(parseJsonFails(malformedUtf8, error));
+    Assert::IsTrue(error.find("UTF-8") != std::string::npos);
+
+    std::string deepJson;
+    deepJson.reserve((XFInputLimits::kMaxJsonDepth + 1) * 2 + 1);
+    for (std::size_t i = 0; i <= XFInputLimits::kMaxJsonDepth; ++i) {
+        deepJson.push_back('[');
+    }
+    deepJson.push_back('0');
+    for (std::size_t i = 0; i <= XFInputLimits::kMaxJsonDepth; ++i) {
+        deepJson.push_back(']');
+    }
+    error.clear();
+    Assert::IsTrue(parseJsonFails(deepJson, error));
+    Assert::IsTrue(error.find("depth") != std::string::npos);
+
+    std::ostringstream values;
+    values << '[';
+    for (std::size_t i = 0; i < XFInputLimits::kMaxJsonValues; ++i) {
+        if (i != 0) {
+            values << ',';
+        }
+        values << '0';
+    }
+    values << ']';
+    error.clear();
+    Assert::IsTrue(parseJsonFails(values.str(), error));
+    Assert::IsTrue(error.find("value count") != std::string::npos);
 }
 
 TEST_CASE(JsonWriter_RoundTripsEscapedStringsAndNumbers) {
@@ -134,6 +180,30 @@ TEST_CASE(AtomicFileWriter_LeavesTargetDirectoryOnReplaceFailure) {
     Assert::IsFalse(result.success);
     Assert::IsTrue(std::filesystem::is_directory(target));
     Assert::IsFalse(std::filesystem::exists(XFAtomic::atomicTempPathFor(target)));
+
+    std::error_code ignored;
+    std::filesystem::remove_all(dir, ignored);
+}
+
+TEST_CASE(AtomicFileWriter_StaleLegacyTempPathDoesNotBlockWrite) {
+    const std::filesystem::path dir = uniqueTestDirectory();
+    const std::filesystem::path target = dir / L"state.json";
+    const std::filesystem::path staleTemp = XFAtomic::atomicTempPathFor(target);
+    {
+        std::ofstream out(target, std::ios::binary);
+        out << "old";
+    }
+    {
+        std::ofstream out(staleTemp, std::ios::binary);
+        out << "stale";
+    }
+
+    const XFAtomic::AtomicWriteResult result =
+        XFAtomic::writeTextAtomically(target, "new");
+
+    Assert::IsTrue(result.success);
+    Assert::AreEqual(std::string("new"), readWholeFile(target));
+    Assert::AreEqual(std::string("stale"), readWholeFile(staleTemp));
 
     std::error_code ignored;
     std::filesystem::remove_all(dir, ignored);

@@ -2,6 +2,7 @@
 #include "CurveSampler.h"
 
 #include "../../Core/Evaluator.h"
+#include "../../Core/InputLimits.h"
 
 #include <cmath>
 
@@ -10,7 +11,12 @@ namespace XpressFormula::Plotting::Sampling {
 std::vector<Geometry::Polyline> sampleCurve2D(const Core::ASTNodePtr& ast,
                                               const CurveSampleOptions& options) {
     std::vector<Geometry::Polyline> polylines;
-    if (!ast || !(options.xMin < options.xMax) || options.sampleCount <= 0) {
+    if (!ast ||
+        !(options.xMin < options.xMax) ||
+        !std::isfinite(options.xMin) ||
+        !std::isfinite(options.xMax) ||
+        options.sampleCount <= 0 ||
+        options.sampleCount > Core::InputLimits::kMaxCurveSamples) {
         return polylines;
     }
 

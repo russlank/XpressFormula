@@ -2,8 +2,10 @@
 // ProjectRepository.cpp - File I/O boundary for .xfplot project sessions.
 #include "ProjectRepository.h"
 #include "ProjectSerializer.h"
+#include "../../Core/InputLimits.h"
 #include "../FileSystem/AtomicFileWriter.h"
 
+#include <filesystem>
 #include <fstream>
 #include <sstream>
 
@@ -11,6 +13,13 @@ namespace XpressFormula::Infrastructure::Persistence {
 
 ProjectLoadResult ProjectRepository::load(const std::filesystem::path& path) const {
     ProjectLoadResult result;
+    std::error_code fileSizeError;
+    const std::uintmax_t fileSize = std::filesystem::file_size(path, fileSizeError);
+    if (!fileSizeError && fileSize > Core::InputLimits::kMaxProjectFileBytes) {
+        result.error = "Project file is larger than the supported limit.";
+        return result;
+    }
+
     std::ifstream in(path, std::ios::binary);
     if (!in) {
         result.error = "Could not open project file.";
@@ -24,7 +33,13 @@ ProjectLoadResult ProjectRepository::load(const std::filesystem::path& path) con
         return result;
     }
 
-    ProjectSessionParseResult parsed = parseProjectSession(buffer.str());
+    const std::string content = buffer.str();
+    if (content.size() > Core::InputLimits::kMaxProjectFileBytes) {
+        result.error = "Project file is larger than the supported limit.";
+        return result;
+    }
+
+    ProjectSessionParseResult parsed = parseProjectSession(content);
     if (!parsed.success) {
         result.error = parsed.error;
         result.warnings = std::move(parsed.warnings);

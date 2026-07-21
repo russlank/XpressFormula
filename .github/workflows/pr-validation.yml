@@ -13,7 +13,7 @@ jobs:
     runs-on: windows-2025-vs2026
     env:
       BUILD_PLATFORM: x64
-      MSVC_PLATFORM_TOOLSET: v143
+      MSVC_PLATFORM_TOOLSET: v145
       DEBUG_APP_INTDIR: ${{ github.workspace }}\build\obj\debug-app\
       DEBUG_APP_OUTDIR: ${{ github.workspace }}\build\bin\debug-app\
       DEBUG_TEST_INTDIR: ${{ github.workspace }}\build\obj\debug-tests\

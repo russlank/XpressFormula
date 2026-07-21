@@ -2,6 +2,7 @@
 // ClipboardService.cpp - Win32 clipboard text and DIB image service.
 #include "ClipboardService.h"
 #include "Utf.h"
+#include "../../Core/InputLimits.h"
 
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -77,6 +78,10 @@ bool checkedImageByteCounts(int width,
         return false;
     }
     imageBytes = rowBytes * heightValue;
+    if (imageBytes > Core::InputLimits::kMaxImageBufferBytes) {
+        error = "Image pixel buffer exceeds the supported limit.";
+        return false;
+    }
     if (imageBytes > (std::numeric_limits<DWORD>::max)()) {
         error = "Image is too large for a DIB clipboard payload.";
         return false;
@@ -217,4 +222,3 @@ ClipboardResult ClipboardService::copyDibImageBgra(HWND owner,
 }
 
 } // namespace XpressFormula::Platform::Windows
-

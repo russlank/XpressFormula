@@ -33,6 +33,20 @@ TEST_CASE(FormulaEditorState_OpenTracksFormulaIdAndText) {
     Assert::IsFalse(editor.previewAvailable);
 }
 
+TEST_CASE(FormulaEditorState_OpenAddDoesNotTargetExistingFormula) {
+    XFModel::Formula draft = makeFormula("");
+    const XFModel::FormulaId draftId = draft.id;
+    XFUI::FormulaEditorState editor;
+
+    editor.openAdd(draft);
+
+    Assert::IsTrue(editor.active());
+    Assert::IsTrue(editor.adding());
+    Assert::IsFalse(editor.targetId.has_value());
+    Assert::AreEqual(draftId, editor.draft.id);
+    Assert::AreEqual(std::string(""), editor.text);
+}
+
 TEST_CASE(FormulaEditorState_LongTextAppliesWithoutTruncation) {
     XFModel::Formula formula = makeFormula("sin(x)");
     XFUI::FormulaEditorState editor;
@@ -47,6 +61,39 @@ TEST_CASE(FormulaEditorState_LongTextAppliesWithoutTruncation) {
     Assert::AreEqual(longExpression, formula.expression);
     Assert::IsTrue(formula.isValid());
     Assert::AreEqual(longExpression, formula.lastCompiledExpression);
+}
+
+TEST_CASE(FormulaEditorState_AddApplyBuildsOneValidDraftFormula) {
+    XFModel::Formula draft;
+    draft.color[0] = 0.25f;
+    XFUI::FormulaEditorState editor;
+
+    editor.openAdd(draft);
+    editor.loadText("sin(x)");
+    editor.refreshPreview();
+    XFModel::Formula applied = editor.buildAppliedFormula();
+
+    Assert::AreEqual(draft.id, applied.id);
+    Assert::AreEqual(std::string("sin(x)"), applied.expression);
+    Assert::AreEqual(0.25f, applied.color[0]);
+    Assert::IsTrue(applied.isValid());
+}
+
+TEST_CASE(FormulaEditorState_WrongArityPreviewIsInvalidWithoutThrowing) {
+    XFUI::FormulaEditorState editor;
+    editor.loadText("sin()");
+
+    bool threw = false;
+    try {
+        editor.refreshPreview();
+    } catch (...) {
+        threw = true;
+    }
+
+    Assert::IsFalse(threw);
+    Assert::IsTrue(editor.previewAvailable);
+    Assert::IsFalse(editor.preview.isValid());
+    Assert::IsTrue(editor.preview.diagnosticMessage().find("expects") != std::string::npos);
 }
 
 TEST_CASE(FormulaEditorState_PreviewRecompilesOnlyWhenTextChanges) {
@@ -99,6 +146,20 @@ TEST_CASE(FormulaEditorState_CloseDoesNotMutateFormula) {
 
     Assert::IsFalse(editor.targetId.has_value());
     Assert::AreEqual(std::string("sin(x)"), formula.expression);
+}
+
+TEST_CASE(FormulaEditorState_MultipleAddCancelCyclesLeaveNoTarget) {
+    XFUI::FormulaEditorState editor;
+
+    for (int i = 0; i < 3; ++i) {
+        XFModel::Formula draft;
+        editor.openAdd(draft);
+        editor.loadText("sin(x)");
+        editor.close();
+        Assert::IsFalse(editor.active());
+        Assert::IsFalse(editor.targetId.has_value());
+        Assert::AreEqual(std::string(""), editor.text);
+    }
 }
 
 } // namespace XpressFormulaTests

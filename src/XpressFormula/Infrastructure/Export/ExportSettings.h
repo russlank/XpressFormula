@@ -2,12 +2,16 @@
 // ExportSettings.h - Testable export settings model, helpers, and presets.
 #pragma once
 
+#include "../../Core/InputLimits.h"
 #include "../../Model/PlotPolicy.h"
 
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
+#include <limits>
+#include <numeric>
 #include <string_view>
 
 namespace XpressFormula::Infrastructure::Export {
@@ -221,34 +225,65 @@ inline std::uint64_t estimateRgbaBufferBytes(int width,
     return safeWidth * safeHeight * 4ull * scale * scale;
 }
 
+inline bool checkedRgbaByteCount(int width, int height, std::size_t& byteCount) {
+    byteCount = 0;
+    if (width <= 0 || height <= 0) {
+        return false;
+    }
+
+    const auto safeWidth = static_cast<std::size_t>(width);
+    const auto safeHeight = static_cast<std::size_t>(height);
+    if (safeWidth > (std::numeric_limits<std::size_t>::max)() / 4u) {
+        return false;
+    }
+    const std::size_t rowBytes = safeWidth * 4u;
+    if (safeHeight > (std::numeric_limits<std::size_t>::max)() / rowBytes) {
+        return false;
+    }
+    byteCount = rowBytes * safeHeight;
+    if (byteCount > Core::InputLimits::kMaxImageBufferBytes) {
+        byteCount = 0;
+        return false;
+    }
+    return true;
+}
+
 inline double bytesToMiB(std::uint64_t bytes) {
     return static_cast<double>(bytes) / (1024.0 * 1024.0);
 }
 
 inline ExportWorldBounds normalizeWorldBounds(ExportWorldBounds bounds) {
-    if (bounds.xMin > bounds.xMax) {
-        std::swap(bounds.xMin, bounds.xMax);
-    }
-    if (bounds.yMin > bounds.yMax) {
-        std::swap(bounds.yMin, bounds.yMax);
-    }
-
     constexpr double minRange = 1e-9;
-    const double centerX = (bounds.xMin + bounds.xMax) * 0.5;
-    const double centerY = (bounds.yMin + bounds.yMax) * 0.5;
-    double width = bounds.xMax - bounds.xMin;
-    double height = bounds.yMax - bounds.yMin;
-    if (!(width > minRange) || !std::isfinite(width)) {
-        width = 2.0;
-    }
-    if (!(height > minRange) || !std::isfinite(height)) {
-        height = 2.0;
-    }
+    auto normalizeAxis = [minRange](double minValue, double maxValue) {
+        if (!std::isfinite(minValue) || !std::isfinite(maxValue)) {
+            return std::array<double, 2>{ -1.0, 1.0 };
+        }
+        if (minValue > maxValue) {
+            std::swap(minValue, maxValue);
+        }
 
-    bounds.xMin = centerX - width * 0.5;
-    bounds.xMax = centerX + width * 0.5;
-    bounds.yMin = centerY - height * 0.5;
-    bounds.yMax = centerY + height * 0.5;
+        const double center = std::midpoint(minValue, maxValue);
+        double width = maxValue - minValue;
+        if (!(width > minRange) || !std::isfinite(width) || !std::isfinite(center)) {
+            width = 2.0;
+        }
+
+        const double normalizedMin = center - width * 0.5;
+        const double normalizedMax = center + width * 0.5;
+        if (!std::isfinite(normalizedMin) ||
+            !std::isfinite(normalizedMax) ||
+            !(normalizedMax > normalizedMin)) {
+            return std::array<double, 2>{ -1.0, 1.0 };
+        }
+        return std::array<double, 2>{ normalizedMin, normalizedMax };
+    };
+
+    const std::array<double, 2> x = normalizeAxis(bounds.xMin, bounds.xMax);
+    const std::array<double, 2> y = normalizeAxis(bounds.yMin, bounds.yMax);
+    bounds.xMin = x[0];
+    bounds.xMax = x[1];
+    bounds.yMin = y[0];
+    bounds.yMax = y[1];
     return bounds;
 }
 

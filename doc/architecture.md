@@ -162,11 +162,11 @@ Run the lightweight boundary check from the repository root:
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\check-architecture-boundaries.ps1
 ```
 
-The script checks that infrastructure does not include UI, Expression and Model stay free of UI/Win32/ImGui/JSON dependencies, pure plotting geometry/meshing stays free of ImGui, reusable UI does not implement platform internals, and the test project does not compile production `.cpp` files directly.
+The script checks that infrastructure does not include UI, Expression and Model stay free of UI/Win32/ImGui/JSON dependencies, pure plotting geometry/meshing stays free of ImGui, reusable UI does not implement platform internals, project references follow the documented dependency direction, first-party projects use the repository toolset/warning policy, production `.cpp` files have one owning project, tests do not compile production `.cpp` files directly, public docs do not reference private planning files, and built-in functions remain covered by the public expression reference.
 
 ## Quality Gate
 
-Production projects build with MSVC warning level `/W4`, conformance mode (`/permissive-`), and `/Zc:__cplusplus`. First-party warnings should be fixed at source. Vendor warnings are isolated through project configuration when needed.
+First-party app, library, and test projects build with MSVC warning level `/W4`, conformance mode (`/permissive-`), and `/Zc:__cplusplus`. The repository default toolset is `v145`. First-party warnings should be fixed at source. Vendor warnings are isolated through project configuration when needed.
 
 Pull-request validation runs the architecture boundary check, Debug x64 app/test builds and tests, and Release x64 app/test builds and tests. Release packaging also runs the boundary check and Release test suite before creating packages.
 

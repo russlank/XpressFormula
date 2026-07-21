@@ -25,6 +25,9 @@ struct CellVertex {
     if (!std::isfinite(a) || !std::isfinite(b)) {
         return false;
     }
+    if (a == 0.0 && b == 0.0) {
+        return false;
+    }
     if (a == 0.0 || b == 0.0) {
         return true;
     }
@@ -46,6 +49,14 @@ struct CellVertex {
                                   Point3& out) noexcept {
     if (!signsCrossZero(va, vb)) {
         return false;
+    }
+    if (va == 0.0) {
+        out = a;
+        return true;
+    }
+    if (vb == 0.0) {
+        out = b;
+        return true;
     }
 
     double t = 0.5;

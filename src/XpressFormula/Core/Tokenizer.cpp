@@ -1,5 +1,6 @@
 // Tokenizer.cpp - Implementation of the expression tokenizer.
 #include "Tokenizer.h"
+#include "InputLimits.h"
 #include <cctype>
 
 namespace XpressFormula::Core {
@@ -8,6 +9,14 @@ Tokenizer::Tokenizer(const std::string& input) : m_input(input) {}
 
 std::vector<Token> Tokenizer::tokenize() {
     std::vector<Token> tokens;
+    auto tokenLimitExceeded = [&]() {
+        if (tokens.size() <= InputLimits::kMaxExpressionTokens) {
+            return false;
+        }
+        m_error = "Expression contains too many tokens.";
+        tokens.emplace_back(TokenType::Error, "", m_pos);
+        return true;
+    };
 
     while (m_pos < m_input.size()) {
         skipWhitespace();
@@ -17,9 +26,15 @@ std::vector<Token> Tokenizer::tokenize() {
 
         if (std::isdigit(static_cast<unsigned char>(c)) || c == '.') {
             tokens.push_back(readNumber());
+            if (tokenLimitExceeded()) {
+                return tokens;
+            }
         }
         else if (std::isalpha(static_cast<unsigned char>(c)) || c == '_') {
             tokens.push_back(readIdentifier());
+            if (tokenLimitExceeded()) {
+                return tokens;
+            }
         }
         else {
             TokenType type;
@@ -41,6 +56,9 @@ std::vector<Token> Tokenizer::tokenize() {
             }
             tokens.emplace_back(type, std::string(1, c), m_pos);
             m_pos++;
+            if (tokenLimitExceeded()) {
+                return tokens;
+            }
         }
     }
 

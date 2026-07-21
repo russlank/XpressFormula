@@ -43,7 +43,7 @@ The release job pins key versions with environment variables:
 - `DOTNET_VERSION` (currently `9.0.x`)
 - `PYTHON_VERSION` (currently `3.12`)
 - `WIX_VERSION` (currently `6.0.2`)
-- `MSVC_PLATFORM_TOOLSET` (currently `v143`)
+- `MSVC_PLATFORM_TOOLSET` (currently `v145`)
 - `BUILD_CONFIGURATION` (currently `Release`)
 - `BUILD_PLATFORM` (currently `x64`)
 
@@ -62,9 +62,11 @@ Release packaging runs the architecture boundary check and the Release test suit
 
 Prerequisites:
 
-- Visual Studio C++ build tools with toolset `v143` installed
+- Visual Studio 2026 or Build Tools 2026 with the C++ workload and toolset `v145` installed
 - WiX Toolset v6 CLI (`wix`)
 - WiX Burn extension (`WixToolset.Bal.wixext`) matching your WiX v6 version
+
+The repository, CI, and local release simulation default to `v145`. Older Visual Studio installations can be used only by explicitly retargeting local builds to an installed toolset such as `v143`.
 
 Install WiX CLI and extension:
 
@@ -86,7 +88,7 @@ $solutionDir = (Resolve-Path .\src).Path + '\'
 msbuild src\XpressFormula\XpressFormula.vcxproj /t:Build /m `
   /p:Configuration=Release `
   /p:Platform=x64 `
-  /p:PlatformToolset=v143 `
+  /p:PlatformToolset=v145 `
   /p:SolutionDir="$solutionDir" `
   /p:IntDir="$PWD\build\obj\" `
   /p:OutDir="$PWD\build\bin\"
@@ -98,7 +100,7 @@ Build and run release tests before packaging:
 msbuild src\XpressFormula.Tests\XpressFormula.Tests.vcxproj /t:Build /m `
   /p:Configuration=Release `
   /p:Platform=x64 `
-  /p:PlatformToolset=v143 `
+  /p:PlatformToolset=v145 `
   /p:IntDir="$PWD\build\test-obj\" `
   /p:OutDir="$PWD\build\test-bin\"
 
@@ -132,7 +134,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-release-pipel
 
 # Override toolset or output directory
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-release-pipeline-local.ps1 `
-  -PlatformToolset v143 `
+  -PlatformToolset v145 `
   -WixVersion 6.0.2 `
   -OutputDir artifacts\release-local
 ```
@@ -164,12 +166,12 @@ Automated verification completed locally with Visual Studio MSBuild 18.8.2+ce25c
   `MSBuild src\XpressFormula.Tests\XpressFormula.Tests.vcxproj /p:Configuration=Release /p:Platform=x64 /m`
   Output: `src\XpressFormula.Tests\x64\Release\XpressFormula.Tests.exe`.
 - [x] No compiler warnings in the above builds (`0 Warning(s)`, `0 Error(s)`).
-- [x] Debug automated tests pass: `src\XpressFormula.Tests\x64\Debug\XpressFormula.Tests.exe` reported `469/469 tests passed`.
-- [x] Release automated tests pass: `src\XpressFormula.Tests\x64\Release\XpressFormula.Tests.exe` reported `469/469 tests passed`.
-- [x] Expression runtime benchmark harness passes when enabled with `XF_RUN_EXPRESSION_BENCHMARK=1`; local Release x64 run reported curve `97.8928 ms -> 71.1519 ms`, explicit surface `136.382 ms -> 99.5032 ms`, and implicit field `69.1287 ms -> 42.6645 ms`.
+- [x] Debug automated tests pass: `src\XpressFormula.Tests\x64\Debug\XpressFormula.Tests.exe` reported `514/514 tests passed`.
+- [x] Release automated tests pass: `src\XpressFormula.Tests\x64\Release\XpressFormula.Tests.exe` reported `514/514 tests passed`.
+- [x] Expression runtime benchmark harness passes when enabled with `XF_RUN_EXPRESSION_BENCHMARK=1`; local Release x64 run reported curve `61.5814 ms -> 33.6574 ms`, explicit surface `96.5311 ms -> 55.2219 ms`, and implicit field `78.0288 ms -> 47.2893 ms`.
 - [x] Architecture boundary check passes:
   `powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\check-architecture-boundaries.ps1`
-- [x] Production projects build with `/W4`, conformance mode, and `/Zc:__cplusplus`.
+- [x] First-party app, library, and test projects build with `/W4`, conformance mode, and `/Zc:__cplusplus`.
 - [x] Local release workflow dry run without packaging passes:
   `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-release-pipeline-local.ps1 -SkipPackaging`
 - [x] Architecture boundary check rejects a temporary forbidden Infrastructure -> UI include; the probe file was removed before this record was updated.

@@ -126,6 +126,56 @@ TEST_CASE(FormulaCompiler_RejectsInvalidFunctions) {
     Assert::IsTrue(formula.diagnostics[0].code == XFExpression::DiagnosticCode::ParseError);
 }
 
+TEST_CASE(FormulaCompiler_RejectsMalformedNumbersWithoutThrowing) {
+    std::string veryLongLiteral(4096, '9');
+    const std::string expressions[] = {
+        ".",
+        "1e309",
+        "1e-9999",
+        veryLongLiteral
+    };
+
+    for (const std::string& expression : expressions) {
+        bool threw = false;
+        XFExpression::CompiledFormula formula;
+        try {
+            formula = XFExpression::compileFormula(expression);
+        } catch (...) {
+            threw = true;
+        }
+
+        Assert::IsFalse(threw);
+        Assert::IsFalse(formula.valid());
+        Assert::IsFalse(formula.diagnostics.empty());
+        Assert::IsTrue(formula.diagnostics[0].code == XFExpression::DiagnosticCode::ParseError);
+    }
+}
+
+TEST_CASE(FormulaCompiler_RejectsWrongFunctionArity) {
+    const char* expressions[] = {
+        "sin()",
+        "sin(x,y)",
+        "min(x)",
+        "min(x,y,z)",
+        "log()",
+        "log(2,x,y)",
+        "sin(cos())"
+    };
+
+    for (const char* expression : expressions) {
+        const auto formula = compile(expression);
+        Assert::IsFalse(formula.valid());
+        Assert::IsFalse(formula.diagnostics.empty());
+        Assert::IsTrue(
+            formula.diagnostics[0].message.find("expects") != std::string::npos);
+    }
+}
+
+TEST_CASE(FormulaCompiler_LogAcceptsSupportedArities) {
+    Assert::IsTrue(compile("log(x)").valid());
+    Assert::IsTrue(compile("log(2,x)").valid());
+}
+
 TEST_CASE(FormulaCompiler_LongExpressionsAreNotStorageLimited) {
     std::string expression = "x";
     for (int i = 0; i < 260; ++i) {

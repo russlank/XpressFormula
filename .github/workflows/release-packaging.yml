@@ -21,7 +21,7 @@ jobs:
       WIX_VERSION: "6.0.2"
       BUILD_CONFIGURATION: "Release"
       BUILD_PLATFORM: "x64"
-      MSVC_PLATFORM_TOOLSET: "v143"
+      MSVC_PLATFORM_TOOLSET: "v145"
       # Signing is optional and intentionally disabled by default so the pipeline keeps working
       # before a code-signing certificate is configured.
       ENABLE_CODESIGN: "false"

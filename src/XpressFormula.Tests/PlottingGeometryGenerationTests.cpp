@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <string>
 #include <utility>
 
@@ -31,6 +32,12 @@ static XFCore::ASTNodePtr astFor(std::string expression) {
 
 static void assertClose(double expected, double actual, double tolerance = 1e-9) {
     Assert::IsTrue(std::abs(expected - actual) <= tolerance);
+}
+
+static double segmentLengthSquared(const XFGeometry::LineSegment2D& segment) {
+    const double dx = segment.a.x - segment.b.x;
+    const double dy = segment.a.y - segment.b.y;
+    return dx * dx + dy * dy;
 }
 
 static void assertVertexInside(const XFGeometry::PlaneClipVertex2D& vertex,
@@ -110,6 +117,50 @@ TEST_CASE(MarchingSquares_CircleContourProducesWorldSegments) {
     }
 }
 
+TEST_CASE(MarchingSquares_SaddleCaseProducesTwoNonDegenerateSegments) {
+    XFSampling::ScalarLattice lattice;
+    lattice.bounds = XFGeometry::Bounds2D{ 0.0, 1.0, 0.0, 1.0 };
+    lattice.cellsX = 1;
+    lattice.cellsY = 1;
+    lattice.values = {
+        -2.0, 1.0,
+         1.0, -2.0
+    };
+
+    const std::vector<XFGeometry::LineSegment2D> segments =
+        XFMesh::buildContourSegments(lattice);
+
+    Assert::AreEqual(static_cast<size_t>(2), segments.size());
+    for (const XFGeometry::LineSegment2D& segment : segments) {
+        Assert::IsTrue(segmentLengthSquared(segment) > 1e-24);
+    }
+}
+
+TEST_CASE(MarchingSquares_AllZeroAndNaNCellsDoNotEmitDegenerateSegments) {
+    XFSampling::ScalarLattice zeroLattice;
+    zeroLattice.bounds = XFGeometry::Bounds2D{ 0.0, 1.0, 0.0, 1.0 };
+    zeroLattice.cellsX = 1;
+    zeroLattice.cellsY = 1;
+    zeroLattice.values = { 0.0, 0.0, 0.0, 0.0 };
+
+    XFSampling::ScalarLattice nanLattice = zeroLattice;
+    nanLattice.values = {
+        -1.0,
+        std::numeric_limits<double>::quiet_NaN(),
+        1.0,
+        -1.0
+    };
+
+    Assert::IsTrue(XFMesh::buildContourSegments(zeroLattice).empty());
+    for (const XFGeometry::LineSegment2D& segment : XFMesh::buildContourSegments(nanLattice)) {
+        Assert::IsTrue(std::isfinite(segment.a.x));
+        Assert::IsTrue(std::isfinite(segment.a.y));
+        Assert::IsTrue(std::isfinite(segment.b.x));
+        Assert::IsTrue(std::isfinite(segment.b.y));
+        Assert::IsTrue(segmentLengthSquared(segment) > 1e-24);
+    }
+}
+
 TEST_CASE(ExplicitSurfaceMesh_PlaneSamplesWorldSpaceVertices) {
     const XFMesh::ExplicitSurfaceMesh mesh =
         XFMesh::sampleExplicitSurface(
@@ -167,6 +218,37 @@ TEST_CASE(SurfaceNets_BoundsContainGeneratedTriangles) {
             Assert::IsTrue(vertex.z >= mesh.surfaceBounds.zMin - 1e-9);
             Assert::IsTrue(vertex.z <= mesh.surfaceBounds.zMax + 1e-9);
         }
+    }
+}
+
+TEST_CASE(SurfaceNets_AllZeroFieldDoesNotEmitDegenerateSurface) {
+    const XFMesh::ImplicitMeshEntry mesh =
+        XFMesh::buildSurfaceNetsMesh(
+            astFor("0"),
+            XFMesh::SurfaceNetsOptions{
+                XFGeometry::Bounds3D{ -1.0, 1.0, -1.0, 1.0, -1.0, 1.0 },
+                16
+            });
+
+    Assert::IsTrue(mesh.faces.empty());
+    Assert::IsFalse(mesh.surfaceBounds.valid());
+}
+
+TEST_CASE(SurfaceNets_ExactZeroPlaneOnGridProducesFiniteNonDegenerateTriangles) {
+    const XFMesh::ImplicitMeshEntry mesh =
+        XFMesh::buildSurfaceNetsMesh(
+            astFor("z"),
+            XFMesh::SurfaceNetsOptions{
+                XFGeometry::Bounds3D{ -1.0, 1.0, -1.0, 1.0, -1.0, 1.0 },
+                16
+            });
+
+    Assert::IsFalse(mesh.faces.empty());
+    for (const XFMesh::ImplicitMeshTriangle& face : mesh.faces) {
+        Assert::IsTrue(XFGeometry::triangleAreaValid(face.p0, face.p1, face.p2, 1e-16));
+        Assert::IsTrue(std::isfinite(face.p0.z));
+        Assert::IsTrue(std::isfinite(face.p1.z));
+        Assert::IsTrue(std::isfinite(face.p2.z));
     }
 }
 

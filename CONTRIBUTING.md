@@ -27,7 +27,9 @@ msbuild src\XpressFormula.Tests\XpressFormula.Tests.vcxproj /t:Build /m `
 .\src\XpressFormula.Tests\x64\Release\XpressFormula.Tests.exe
 ```
 
-Production projects build with MSVC `/W4`, `/permissive-`, and `/Zc:__cplusplus`. Fix first-party warnings instead of suppressing them broadly.
+First-party app, library, and test projects build with MSVC `/W4`, `/permissive-`, and `/Zc:__cplusplus`. Fix first-party warnings instead of suppressing them broadly.
+
+The repository default toolset is `v145` and CI/release workflows run on the Visual Studio 2026/MSBuild 18 toolchain. Local builds may override `PlatformToolset` only when intentionally retargeting to an installed toolset for compatibility testing.
 
 ## Architecture Rules
 

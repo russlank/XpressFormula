@@ -23,7 +23,14 @@ struct Formula {
     std::string lastCompiledExpression;
 
     void setExpression(std::string value) {
+        if (expression == value) {
+            return;
+        }
+
         expression = std::move(value);
+        compiled = Expression::CompiledFormula{};
+        hasCompiledExpression = false;
+        lastCompiledExpression.clear();
     }
 
     [[nodiscard]] const std::string& expressionText() const {
