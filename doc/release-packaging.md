@@ -151,39 +151,46 @@ Write-Host "Expected release tag: $expectedTag"
 
 Last updated: 2026-07-21
 
+Verified branch head: `12eaf18408be9a612bb85529ce2c0d8e1b567e12`
+
 Automated verification completed locally with Visual Studio MSBuild 18.8.2+ce25c0108 (`msbuild -version`: 18.8.2.30814):
 
-- [x] Debug x64 app build succeeds:
-  `MSBuild src\XpressFormula\XpressFormula.vcxproj /p:Configuration=Debug /p:Platform=x64 /p:SolutionDir="C:\MyData\Projects\Digixoil\XpressFormula\src\" /m`
-  Output: `src\x64\Debug\XpressFormula.exe`.
-- [x] Release x64 app build succeeds:
-  `MSBuild src\XpressFormula\XpressFormula.vcxproj /p:Configuration=Release /p:Platform=x64 /p:SolutionDir="C:\MyData\Projects\Digixoil\XpressFormula\src\" /m`
-  Output: `src\x64\Release\XpressFormula.exe`.
-- [x] Debug x64 test project builds:
-  `MSBuild src\XpressFormula.Tests\XpressFormula.Tests.vcxproj /p:Configuration=Debug /p:Platform=x64 /m`
-  Output: `src\XpressFormula.Tests\x64\Debug\XpressFormula.Tests.exe`.
-- [x] Release x64 test project builds:
-  `MSBuild src\XpressFormula.Tests\XpressFormula.Tests.vcxproj /p:Configuration=Release /p:Platform=x64 /m`
-  Output: `src\XpressFormula.Tests\x64\Release\XpressFormula.Tests.exe`.
-- [x] No compiler warnings in the above builds (`0 Warning(s)`, `0 Error(s)`).
-- [x] Debug automated tests pass: `src\XpressFormula.Tests\x64\Debug\XpressFormula.Tests.exe` reported `514/514 tests passed`.
-- [x] Release automated tests pass: `src\XpressFormula.Tests\x64\Release\XpressFormula.Tests.exe` reported `514/514 tests passed`.
-- [x] Expression runtime benchmark harness passes when enabled with `XF_RUN_EXPRESSION_BENCHMARK=1`; local Release x64 run reported curve `61.5814 ms -> 33.6574 ms`, explicit surface `96.5311 ms -> 55.2219 ms`, and implicit field `78.0288 ms -> 47.2893 ms`.
 - [x] Architecture boundary check passes:
   `powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\check-architecture-boundaries.ps1`
-- [x] First-party app, library, and test projects build with `/W4`, conformance mode, and `/Zc:__cplusplus`.
-- [x] Local release workflow dry run without packaging passes:
+- [x] Debug x64 app build succeeds:
+  `.\scripts\invoke-msbuild.ps1 -ProjectPath "src\XpressFormula\XpressFormula.vcxproj" -Configuration Debug -Platform x64 -Targets Build`
+  Output: `src\XpressFormula\x64\Debug\XpressFormula.exe`.
+- [x] Release x64 app build succeeds:
+  `.\scripts\invoke-msbuild.ps1 -ProjectPath "src\XpressFormula\XpressFormula.vcxproj" -Configuration Release -Platform x64 -Targets Build`
+  Output: `src\XpressFormula\x64\Release\XpressFormula.exe`.
+- [x] Debug x64 test project builds:
+  `.\scripts\invoke-msbuild.ps1 -ProjectPath "src\XpressFormula.Tests\XpressFormula.Tests.vcxproj" -Configuration Debug -Platform x64 -Targets Build`
+  Output: `src\XpressFormula.Tests\x64\Debug\XpressFormula.Tests.exe`.
+- [x] Release x64 test project builds:
+  `.\scripts\invoke-msbuild.ps1 -ProjectPath "src\XpressFormula.Tests\XpressFormula.Tests.vcxproj" -Configuration Release -Platform x64 -Targets Build`
+  Output: `src\XpressFormula.Tests\x64\Release\XpressFormula.Tests.exe`.
+- [x] No compiler warnings in the above builds (`0 Warning(s)`, `0 Error(s)`).
+- [x] Debug automated tests pass: `src\XpressFormula.Tests\x64\Debug\XpressFormula.Tests.exe` reported `531/531 tests passed`.
+- [x] Release automated tests pass: `src\XpressFormula.Tests\x64\Release\XpressFormula.Tests.exe` reported `531/531 tests passed`.
+- [x] Local release workflow dry run without packaging passes from a clean detached worktree at the verified head:
   `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-release-pipeline-local.ps1 -SkipPackaging`
-- [x] Architecture boundary check rejects a temporary forbidden Infrastructure -> UI include; the probe file was removed before this record was updated.
-- [x] Existing core tests pass.
-- [x] New project-session tests pass.
-- [x] Export settings and metadata tests pass.
-- [x] UI layout-plan tests pass.
-- [x] Formula-list action tests pass.
-- [ ] PR Validation was not run in this local verification pass.
+- [x] PR Validation passes on the verified head:
+  run `#8`, workflow run `29855326680`, result `success`.
+- [x] First-party app, library, and test projects build with `/W4`, conformance mode, and `/Zc:__cplusplus`.
+- [x] Existing core tests, project/session persistence tests, export settings and metadata tests, UI layout-plan tests, formula-list action tests, update-controller tests, and plotting geometry tests pass.
+- [ ] Expression runtime benchmark was not rerun for Prompt 15.1 because evaluator runtime allocation behavior did not change in this closure pass.
+
+Prompt 15.1 smoke coverage recorded by automated tests:
+
+- [x] Formula input: malformed dot input, zero-valued scientific literals, true non-zero underflow/overflow, and wrong function arity.
+- [x] Shutdown: non-blocking cancellation, late-result ignore, repeated cancellation, and controller destruction while a fake fetcher is blocked.
+- [x] Projects: bounded project reads, formula-count limits, expression-length limits, serialized-size limits, rejected Save As, and old-target preservation.
+- [x] Plotting: isolated exact-zero contact, exact-grid-plane mesh, constant-zero field, duplicate triangle rejection, and deterministic Surface Nets output.
 
 Manual verification still required before tagging:
 
+- [ ] Interactive formula editor workflows: Add/Cancel, Add/Apply, Edit/Cancel, and live error display in the running UI.
+- [ ] Interactive shutdown workflow: start a manual update check in the running app, close immediately, and confirm no visible delay or crash.
 - [ ] Plotting workflows: 2D curves, discontinuities, implicit contours, heatmaps, scalar-field cross-sections, 3D explicit surfaces, implicit surfaces, multiple implicit surfaces, camera presets, auto-rotation dirty-state behavior, grid-plane interleave, axis triad, coordinates, and wire/envelope thickness minimums and maximums.
 - [ ] Project workflows: New, Open valid `.xfplot`, Save, Save As, Recent reopen, dirty marker set/clear, Save/Discard/Cancel before New/Open/Close, unsupported schema error, malformed file error, invalid formula warning, Unicode formula round trip, multiple save/load cycles retaining values.
 - [ ] Export workflows: every export profile, transparent PNG, grayscale export, metadata sidecar output, metadata JSON opens in a parser/editor, preview/final export parity, save/copy/open/reveal/copy-path, offscreen fallback behavior if reproducible.
