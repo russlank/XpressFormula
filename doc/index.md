@@ -11,6 +11,7 @@
 - Algorithms guide (beginner-friendly): [`algorithms-guide.md`](algorithms-guide.md)
 - ImGui implementation guide: [`imgui-implementation-guide.md`](imgui-implementation-guide.md)
 - Linux portability plan (ImGui on Linux / migration roadmap): [`linux-portability-plan.md`](linux-portability-plan.md)
+- Future directions and extension ideas (exploratory catalogue): [`future-directions-and-extension-ideas.md`](future-directions-and-extension-ideas.md)
 - Expression language: [`expression-language.md`](expression-language.md)
 - Testing: [`testing.md`](testing.md)
 - Release and packaging: [`release-packaging.md`](release-packaging.md)
@@ -29,10 +30,11 @@ Recommended reading order for new contributors:
 8. [`algorithms-guide.md`](algorithms-guide.md)
 9. [`imgui-implementation-guide.md`](imgui-implementation-guide.md)
 10. [`linux-portability-plan.md`](linux-portability-plan.md)
-11. [`expression-language.md`](expression-language.md)
-12. [`testing.md`](testing.md)
-13. [`release-packaging.md`](release-packaging.md)
-14. [`code-signing.md`](code-signing.md)
+11. [`future-directions-and-extension-ideas.md`](future-directions-and-extension-ideas.md)
+12. [`expression-language.md`](expression-language.md)
+13. [`testing.md`](testing.md)
+14. [`release-packaging.md`](release-packaging.md)
+15. [`code-signing.md`](code-signing.md)
 
 ## License
 

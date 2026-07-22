@@ -202,6 +202,13 @@ Mode-specific behavior for 3-variable formulas:
 
 Only variables `x`, `y`, and `z` are supported for plotting.
 
+## Related Docs
+
+- [`math-api-guide.md`](math-api-guide.md)
+- [`math-api-cheatsheet.md`](math-api-cheatsheet.md)
+- [`algorithms-guide.md`](algorithms-guide.md)
+- [`future-directions-and-extension-ideas.md`](future-directions-and-extension-ideas.md)
+
 ## License
 
 This document is licensed under the MIT License. See [`../LICENSE`](../LICENSE).

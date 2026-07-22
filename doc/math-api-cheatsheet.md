@@ -596,6 +596,7 @@ Tuning points:
 - Algorithms: [`algorithms-guide.md`](algorithms-guide.md)
 - ImGui UI structure: [`imgui-implementation-guide.md`](imgui-implementation-guide.md)
 - Syntax reference: [`expression-language.md`](expression-language.md)
+- Future directions and extension ideas: [`future-directions-and-extension-ideas.md`](future-directions-and-extension-ideas.md)
 
 ## License
 

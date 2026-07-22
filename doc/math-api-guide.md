@@ -775,6 +775,7 @@ If you want to understand the math stack end-to-end:
 - [`expression-language.md`](expression-language.md)
 - [`architecture.md`](architecture.md)
 - [`imgui-implementation-guide.md`](imgui-implementation-guide.md)
+- [`future-directions-and-extension-ideas.md`](future-directions-and-extension-ideas.md)
 
 ## License
 

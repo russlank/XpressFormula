@@ -549,6 +549,7 @@ This scales well from:
 - Algorithms guide: [`algorithms-guide.md`](algorithms-guide.md)
 - Architecture overview: [`architecture.md`](architecture.md)
 - Run guide: [`run-guide.md`](run-guide.md)
+- Future directions and extension ideas: [`future-directions-and-extension-ideas.md`](future-directions-and-extension-ideas.md)
 
 ## License
 

@@ -588,6 +588,7 @@ Good next algorithm upgrades (in increasing complexity):
 - Architecture overview: [`architecture.md`](architecture.md)
 - Expression syntax reference: [`expression-language.md`](expression-language.md)
 - ImGui implementation guide: [`imgui-implementation-guide.md`](imgui-implementation-guide.md)
+- Future directions and extension ideas: [`future-directions-and-extension-ideas.md`](future-directions-and-extension-ideas.md)
 
 ## License
 

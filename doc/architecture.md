@@ -181,6 +181,8 @@ Durable architecture decisions are recorded in [`doc/adr`](adr/README.md):
 - [0003: Document Revision Dirty State](adr/0003-document-revision-dirty-state.md)
 - [0004: Geometry Render Backend](adr/0004-geometry-render-backend.md)
 
+Forward-looking feature ideas that should preserve these boundaries are collected in [`future-directions-and-extension-ideas.md`](future-directions-and-extension-ideas.md).
+
 ## Formula Rendering Modes
 
 Formula mode is inferred from variable presence and equation shape:

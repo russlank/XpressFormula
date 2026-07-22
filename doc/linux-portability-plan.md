@@ -355,6 +355,7 @@ This gets a usable Linux prototype quickly and avoids blocking on OS integration
 - [`algorithms-guide.md`](algorithms-guide.md)
 - [`run-guide.md`](run-guide.md)
 - [`project-vendors.md`](project-vendors.md)
+- [`future-directions-and-extension-ideas.md`](future-directions-and-extension-ideas.md)
 
 ## License
 
